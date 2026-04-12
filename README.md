@@ -18,6 +18,7 @@ Skills about the skills system itself.
 |-------|-------------|-----------|
 | [`skill-author`](skills/skill-author/) | How to write a high-quality Claude Code skill for this library | Yes |
 | [`skill-install`](skills/skill-install/) | How to install skills from this library into your project | Yes |
+| [`migrate-skill`](skills/migrate-skill/) | Move a skill from toolkit/local into dogfooded-skills and import it back | Yes |
 
 ### Product
 

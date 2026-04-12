@@ -132,7 +132,7 @@ Write the signals extraction script to a temp file and run it:
 
 ```bash
 cat > /tmp/distill_parse.py << 'PYEOF'
-import json, sys, collections
+import json, re, sys, collections
 
 path = sys.argv[1]
 signals = {
@@ -149,7 +149,16 @@ signals = {
     "total_output_tokens": 0,
     "original_prompt": None,
     "write_paths": [],
-    "bash_calls": []
+    "bash_calls": [],
+    "git_signals": {
+        "branch_created": False,
+        "pushed": False,
+        "push_force": False,
+        "pr_created": False,
+        "issue_closed": False,
+        "committed_to_main": False,
+        "push_verified": False
+    }
 }
 tool_counts = collections.Counter()
 
@@ -220,6 +229,22 @@ for line in lines:
                 signals["bash_calls"].append(cmd[:300])
                 if any(v in cmd for v in ["curl ", "gh pr view", "gh pr merge", "gh pr list", "gh run"]):
                     signals["verification_calls"].append(cmd[:200])
+                # Git workflow signals
+                gs = signals["git_signals"]
+                if re.search(r'git\s+(checkout\s+-b|switch\s+-c)', cmd):
+                    gs["branch_created"] = True
+                if re.search(r'git\s+push', cmd):
+                    if "--force" in cmd or " -f " in cmd:
+                        gs["push_force"] = True
+                    gs["pushed"] = True
+                if "gh pr create" in cmd:
+                    gs["pr_created"] = True
+                if "gh issue close" in cmd.lower():
+                    gs["issue_closed"] = True
+                if (re.search(r'git\s+log.*--remotes', cmd) or
+                        re.search(r'gh\s+api.*commits/', cmd) or
+                        re.search(r'git\s+log.*origin/', cmd)):
+                    gs["push_verified"] = True
 
             elif tool == "Write":
                 fp = str(inp.get("file_path", ""))
@@ -235,6 +260,10 @@ for line in lines:
                         block.get("is_error")):
                     err_text = str(block.get("content", ""))[:300]
                     signals["error_tool_results"].append(err_text)
+
+# committed_to_main: git commit found but no feature branch created in session
+if any(re.search(r'git\s+commit', b) for b in signals["bash_calls"]):
+    signals["git_signals"]["committed_to_main"] = not signals["git_signals"]["branch_created"]
 
 signals["tool_counts"] = dict(tool_counts)
 print(json.dumps(signals, default=str))
@@ -253,7 +282,7 @@ CHUNK_DIR=$(mktemp -d /tmp/distill_chunks_XXXX)
 split -l 2000 "$JSONL" "$CHUNK_DIR/chunk_"
 
 # Spawn one subagent per chunk, collect JSON signals
-MERGED_SIGNALS='{"session_id":null,"start_ts":null,"end_ts":null,"tool_counts":{},"error_tool_results":[],"workers_spawned":0,"skills_loaded":[],"verification_calls":[],"total_input_tokens":0,"total_output_tokens":0,"original_prompt":null,"write_paths":[],"bash_calls":[],"session_complete":true}'
+MERGED_SIGNALS='{"session_id":null,"start_ts":null,"end_ts":null,"tool_counts":{},"error_tool_results":[],"workers_spawned":0,"skills_loaded":[],"verification_calls":[],"total_input_tokens":0,"total_output_tokens":0,"original_prompt":null,"write_paths":[],"bash_calls":[],"git_signals":{"branch_created":false,"pushed":false,"push_force":false,"pr_created":false,"issue_closed":false,"committed_to_main":false,"push_verified":false},"session_complete":true}'
 
 for chunk in "$CHUNK_DIR"/chunk_*; do
   # Each subagent: run distill_parse.py on chunk, return JSON
@@ -285,6 +314,11 @@ merged = {
     "original_prompt": next((c["original_prompt"] for c in chunks if c.get("original_prompt")), None),
     "write_paths": sum((c.get("write_paths", []) for c in chunks), []),
     "bash_calls": sum((c.get("bash_calls", []) for c in chunks), []),
+    "git_signals": {
+        k: any(c.get("git_signals", {}).get(k, False) for c in chunks)
+        for k in ["branch_created", "pushed", "push_force", "pr_created",
+                  "issue_closed", "committed_to_main", "push_verified"]
+    },
     "session_complete": all(c.get("session_complete", True) for c in chunks)
 }
 print(json.dumps(merged))
@@ -344,6 +378,7 @@ verification_calls = signals.get("verification_calls", [])
 workers_spawned = signals.get("workers_spawned", 0)
 skills_loaded = signals.get("skills_loaded", [])
 original_prompt = (signals.get("original_prompt") or "").lower()
+git_signals = signals.get("git_signals", {})
 
 incidents = []
 what_worked = []
@@ -439,6 +474,41 @@ if workers_spawned >= 3:
         "evidence": f"{workers_spawned} Agent tool calls in session"
     })
 
+# Git workflow classification rules
+has_git_commit = any("git commit" in b.lower() for b in bash_calls)
+
+# SV: committed to main without PR — skipped review entirely
+if git_signals.get("committed_to_main") and not git_signals.get("pr_created"):
+    incidents.append({
+        "code": "SV",
+        "description": "Committed directly to main without creating a feature branch or PR",
+        "evidence": "git commit detected, no branch created, no gh pr create in session"
+    })
+
+# SF: committed but never pushed — work trapped locally
+if has_git_commit and not git_signals.get("pushed"):
+    incidents.append({
+        "code": "SF",
+        "description": "Committed but never pushed — work never reached the remote",
+        "evidence": "git commit found in session but no git push detected"
+    })
+
+# UA: closed issue without verifying the push landed on remote
+if git_signals.get("issue_closed") and not git_signals.get("push_verified"):
+    incidents.append({
+        "code": "UA",
+        "description": "Issue closed without verifying commit exists on remote",
+        "evidence": "gh issue close detected but no git log --remotes or gh api commit check found"
+    })
+
+# UB: force-pushed without documented rationale (git push --force)
+if git_signals.get("push_force"):
+    incidents.append({
+        "code": "UB",
+        "description": "Force-pushed without documented rationale",
+        "evidence": "git push --force detected in session"
+    })
+
 # Determine what worked (heuristic from tool activity)
 if len(verification_calls) > 0:
     what_worked.append(f"Verification steps executed ({len(verification_calls)} calls)")
@@ -450,11 +520,18 @@ if not incidents:
     what_worked.append("No failure patterns detected")
 
 # Missed opportunity hint
-if "SV" in [i["code"] for i in incidents]:
+incident_codes_found = [i["code"] for i in incidents]
+if "SF" in incident_codes_found and not git_signals.get("pushed"):
+    missed_opportunity = "Committed but never pushed — add git push after every commit, then verify with git log --remotes"
+elif "SV" in incident_codes_found and git_signals.get("committed_to_main"):
+    missed_opportunity = "Create a feature branch before committing — git checkout -b feat/... then open a PR"
+elif "UA" in incident_codes_found and git_signals.get("issue_closed"):
+    missed_opportunity = "Verify the commit is on the remote before closing the issue — gh api repos/{owner}/{repo}/commits/{sha}"
+elif "SV" in incident_codes_found:
     missed_opportunity = "Add verification step before exit — curl or gh pr view would confirm success"
-elif "SG" in [i["code"] for i in incidents]:
+elif "SG" in incident_codes_found:
     missed_opportunity = "Load the relevant skill before attempting the domain operation"
-elif "UA" in [i["code"] for i in incidents]:
+elif "UA" in incident_codes_found:
     missed_opportunity = "curl production URL after deploy — HTTP 200 is the only real success signal"
 
 result = {
@@ -480,8 +557,12 @@ bash_calls = signals.get("bash_calls", [])
 write_paths = signals.get("write_paths", [])
 skills_loaded = signals.get("skills_loaded", [])
 verification_calls = signals.get("verification_calls", [])
+git_signals = signals.get("git_signals", {})
 
 bash_all = " ".join(bash_calls).lower()
+original_prompt = (signals.get("original_prompt") or "").lower()
+is_feature = any(kw in original_prompt for kw in
+                 ["implement", "feature", "add", "build", "create", "fix", "update"])
 
 compliance = {
     "R1_headless": "AskUserQuestion" not in tool_counts,
@@ -489,7 +570,10 @@ compliance = {
                    not any("src/" in p or "app/" in p for p in write_paths)),
     "R4_read_skills": len(skills_loaded) > 0,
     "R6_verify": len(verification_calls) > 0,
-    "R7_report": any("reports/" in p for p in write_paths)
+    "R7_report": any("reports/" in p for p in write_paths),
+    "R_branch": git_signals.get("branch_created", False),
+    "R_push": git_signals.get("pushed", False),
+    "R_pr": git_signals.get("pr_created", False) or not is_feature
 }
 print(json.dumps(compliance))
 PYEOF

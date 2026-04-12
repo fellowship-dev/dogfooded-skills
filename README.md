@@ -29,6 +29,14 @@ Skills for product development workflows.
 | [`spec-plan`](skills/spec-plan/) | Relentless design interview — walk the decision tree one branch at a time until shared understanding | Yes |
 | [`build-prd`](skills/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration | Yes |
 
+### Operations
+
+Skills for CI, deployment, and evidence workflows.
+
+| Skill | Description | Invocable |
+|-------|-------------|-----------|
+| [`visual-evidence`](skills/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence — before/after, feature demos, interaction bugs | No |
+
 ## Quick Start
 
 ```bash

@@ -36,6 +36,7 @@ Skills for CI, deployment, and evidence workflows.
 | Skill | Description | Invocable |
 |-------|-------------|-----------|
 | [`visual-evidence`](skills/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence — before/after, feature demos, interaction bugs | No |
+| [`distill`](skills/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy (capture), aggregates trends and creates GitHub issues (analyze) | Yes |
 
 ## Quick Start
 

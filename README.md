@@ -19,6 +19,14 @@ Skills about the skills system itself.
 | [`skill-author`](skills/skill-author/) | How to write a high-quality Claude Code skill for this library | Yes |
 | [`skill-install`](skills/skill-install/) | How to install skills from this library into your project | Yes |
 
+### Product
+
+Skills for product development workflows.
+
+| Skill | Description | Invocable |
+|-------|-------------|-----------|
+| [`build-prd`](skills/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration | Yes |
+
 ## Quick Start
 
 ```bash

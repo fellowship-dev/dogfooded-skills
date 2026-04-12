@@ -26,6 +26,7 @@ Skills for product development workflows.
 
 | Skill | Description | Invocable |
 |-------|-------------|-----------|
+| [`spec-plan`](skills/spec-plan/) | Relentless design interview — walk the decision tree one branch at a time until shared understanding | Yes |
 | [`build-prd`](skills/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration | Yes |
 
 ## Quick Start

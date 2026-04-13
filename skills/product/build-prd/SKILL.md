@@ -1,8 +1,6 @@
 ---
 name: build-prd
 description: Guide collaborative PRD creation from feature requests — 7-step workflow with structured discussion, GitHub integration, and quality gates. Use when creating PRDs, writing requirements, or transforming feature requests into implementation-ready issues.
-user-invocable: true
-argument-hint: "[issue-number] [org/repo]"
 allowed-tools: Read, Bash, Grep, Glob
 ---
 
@@ -41,7 +39,7 @@ gh issue view ISSUE_NUMBER --repo ORG/REPO
 
 Read project context:
 ```bash
-cat CLAUDE.md
+cat project-instructions.md  # or equivalent project instructions file
 cat README.md
 ```
 

@@ -643,6 +643,7 @@ Replace `$REPORT_JOB_ID` with `$(basename "$REPORT" .md)` before running.
 
 ```bash
 /distill analyze
+/distill analyze --since today
 /distill analyze --since 2026-03-01
 /distill analyze --repo fellowship-dev/commander --since 2026-04-01
 ```
@@ -651,6 +652,10 @@ Replace `$REPORT_JOB_ID` with `$(basename "$REPORT" .md)` before running.
 
 ```bash
 SINCE_DATE="${SINCE_ARG:-}"
+# Resolve "today" keyword to current date
+if [ "$SINCE_DATE" = "today" ]; then
+  SINCE_DATE=$(date +%Y-%m-%d)
+fi
 REPORTS_DIR="reports"
 
 mapfile -t AUDIT_FILES < <(
@@ -665,7 +670,13 @@ mapfile -t AUDIT_FILES < <(
 )
 
 echo "Found ${#AUDIT_FILES[@]} audit files"
-[ "${#AUDIT_FILES[@]}" -eq 0 ] && echo "No audit files found. Run /distill capture first." && exit 1
+if [ "${#AUDIT_FILES[@]}" -eq 0 ]; then
+  TODAY=$(date +%Y-%m-%d)
+  STUB_REPORT="reports/${TODAY}-distill-analyze.md"
+  printf "# Distill Analysis — %s\n\nNo missions captured today. No audit files found.\n" "$TODAY" > "$STUB_REPORT"
+  echo "Stub report written: $STUB_REPORT"
+  exit 0
+fi
 ```
 
 ### Step 2: Aggregate signals

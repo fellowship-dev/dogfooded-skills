@@ -1,14 +1,12 @@
 ---
 name: migrate-skill
 description: Move a skill from claude-toolkit plugin (or local .claude/skills) into the dogfooded-skills library, then import it back. Use when consolidating skills into the shared repo.
-user-invocable: true
-argument-hint: "<skill-name>"
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
 # migrate-skill
 
-Move a Claude Code skill from a local source (toolkit plugin, `.claude/skills/`, or `.claude/commands/`) into `dogfooded-skills`, then import it back as a standalone local skill.
+Move an agent skill from a local source (toolkit plugin, `.claude/skills/`, or `.claude/commands/`) into `dogfooded-skills`, then import it back as a standalone local skill.
 
 ## When to Use
 
@@ -19,7 +17,7 @@ Move a Claude Code skill from a local source (toolkit plugin, `.claude/skills/`,
 ## Prerequisites
 
 ```bash
-ls ~/Projects/Fellowship-dev/dogfooded-skills/skills/  # repo cloned
+ls ~/Projects/fellowship-dev/dogfooded-skills/skills/  # repo cloned
 gh auth status                                          # can push
 ```
 
@@ -38,25 +36,23 @@ Given `<skill-name>` as argument:
    ls -la .claude/skills/<skill-name>/ 2>/dev/null
    ```
 
-2. **Read all sources** — merge the command (thin wrapper) and skill (full content) into a single SKILL.md. Follow the `skill-author` standard: frontmatter, one-line purpose, When to Use, Prerequisites, Workflow with real commands, Decision Tables, Error Handling, Critical Rules.
-
-   Set `user-invocable: true` if there was a command file (user could type `/skill-name`).
+2. **Read all sources** — merge the command (thin wrapper) and skill (full content) into a single SKILL.md. Follow the `skill-builder` standard: frontmatter, one-line purpose, When to Use, Prerequisites, Workflow with real commands, Decision Tables, Error Handling, Critical Rules.
 
 3. **Write to dogfooded-skills**
 
    ```bash
-   mkdir -p ~/Projects/Fellowship-dev/dogfooded-skills/skills/<skill-name>
+   mkdir -p ~/Projects/fellowship-dev/dogfooded-skills/skills/<namespace>/<skill-name>
    ```
 
-   Write the merged `SKILL.md` to `~/Projects/Fellowship-dev/dogfooded-skills/skills/<skill-name>/SKILL.md`.
+   Write the merged `SKILL.md` to `~/Projects/fellowship-dev/dogfooded-skills/skills/<namespace>/<skill-name>/SKILL.md`.
 
 4. **Update dogfooded-skills README** — add a row to the appropriate category table in `README.md`.
 
 5. **Commit and push**
 
    ```bash
-   cd ~/Projects/Fellowship-dev/dogfooded-skills
-   git add skills/<skill-name>/SKILL.md README.md
+   cd ~/Projects/fellowship-dev/dogfooded-skills
+   git add skills/<namespace>/<skill-name>/SKILL.md README.md
    git commit -m "feat: add <skill-name> skill — migrated from claude-toolkit"
    git push origin main
    ```
@@ -68,7 +64,7 @@ Given `<skill-name>` as argument:
    set -e
    BUDDY=<project-root>
    TOOLKIT="$BUDDY/.claude/plugins/claude-toolkit"
-   DOGFOOD=~/Projects/Fellowship-dev/dogfooded-skills
+   DOGFOOD=~/Projects/fellowship-dev/dogfooded-skills
 
    # Remove from toolkit
    rm -rf "$TOOLKIT/skills/<skill-name>"
@@ -79,7 +75,7 @@ Given `<skill-name>` as argument:
 
    # Import from dogfooded-skills
    mkdir -p "$BUDDY/.claude/skills/<skill-name>"
-   cp "$DOGFOOD/skills/<skill-name>/SKILL.md" "$BUDDY/.claude/skills/<skill-name>/SKILL.md"
+   cp "$DOGFOOD/skills/<namespace>/<skill-name>/SKILL.md" "$BUDDY/.claude/skills/<skill-name>/SKILL.md"
 
    echo "Done: <skill-name> migrated"
    ```
@@ -97,7 +93,7 @@ Given `<skill-name>` as argument:
 
 ## Critical Rules
 
-- **Always read the skill-author standard first** — the merged skill must meet dogfooded-skills quality bar
+- **Always read the skill-builder standard first** — the merged skill must meet dogfooded-skills quality bar
 - **Cleanup script in /tmp** — only way to bypass sandbox on `.claude/` paths
 - **Never leave orphan symlinks** — remove before creating the new directory
 - **Commit toolkit changes separately** if the toolkit is a submodule with its own remote

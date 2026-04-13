@@ -1,7 +1,6 @@
 ---
 name: visual-evidence
 description: Capture Playwright screenshots and GIF recordings for PR evidence — before/after comparisons, feature demos, interaction bugs. Runs headless in any CI/remote environment.
-user-invocable: false
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 

@@ -1,17 +1,16 @@
 ---
-name: skill-author
-description: Write a high-quality Claude Code skill — covers frontmatter spec, section structure, quality criteria, and common antipatterns.
-user-invocable: true
+name: skill-builder
+description: Write a high-quality agent skill — covers frontmatter spec, section structure, quality criteria, and common antipatterns.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
-# Skill Author
+# Skill Builder
 
-How to write a Claude Code skill that belongs in this library. Follow this standard exactly — every skill in `dogfooded-skills` was reviewed against it before merge.
+How to write an agent skill that belongs in this library. Follow this standard exactly — every skill in `dogfooded-skills` was reviewed against it before merge.
 
 ## What Is a Skill?
 
-A skill is a markdown file at `.claude/skills/<skill-name>/SKILL.md`. It is loaded into Claude's context when invoked via the `Skill` tool or referenced in `CLAUDE.md`. It is **not** a prompt — it is a runbook: concrete commands, decision tables, and explicit gotchas that turn Claude into a domain expert.
+A skill is a markdown file at `.claude/skills/<skill-name>/SKILL.md`. It is loaded into the agent's context when invoked via skill invocation or referenced in the project instructions file. It is **not** a prompt — it is a runbook: concrete commands, decision tables, and explicit gotchas that turn the agent into a domain expert.
 
 A skill is NOT:
 - A README explaining what a tool does
@@ -20,7 +19,7 @@ A skill is NOT:
 - A vague list of things to consider
 
 A skill IS:
-- Step-by-step instructions Claude executes, not reads
+- Step-by-step instructions the agent executes, not reads
 - Real commands with real flags, not pseudocode
 - The authoritative source of truth for one capability
 
@@ -42,9 +41,7 @@ Every `SKILL.md` must start with YAML frontmatter:
 ```yaml
 ---
 name: skill-name
-description: One-line summary — used by Claude to decide relevance. Be specific.
-user-invocable: true | false
-argument-hint: "[arg1] [arg2]"   # optional — shown in skill picker
+description: One-line summary — used by the agent to decide relevance. Be specific.
 allowed-tools: Read, Write, Bash, Glob, Grep  # optional — restrict tool use
 ---
 ```
@@ -53,13 +50,9 @@ allowed-tools: Read, Write, Bash, Glob, Grep  # optional — restrict tool use
 
 **`name`** — matches the directory name. No spaces, no uppercase.
 
-**`description`** — one line, plain English. Claude reads this to decide whether to invoke the skill. Bad: "Manage environments." Good: "Claim, start, SSH into, and release Gitpod cloud environments for CI/agent workloads."
+**`description`** — one line, plain English. The agent reads this to decide whether to invoke the skill. Bad: "Manage environments." Good: "Claim, start, SSH into, and release Gitpod cloud environments for CI/agent workloads."
 
-**`user-invocable`** — `true` if a human can type `/skill-name` to invoke it. `false` if it's only loaded by Claude programmatically. When in doubt, set `true`.
-
-**`argument-hint`** — shown in the skill picker when `user-invocable: true`. Use `[brackets]` for optional args, `<angle>` for required. Example: `"<issue-number> [org/repo]"`.
-
-**`allowed-tools`** — whitelist of Claude tools this skill may use. Omit to allow all tools. Set when the skill should be restricted (e.g., a read-only audit skill).
+**`allowed-tools`** — whitelist of tools this skill may use. Omit to allow all tools. Set when the skill should be restricted (e.g., a read-only audit skill).
 
 ## Section Structure
 
@@ -77,7 +70,7 @@ Run dependency update PRs through a verification pipeline — checkout, build, t
 
 ### 2. When to Use (optional but recommended)
 
-Bullet list of triggers. When should Claude invoke this skill vs. doing something else?
+Bullet list of triggers. When should the agent invoke this skill vs. doing something else?
 
 ```markdown
 ## When to Use
@@ -172,7 +165,7 @@ Bullet list of absolute must-follow rules. Use when violations cause data loss, 
 
 - **Always release envs after use** — stopped envs cost nothing; leaked running envs burn credits
 - **Never skip decontamination** — a stopped pod resumes with stale git state
-- **One Claude process per env** — two pilots share a git working directory and corrupt each other
+- **One agent process per env** — two agents share a git working directory and corrupt each other
 ```
 
 ## Quality Checklist
@@ -185,7 +178,7 @@ Before submitting a skill, verify every item:
 - [ ] Error handling covers the three most common failure modes
 - [ ] No pseudocode — every step has a real, runnable command
 - [ ] Decision points have tables or explicit conditions, not "it depends"
-- [ ] No instructions to the *user* — all prose is addressed to Claude
+- [ ] No instructions to the *user* — all prose is addressed to the agent
 - [ ] The skill has been run at least 5 times against a real workload
 
 ## Common Antipatterns
@@ -203,7 +196,7 @@ Before submitting a skill, verify every item:
    ```
 ```
 
-### Instructing the user instead of Claude
+### Instructing the user instead of the agent
 
 ```markdown
 # Bad
@@ -239,7 +232,6 @@ Copy this as a starting point:
 ---
 name: your-skill
 description: One specific sentence about what this skill does and for what context.
-user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 

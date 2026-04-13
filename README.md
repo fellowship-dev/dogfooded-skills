@@ -1,74 +1,83 @@
 # dogfooded-skills
 
-A battle-tested library of Claude Code skills used internally at [Fellowship Dev](https://github.com/Fellowship-dev). Each skill in this library has been run hundreds of times in real production workflows before being published here.
+A cross-platform agent skill library compatible with 41+ agents via the [Vercel `npx skills`](https://skills.new) ecosystem. Built and battle-tested internally at [fellowship-dev](https://github.com/fellowship-dev) — every skill here has run hundreds of times in real production workflows before being published.
 
 ## What Are Skills?
 
-Claude Code **skills** are markdown files placed in `.claude/skills/<skill-name>/SKILL.md`. When invoked via the `Skill` tool (or referenced in `CLAUDE.md`), the skill's content is loaded into Claude's context — giving it persistent, reusable capabilities without burning prompt space on every message.
+Agent **skills** are markdown files placed at `.claude/skills/<skill-name>/SKILL.md`. When invoked via skill invocation or referenced in the project instructions file, the skill's content is loaded into the agent's context — giving it persistent, reusable capabilities without burning prompt space on every message.
 
-Skills are not prompts. They are **runbooks**: structured, concrete instructions with real commands, decision tables, and explicit gotchas. A good skill makes Claude behave like a domain expert, not a generalist guesser.
+Skills are not prompts. They are **runbooks**: structured, concrete instructions with real commands, decision tables, and explicit gotchas. A good skill makes the agent behave like a domain expert, not a generalist guesser.
+
+## Install
+
+Install any skill directly into your project using the `npx skills` subpath syntax:
+
+```bash
+npx skills add fellowship-dev/dogfooded-skills/meta/skill-builder
+npx skills add fellowship-dev/dogfooded-skills/meta/migrate-skill
+npx skills add fellowship-dev/dogfooded-skills/product/spec-plan
+npx skills add fellowship-dev/dogfooded-skills/product/build-prd
+npx skills add fellowship-dev/dogfooded-skills/ops/distill
+npx skills add fellowship-dev/dogfooded-skills/ops/visual-evidence
+```
 
 ## Skill Catalog
 
-### Meta
+### meta
 
 Skills about the skills system itself.
 
-| Skill | Description | Invocable |
-|-------|-------------|-----------|
-| [`skill-author`](skills/skill-author/) | How to write a high-quality Claude Code skill for this library | Yes |
-| [`skill-install`](skills/skill-install/) | How to install skills from this library into your project | Yes |
-| [`migrate-skill`](skills/migrate-skill/) | Move a skill from toolkit/local into dogfooded-skills and import it back | Yes |
+| Skill | Description |
+|-------|-------------|
+| [`meta/skill-builder`](skills/meta/skill-builder/) | How to write a high-quality agent skill for this library |
+| [`meta/migrate-skill`](skills/meta/migrate-skill/) | Move a skill from toolkit/local into dogfooded-skills and import it back |
 
-### Product
+### product
 
 Skills for product development workflows.
 
-| Skill | Description | Invocable |
-|-------|-------------|-----------|
-| [`spec-plan`](skills/spec-plan/) | Relentless design interview — walk the decision tree one branch at a time until shared understanding | Yes |
-| [`build-prd`](skills/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration | Yes |
+| Skill | Description |
+|-------|-------------|
+| [`product/spec-plan`](skills/product/spec-plan/) | Relentless design interview — walk the decision tree one branch at a time until shared understanding |
+| [`product/build-prd`](skills/product/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration |
 
-### Operations
+### ops
 
 Skills for CI, deployment, and evidence workflows.
 
-| Skill | Description | Invocable |
-|-------|-------------|-----------|
-| [`visual-evidence`](skills/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence — before/after, feature demos, interaction bugs | No |
-| [`distill`](skills/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy (capture), aggregates trends and creates GitHub issues (analyze) | Yes |
+| Skill | Description |
+|-------|-------------|
+| [`ops/distill`](skills/ops/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy (capture), aggregates trends and creates GitHub issues (analyze) |
+| [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence — before/after, feature demos, interaction bugs |
 
-## Quick Start
+## Namespace Convention
 
-```bash
-# Clone the library
-git clone https://github.com/Fellowship-dev/dogfooded-skills
+Skills are organized into three namespaces:
 
-# Copy a skill into your project
-cp -r dogfooded-skills/skills/skill-author .claude/skills/
-```
+| Namespace | Purpose |
+|-----------|---------|
+| `meta/` | Skills about building and managing skills |
+| `product/` | Skills for product development: PRDs, planning, requirements |
+| `ops/` | Skills for operations: CI, auditing, evidence capture |
 
-Then add a row to the skill table in your project's `CLAUDE.md`:
-
-```markdown
-| `skill-author` | How to write a Claude Code skill |
-```
-
-That's it. Claude will read the skill when it needs it.
+Each skill lives at `skills/<namespace>/<skill-name>/SKILL.md`.
 
 ## Design Principles
 
-1. **Concrete over abstract** — every skill ships with real commands, not pseudocode
-2. **Explicit gotchas** — if something can go wrong, the skill says so
-3. **Decision tables** — when there are multiple paths, a table makes the choice clear
-4. **Minimal frontmatter** — only the fields Claude Code actually reads
-5. **Self-contained** — a skill can be dropped into any project and work without external docs
+1. **Agent-agnostic** — skills work with any agent that supports the Vercel skill format, not just one tool
+2. **Concrete over abstract** — every skill ships with real commands, not pseudocode
+3. **Explicit gotchas** — if something can go wrong, the skill says so
+4. **Decision tables** — when there are multiple paths, a table makes the choice clear
+5. **Minimal frontmatter** — only Vercel standard fields (`name`, `description`, `allowed-tools`)
+6. **Self-contained** — a skill can be dropped into any project and work without external docs
 
 ## Contributing
 
-See the [`skill-author`](skills/skill-author/) skill for the complete authoring standard.
+See the [`meta/skill-builder`](skills/meta/skill-builder/) skill for the complete authoring standard.
 
 In short:
-1. Write the skill following the authoring standard
-2. Run it at least five times against real workloads
-3. Open a PR — the benchmark results go in the PR body
+1. Write the skill following the skill-builder standard
+2. Place it in the correct namespace (`meta/`, `product/`, or `ops/`)
+3. Use only Vercel standard frontmatter: `name`, `description`, and optionally `allowed-tools`
+4. Run it at least five times against real workloads
+5. Open a PR — the benchmark results go in the PR body

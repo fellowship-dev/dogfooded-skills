@@ -1,8 +1,6 @@
 ---
 name: distill
 description: Post-mission audit and distillation — capture mode classifies a completed mission using an 8-code failure taxonomy and writes an audit JSON; analyze mode aggregates audit JSONs into a findings report and creates GitHub issues with recommendations.
-user-invocable: true
-argument-hint: "capture <report-path> [--session <id>] | analyze [--since YYYY-MM-DD] [--repo org/repo]"
 allowed-tools: Read, Write, Bash, Glob, Grep, Agent
 ---
 
@@ -74,7 +72,7 @@ fi
 
 ### Step 2: Resolve the JSONL session file
 
-Claude Code writes session transcripts to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
+The agent writes session transcripts to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
 
 The encoded path is the `cwd` with every `/` replaced by `-` and the leading `/` stripped:
 - `/Users/maxfindel/Projects/fellowship-dev/commander` → `-Users-maxfindel-Projects-fellowship-dev-commander`

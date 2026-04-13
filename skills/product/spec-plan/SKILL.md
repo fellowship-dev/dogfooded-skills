@@ -1,8 +1,6 @@
 ---
 name: spec-plan
 description: Interview the user relentlessly about a plan or design until reaching shared understanding — walk each branch of the decision tree, resolve dependencies one by one. Use when stress-testing a plan, getting grilled on a design, or before writing a PRD.
-user-invocable: true
-argument-hint: "[issue-number] [org/repo]"
 allowed-tools: Read, Bash, Grep, Glob
 ---
 
@@ -38,7 +36,7 @@ Read all comments too — treat existing questions and answers as already-resolv
 
 If no issue, read project context:
 ```bash
-cat CLAUDE.md
+cat project-instructions.md  # or equivalent project instructions file
 cat README.md
 ```
 

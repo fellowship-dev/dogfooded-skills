@@ -111,3 +111,19 @@ Do NOT produce a full section-by-section breakdown for idle teams — it adds no
 ## Report Location
 
 All reports go to `$(git rev-parse --show-toplevel)/reports/`. NEVER inside `crew/*/reports/` or any subdirectory.
+
+## Writing the Report File
+
+Once you have drafted all sections above, use `/write-report` to write the file:
+
+```bash
+/write-report --group rollcall --id {your-team-name} --type rollcall
+```
+
+This ensures:
+- Correct path (`reports/` from repo root, never `crew/*/`)
+- Correct timestamped filename per CONVENTIONS.md
+- Automatic Quest DB posting
+- Consistent naming across all teams
+
+Do NOT write the file manually using the Write tool — always use `/write-report`.

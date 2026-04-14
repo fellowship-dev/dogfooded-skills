@@ -49,6 +49,7 @@ Skills for CI, deployment, and evidence workflows.
 |-------|-------------|
 | [`ops/distill`](skills/ops/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy (capture), aggregates trends and creates GitHub issues (analyze) |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence — before/after, feature demos, interaction bugs |
+| [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 
 ## Namespace Convention
 

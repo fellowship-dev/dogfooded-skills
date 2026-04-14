@@ -72,13 +72,19 @@ Examples:
 
 ### Step 3: Write the file
 
-**For markdown reports** — use the Write tool:
+**For markdown reports** — use the Write tool if available, otherwise fall back to Bash:
 
 ```
 REPORT_PATH="${REPORT_DIR}/${TIMESTAMP}_${GROUP}_${ID}.md"
 ```
 
-Write the full report content to that path.
+Write the full report content to that path. If the Write tool is not in your `allowed-tools` (e.g., CEO/CTO roles), use Bash instead:
+
+```bash
+cat > "$REPORT_PATH" << 'REPORT_EOF'
+[report content here]
+REPORT_EOF
+```
 
 **For fan-out manifests** (`--manifest` flag):
 

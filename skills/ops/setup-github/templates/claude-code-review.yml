@@ -1,0 +1,73 @@
+# Claude Code Review — Stage 1 of the automated PR review pipeline
+# Triggered on PR open/reopen. Reviews the diff, posts findings, applies "reviewed" label.
+# The "reviewed" label triggers double-check (Stage 2) via event-rules.yml.
+#
+# Requirements: Install Claude GitHub App (https://github.com/apps/claude)
+# Secret needed: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY
+
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review PR with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request for code quality, correctness, and adherence to project standards.
+
+            **Steps:**
+            1. Read `CLAUDE.md` for project context and conventions
+            2. Review the PR diff: `gh pr diff ${{ github.event.pull_request.number }}`
+            3. Check PR description: `gh pr view ${{ github.event.pull_request.number }}`
+            4. Review changed files in context
+
+            **Review Checklist:**
+            - [ ] Code correctness and logic
+            - [ ] Type safety and best practices
+            - [ ] No hardcoded values that should be env vars
+            - [ ] Error handling for edge cases
+            - [ ] Security (no exposed secrets, proper auth, input validation)
+            - [ ] Tests: are new behaviors covered?
+            - [ ] Documentation: are .env.example and README affected?
+
+            **Output format:**
+            Post a review comment with:
+            1. **Summary** — What the PR does (1-2 sentences)
+            2. **Strengths** — What's done well
+            3. **Issues** — Problems found (critical vs suggestions)
+
+            Use `gh pr review` to submit the review (approve/request-changes/comment).
+
+            After posting the review, ensure the "reviewed" label exists and add it:
+            ```
+            gh label create "reviewed" --repo ${{ github.repository }} --color "3da46e" --description "CI/automated review complete" 2>/dev/null || true
+            gh pr edit ${{ github.event.pull_request.number }} --add-label "reviewed"
+            ```
+
+          claude_args: |
+            --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr comment:*),Bash(gh pr edit:*),Bash(gh label create:*),Bash(cat:*),Bash(find:*),Bash(grep:*)"

@@ -1,0 +1,53 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Auto-label and Triage Issue
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+
+            A new issue has been opened. Your task is to analyze and triage it by applying appropriate labels.
+
+            **Steps:**
+            1. Read the issue: `gh issue view ${{ github.event.issue.number }}`
+            2. Read `CLAUDE.md` for project context
+            3. Analyze the issue content and determine appropriate labels
+
+            **Available labels** (create if missing):
+            - `bug` — Something is broken
+            - `enhancement` — Improvement to existing feature
+            - `feature-request` — New feature
+            - `documentation` — Docs improvement
+            - `dependencies` — Dependency updates
+            - `question` — Needs clarification
+            - `good-first-issue` — Simple, good for newcomers
+
+            **Rules:**
+            - Apply 1-3 labels max
+            - Always apply at least one type label (bug/enhancement/feature-request/documentation/question)
+            - Post a brief comment acknowledging the issue and confirming labels
+
+            Use `gh issue edit` to add labels and `gh issue comment` to acknowledge.
+
+          claude_args: |
+            --allowed-tools "Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label create:*),Bash(gh label list:*),Bash(cat:*)"

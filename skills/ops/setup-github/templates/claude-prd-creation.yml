@@ -1,0 +1,92 @@
+name: Claude PRD Creation
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  prd-creation:
+    # Trigger on feature-request/enhancement label, or @claude comment (skip if ready-to-work)
+    if: |
+      (github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        (github.event.label.name == 'feature-request' || github.event.label.name == 'enhancement') &&
+        !contains(github.event.issue.labels.*.name, 'question') &&
+        !contains(github.event.issue.labels.*.name, 'ready-to-work')
+      ) ||
+      (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        !contains(github.event.issue.labels.*.name, 'ready-to-work'))
+
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-prd-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Create PRD with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+
+            A feature request or enhancement has been submitted. Create a Product Requirements Document (PRD) through collaborative discussion.
+
+            **Steps:**
+            1. Read the issue: `gh issue view ${{ github.event.issue.number }}`
+            2. Read ALL previous comments (including your own)
+            3. Read `CLAUDE.md` for project context
+            4. Identify missing information needed for a complete PRD
+            5. Ask clarifying questions OR post the PRD
+
+            **If information is missing:**
+            - Ask all questions in one comment using Q1, Q2, Q3 format
+            - Offer options A, B, C where possible
+            - Add "question" label
+            - End with a reminder to tag you to continue
+
+            **If ready to write PRD:**
+            - Post using template below
+            - Add "ready-to-work" label, remove "question" if present
+
+            **PRD Template:**
+            ```markdown
+            ## Problem Statement
+            [2-3 sentences: What problem does this solve? Who is affected?]
+
+            ## User Stories
+            - As a [user type], I want [goal] so that [benefit]
+
+            ## Success Metrics
+            - [How we measure success - 2-3 metrics max]
+
+            ## Scope
+            **In Scope:** [Bullet list]
+            **Out of Scope:** [Bullet list]
+
+            ## Technical Notes
+            - [Architecture considerations]
+
+            ## Open Questions
+            [Unresolved questions for planning phase]
+            ```
+
+            **Guidelines:**
+            - Be conversational. Batch questions for efficiency.
+            - Mark uncertainties as "Open Questions" rather than assuming
+
+          claude_args: |
+            --allowed-tools "Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label list:*),Bash(gh label create:*),Bash(cat:*),Bash(find:*),Bash(grep:*)"

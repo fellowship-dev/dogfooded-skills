@@ -14,7 +14,7 @@ Infra health audit. Investigate → Flag → Create issues. **Never modify code,
 npx skills add fellowship-dev/dogfooded-skills/ops/maintenance
 ```
 
-> **Architecture/doc checks have moved to `/entropy`.** This skill covers infrastructure only:
+> **Architecture/doc checks have moved to `/entropy-check`.** This skill covers infrastructure only:
 > processes, secrets, labels, branches, dependencies, system health, and memory hygiene.
 
 ## When to Use
@@ -243,7 +243,7 @@ Save report to `reports/maintenance/YYYY-MM-DD.md`:
 - [x] Booster-pack sync
 - [x] Open issues review
 
-> Note: Architecture/doc drift checks have moved to /entropy (separate skill)
+> Note: Architecture/doc drift checks have moved to /entropy-check (separate skill)
 
 ## Findings
 
@@ -277,8 +277,8 @@ Full report: reports/maintenance/YYYY-MM-DD.md
 
 ## What Was Removed from This Skill
 
-**Section 11 (Imported lib drift — speckit and toolkit)** was extracted to `/entropy`.
+**Section 11 (Imported lib drift — speckit and toolkit)** was extracted to `/entropy-check`.
 
-**Why:** Checking whether speckit commands match the source of truth is an architecture/doc check — it measures whether the tooling knowledge layer is current. Entropy owns all doc/architecture freshness signals. This skill owns infra only.
+**Why:** Checking whether speckit commands match the source of truth is an architecture/doc check — it measures whether the tooling knowledge layer is current. Entropy-check owns all doc/architecture freshness signals. This skill owns infra only.
 
-To check speckit drift: run `/entropy` against the target repo.
+To check speckit drift: run `/entropy-check` against the target repo.

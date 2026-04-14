@@ -141,6 +141,7 @@ signals = {
     "tool_counts": {},
     "error_tool_results": [],
     "workers_spawned": 0,
+    "workers_spawned_sessions": [],
     "skills_loaded": [],
     "verification_calls": [],
     "total_input_tokens": 0,
@@ -225,6 +226,12 @@ for line in lines:
             elif tool == "Bash":
                 cmd = inp.get("command", "")
                 signals["bash_calls"].append(cmd[:300])
+                # Detect claude -p worker spawns (new pattern; Agent tool is the old pattern)
+                if re.search(r'\bclaude\s+(-p|--print)\b', cmd):
+                    signals["workers_spawned"] += 1
+                    sid = re.search(r'--session-id\s+(\S+)', cmd)
+                    if sid:
+                        signals["workers_spawned_sessions"].append(sid.group(1))
                 if any(v in cmd for v in ["curl ", "gh pr view", "gh pr merge", "gh pr list", "gh run"]):
                     signals["verification_calls"].append(cmd[:200])
                 # Git workflow signals
@@ -305,6 +312,7 @@ merged = {
     "tool_counts": dict(sum((collections.Counter(c.get("tool_counts", {})) for c in chunks), collections.Counter())),
     "error_tool_results": sum((c.get("error_tool_results", []) for c in chunks), []),
     "workers_spawned": sum(c.get("workers_spawned", 0) for c in chunks),
+    "workers_spawned_sessions": sum((c.get("workers_spawned_sessions", []) for c in chunks), []),
     "skills_loaded": list(set(sum((c.get("skills_loaded", []) for c in chunks), []))),
     "verification_calls": sum((c.get("verification_calls", []) for c in chunks), []),
     "total_input_tokens": sum(c.get("total_input_tokens", 0) for c in chunks),
@@ -362,7 +370,7 @@ Write and run the classifier:
 
 ```bash
 cat > /tmp/distill_classify.py << 'PYEOF'
-import json, sys
+import json, re, sys
 
 signals = json.loads(sys.argv[1])
 report_text = open(sys.argv[2]).read().lower()
@@ -420,8 +428,8 @@ if len(error_results) >= 2:
 
 # UA: User Model Absence
 # Signal: deploy/publish task with no HTTP 200 check
-deploy_keywords = ["deploy", "publish", "vercel", "heroku", "production", "live"]
-is_deploy_task = any(kw in original_prompt for kw in deploy_keywords)
+deploy_keywords = ["deploy", "publish", "vercel", "heroku", "production", "live", "release"]
+is_deploy_task = any(re.search(r'\b' + kw + r'\b', original_prompt) for kw in deploy_keywords)
 if is_deploy_task and "curl" not in bash_all:
     incidents.append({
         "code": "UA",

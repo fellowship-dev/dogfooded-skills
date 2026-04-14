@@ -19,7 +19,7 @@ npx skills add fellowship-dev/dogfooded-skills --full-depth --skill '*' -y
 Install specific skills by name:
 
 ```bash
-npx skills add fellowship-dev/dogfooded-skills --full-depth --skill 'entropy' --skill 'hookshot' -y
+npx skills add fellowship-dev/dogfooded-skills --full-depth --skill 'entropy-check' --skill 'hookshot' -y
 ```
 
 > **Note:** `--full-depth` is required because skills are organized in namespace subdirectories (`ops/`, `product/`, `meta/`). Without it, only top-level skills are discovered.
@@ -51,7 +51,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | Skill | Description |
 |-------|-------------|
 | [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
-| [`ops/entropy`](skills/ops/entropy/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
+| [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
 | [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
 | [`ops/maintenance`](skills/ops/maintenance/) | Infra-only health audit — LaunchAgents, cron logs, system health, secrets scan |
 | [`ops/cto-review`](skills/ops/cto-review/) | Strategic CTO checklist for PR review — architecture impact, quality rubric adherence |
@@ -78,8 +78,8 @@ Each skill lives at `skills/<namespace>/<skill-name>/SKILL.md`.
 ## Install Gotchas
 
 - **`--full-depth` is required** for bulk install (`--skill` flag). Without it, only top-level skills are discovered — namespaced skills under `ops/`, `product/`, `meta/` are silently skipped.
-- **`--skill` must be repeated per skill**, not comma-separated: `--skill 'entropy' --skill 'hookshot'` (not `--skill 'entropy,hookshot'`).
-- **Subpath syntax** works for single skills but needs the full path including the `skills/` prefix: `fellowship-dev/dogfooded-skills/skills/ops/entropy`.
+- **`--skill` must be repeated per skill**, not comma-separated: `--skill 'entropy-check' --skill 'hookshot'` (not `--skill 'entropy-check,hookshot'`).
+- **Subpath syntax** works for single skills but needs the full path including the `skills/` prefix: `fellowship-dev/dogfooded-skills/skills/ops/entropy-check`.
 - **`--skill '*'`** installs all discovered skills.
 
 ## Design Principles

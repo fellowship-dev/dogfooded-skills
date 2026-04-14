@@ -34,7 +34,7 @@ This skill creates that map from what already exists in the repo.
 | File | Purpose |
 |------|---------|
 | `ARCHITECTURE.md` | Major architectural decisions and critical patterns |
-| `QUALITY_SCORE.md` | Domain quality grades — updated by the entropy skill |
+| `QUALITY_SCORE.md` | Domain quality grades — updated by the entropy-check skill |
 | `docs/code-structure.md` | Real discovered patterns ("this is how X works") |
 | `docs/code-guidelines.md` | Golden principles, enforced mechanically by hookshot |
 | `flowchad/` | Stub flow definitions for critical paths |
@@ -268,7 +268,7 @@ Create or update `$REPO_ROOT/docs/code-guidelines.md`:
 ```markdown
 # Code Guidelines — {REPO_NAME}
 
-> These are enforced by hookshot hooks and checked by entropy scans.
+> These are enforced by hookshot hooks and checked by entropy-check scans.
 > Adding a new rule here? Run `/hookshot` to generate enforcement hooks.
 
 ## Golden Rules
@@ -318,7 +318,7 @@ Create `$REPO_ROOT/QUALITY_SCORE.md`:
 ```markdown
 # Quality Score — {REPO_NAME}
 
-> Maintained by the entropy skill. Do not edit manually.
+> Maintained by the entropy-check skill. Do not edit manually.
 > Grade scale: A=all signals green, B=1 signal missing, C=2 missing, D=3+, F=no docs
 
 Last audit: {DATE} (initial scaffold by setup-harness)
@@ -415,7 +415,19 @@ This repo has a knowledge layer for agents. Read before modifying:
 
 Keep the total CLAUDE.md under 150 lines. If it's longer, move content to the appropriate dedicated doc.
 
-### 9. Summary Report
+### 9. Run Hookshot
+
+As the final step, run hookshot to generate enforcement hooks from the docs you just created:
+
+Follow the full hookshot SKILL.md instructions (`.claude/skills/hookshot/SKILL.md`). This generates:
+- `.claude/doc-coverage.json` — coverage map
+- `scripts/check-docs.sh` (or `.claude/check-docs.sh`) — hook script
+- `.claude/settings.json` hooks — PreToolUse wiring
+- `docs/hooks.md` — human-readable hook documentation
+
+If hookshot is not installed, skip this step and note it in the summary report as a manual follow-up.
+
+### 10. Summary Report
 
 Output:
 
@@ -435,6 +447,11 @@ Output:
 - ✅ flowchad/{N} flow stubs
 - ✅ .claude/CLAUDE.md updated (table of contents)
 
+### Hookshot
+- {✅ Hookshot ran successfully — hooks generated / ⚠️ Hookshot not installed — run manually}
+- .claude/doc-coverage.json: {N} entries
+- docs/hooks.md: {generated / skipped}
+
 ### Grades (initial)
 {Grade table from QUALITY_SCORE.md}
 
@@ -442,6 +459,5 @@ Output:
 - [ ] Review ARCHITECTURE.md — add architectural decisions the scan missed
 - [ ] Review docs/code-structure.md — verify "Don't Repeat" entries are current
 - [ ] Complete flowchad/ stubs with actual edge cases
-- [ ] Run `/hookshot` to generate enforcement hooks from docs/
-- [ ] Run `/entropy` to re-grade after manual review
+- [ ] Run `/entropy-check` to re-grade after manual review
 ```

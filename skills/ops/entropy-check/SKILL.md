@@ -1,5 +1,5 @@
 ---
-name: entropy
+name: entropy-check
 description: Sensor — checks doc freshness and computes domain quality grades. Never fixes. Detects staleness, missing coverage, and FlowChad gaps. Updates QUALITY_SCORE.md.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -11,7 +11,7 @@ Sensor. Detect, grade, report. **Never fix.**
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/ops/entropy
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/entropy-check
 ```
 
 ## When to Use
@@ -31,9 +31,10 @@ Entropy is a read-only sensor. It computes domain quality grades from mechanical
 | Staleness delta | Days since last code commit vs. last doc update | >30d = stale |
 | Open issues | Issues tagged to domain in GitHub | >3 open = signal |
 | Test coverage | From coverage report if available | <60% = signal |
+| Hookshot coverage | Is doc-coverage.json current vs docs? | Staleness |
 
 **Grade scale:**
-- **A** — All 5 signals green
+- **A** — All 6 signals green
 - **B** — 1 signal missing or yellow
 - **C** — 2 signals missing
 - **D** — 3+ signals missing
@@ -131,6 +132,18 @@ cat $REPO_ROOT/coverage/.last_run.json 2>/dev/null | jq '.result.covered_percent
 
 If no coverage report is available → skip this signal (treat as neutral, not ❌).
 Score: ✅ ≥80% / ⚠️ 60-79% / ❌ <60% (only when coverage data is available)
+
+#### Signal 6: Hookshot Coverage Staleness
+
+```bash
+# Compare doc-coverage.json age vs docs/code-structure.md age
+COVERAGE_DATE=$(git -C $REPO_ROOT log -1 --format="%ci" -- .claude/doc-coverage.json 2>/dev/null)
+DOCS_DATE=$(git -C $REPO_ROOT log -1 --format="%ci" -- docs/code-structure.md 2>/dev/null)
+```
+
+If docs/code-structure.md was updated more recently than .claude/doc-coverage.json → hooks are stale.
+If .claude/doc-coverage.json doesn't exist → no hookshot coverage.
+Score: ✅ coverage fresh / ⚠️ stale (docs newer than hooks) / ❌ no coverage map
 
 #### Compute Grade
 

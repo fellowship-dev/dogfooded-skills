@@ -11,7 +11,7 @@ Sensor. Detect, grade, report. **Never fix.**
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/skills/ops/entropy
+npx skills add fellowship-dev/dogfooded-skills/ops/entropy
 ```
 
 ## When to Use
@@ -86,7 +86,7 @@ Score: ✅ covered / ❌ missing
 
 ```bash
 # Is there a flowchad flow for this domain's critical path?
-ls $REPO_ROOT/flowchad/ 2>/dev/null | grep -i "{domain_slug}" && echo "COVERED" || echo "MISSING"
+ls $REPO_ROOT/.flowchad/flows/ 2>/dev/null | grep -i "{domain_slug}" && echo "COVERED" || echo "MISSING"
 ```
 
 Score: ✅ has flow / ❌ no flow

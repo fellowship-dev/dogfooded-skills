@@ -86,7 +86,7 @@ Score: ✅ covered / ❌ missing
 
 ```bash
 # Is there a flowchad flow for this domain's critical path?
-ls $REPO_ROOT/flowchad/ 2>/dev/null | grep -i "{domain_slug}" && echo "COVERED" || echo "MISSING"
+ls $REPO_ROOT/.flowchad/flows/ 2>/dev/null | grep -i "{domain_slug}" && echo "COVERED" || echo "MISSING"
 ```
 
 Score: ✅ has flow / ❌ no flow

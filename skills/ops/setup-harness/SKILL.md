@@ -348,23 +348,32 @@ Each domain is graded on:
 
 ### 7. Install FlowChad and Generate Flows
 
-**Do NOT create flow files freehand.** Use FlowChad's official installer and tools.
+**Do NOT create flow files freehand.** Use FlowChad's skills and tools.
 
-#### 7a. Install FlowChad (if not already installed)
+FlowChad has two layers:
+- **Skills (tooling):** Installed via `npx skills add` into `.agents/skills/` + `.claude/skills/`. These are the commands (`/flow-add`, `/flow-walk`, etc.).
+- **Project data:** `.flowchad/config.yml` and `.flowchad/flows/*.yml`. These are shared knowledge and MUST be tracked in git.
+
+#### 7a. Install FlowChad Skills
 
 ```bash
-# Check if already installed
-if [ ! -d "$REPO_ROOT/.flowchad" ]; then
-  cd $REPO_ROOT
-  curl -fsSL https://raw.githubusercontent.com/Fellowship-dev/flowchad/main/install.sh | bash
-fi
+cd $REPO_ROOT
+
+# Install all FlowChad skills (flow-add, flow-walk, flow-report, etc.)
+npx skills add Fellowship-dev/flowchad --skill '*' -y
+
+# Create the project data directory
+mkdir -p .flowchad/flows
 ```
 
-This creates `.flowchad/` with config.yml, flows/, templates/, knowledge/, and skills/.
+This installs skills into `.agents/skills/` with symlinks to `.claude/skills/`.
+The `.agents/` directory and `skills-lock.json` should be committed to git.
+
+**Do NOT use `curl | bash` or `git clone` — that clones the entire repo into `.flowchad/` which is wrong.**
 
 #### 7b. Configure .flowchad/config.yml
 
-Update the config with discovered project info:
+Create the project config (this is project data, tracked in git):
 
 ```yaml
 name: {REPO_NAME}
@@ -374,8 +383,11 @@ type: {saas|website}          # Infer from project type
 timing:
   slow: 3
   critical: 10
+```
 
-# Add credentials if test env vars found in .env.example or .env.test
+Only add credentials if test env vars are found in `.env.example` or `.env.test`:
+
+```yaml
 credentials:
   email: $TEST_EMAIL
   password: $TEST_PASSWORD
@@ -383,21 +395,19 @@ credentials:
 
 #### 7c. Generate Flows Using /flow-add
 
-For each critical path discovered in the Pattern Discovery phase, use FlowChad's `/flow-add` command
-(in `.flowchad/skills/flow-add/`) to generate properly formatted flows. The skill scans the codebase
-for real selectors — never guess selectors.
+For each critical path discovered in the Pattern Discovery phase, use the `/flow-add` skill
+(now available via the installed FlowChad skills) to generate properly formatted flows.
+The skill scans the codebase for real selectors — never guess selectors.
 
-If `/flow-add` cannot be run interactively (e.g., during automated setup), create flows using
-FlowChad's actual YAML schema. Reference `.flowchad/knowledge/flow-schema.md` for the canonical format:
+If `/flow-add` cannot be run interactively (e.g., during automated setup), create flow YAML
+manually. Read the installed skill at `.agents/skills/flow-add/SKILL.md` for the canonical schema:
 
 ```yaml
-# Required fields
 name: {Descriptive sentence — actor + action + outcome}
 url: /{starting-path}
 tags: [{domain}, {criticality}]
 priority: P0  # P0=critical, P1=important, P2=nice-to-have
 
-# Optional context (preconditions)
 context:
   auth: logged_out
   user: new_account
@@ -418,7 +428,7 @@ steps:
     timing: 3s
 ```
 
-**Flow files go in `.flowchad/flows/{kebab-case-name}.yml`** — NOT in a `flowchad/` directory at repo root.
+**Flow files go in `.flowchad/flows/{kebab-case-name}.yml`** and are tracked in git (shared knowledge).
 
 Mark any guessed selectors with `# VERIFY: selector not found in code`.
 

@@ -57,7 +57,7 @@ Read all documentation files and extract coverage mappings:
 cat $REPO_ROOT/docs/code-structure.md 2>/dev/null
 cat $REPO_ROOT/docs/code-guidelines.md 2>/dev/null
 cat $REPO_ROOT/ARCHITECTURE.md 2>/dev/null
-ls $REPO_ROOT/flowchad/ 2>/dev/null
+ls $REPO_ROOT/.flowchad/flows/ 2>/dev/null
 ```
 
 For each domain section in `docs/code-structure.md`, extract:
@@ -66,7 +66,7 @@ For each domain section in `docs/code-structure.md`, extract:
 - **Key files** (from the Entry Points table)
 - **Critical patterns** ("Don't Repeat" section — these are the highest priority)
 
-For each FlowChad flow in `flowchad/`:
+For each FlowChad flow in `.flowchad/flows/`:
 - **Flow name**
 - **Domain**
 - **Entry point file** (from the flow definition)
@@ -142,9 +142,15 @@ FOUND_REMINDER=""
 FOUND_CRITICALITY=""
 
 while IFS=$'\t' read -r GLOB REMINDER CRITICALITY; do
-  # Use bash glob matching
   # Normalize the file path
   REL_PATH="${FILE_PATH#$REPO_ROOT/}"
+  
+  # Normalize for bash [[ ]] pattern matching:
+  # 1. **/ → * (** has no special meaning; * already matches any char incl /)
+  # 2. Escape [ ] so Next.js routes like [locale] are literal, not char classes
+  GLOB="${GLOB//\*\*\//*}"
+  GLOB="${GLOB//\[/\\[}"
+  GLOB="${GLOB//\]/\\]}"
   
   if [[ "$REL_PATH" == $GLOB ]]; then
     FOUND_REMINDER="$REMINDER"

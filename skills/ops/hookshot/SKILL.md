@@ -201,7 +201,7 @@ The hook to add:
         "hooks": [
           {
             "type": "command",
-            "command": "bash {REPO_ROOT}/.claude/check-docs.sh \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+            "command": "bash {REPO_ROOT}/scripts/check-docs.sh \"$(echo $CLAUDE_TOOL_INPUT | jq -r '.file_path // empty')\""
           }
         ]
       }

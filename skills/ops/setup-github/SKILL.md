@@ -11,7 +11,7 @@ Set up a complete GitHub environment for a repository: project board, labels, an
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/ops/setup-github
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/setup-github
 ```
 
 **IMPORTANT**: Always verify the Claude GitHub App is installed (https://github.com/apps/claude) BEFORE installing Claude-powered workflows. Without the app, workflows will fail with authentication errors.

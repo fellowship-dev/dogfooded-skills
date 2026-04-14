@@ -11,7 +11,7 @@ Sensor. Detect, grade, report. **Never fix.**
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/ops/entropy
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/entropy
 ```
 
 ## When to Use

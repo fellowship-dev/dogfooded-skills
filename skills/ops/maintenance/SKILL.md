@@ -11,7 +11,7 @@ Infra health audit. Investigate → Flag → Create issues. **Never modify code,
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/ops/maintenance
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/maintenance
 ```
 
 > **Architecture/doc checks have moved to `/entropy`.** This skill covers infrastructure only:

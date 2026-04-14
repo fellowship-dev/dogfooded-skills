@@ -11,7 +11,7 @@ From docs to enforcement hooks. Reads what you've documented. Generates the hook
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/ops/hookshot
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/hookshot
 ```
 
 ## When to Use

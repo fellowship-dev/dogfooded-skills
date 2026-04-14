@@ -11,7 +11,7 @@ Scaffold the knowledge layer for any repository. Scan, infer, populate.
 
 **Install via npx:**
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/ops/setup-harness
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/setup-harness
 ```
 
 ## When to Use

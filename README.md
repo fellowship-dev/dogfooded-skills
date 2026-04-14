@@ -10,16 +10,19 @@ Skills are not prompts. They are **runbooks**: structured, concrete instructions
 
 ## Install
 
-Install any skill directly into your project using the `npx skills` subpath syntax:
+Install all skills:
 
 ```bash
-npx skills add fellowship-dev/dogfooded-skills/meta/skill-builder
-npx skills add fellowship-dev/dogfooded-skills/meta/migrate-skill
-npx skills add fellowship-dev/dogfooded-skills/product/spec-plan
-npx skills add fellowship-dev/dogfooded-skills/product/build-prd
-npx skills add fellowship-dev/dogfooded-skills/ops/distill
-npx skills add fellowship-dev/dogfooded-skills/ops/visual-evidence
+npx skills add fellowship-dev/dogfooded-skills --full-depth --skill '*' -y
 ```
+
+Install specific skills by name:
+
+```bash
+npx skills add fellowship-dev/dogfooded-skills --full-depth --skill 'entropy' --skill 'hookshot' -y
+```
+
+> **Note:** `--full-depth` is required because skills are organized in namespace subdirectories (`ops/`, `product/`, `meta/`). Without it, only top-level skills are discovered.
 
 ## Skill Catalog
 
@@ -43,13 +46,29 @@ Skills for product development workflows.
 
 ### ops
 
-Skills for CI, deployment, and evidence workflows.
+Skills for CI, deployment, operations, and evidence workflows.
 
 | Skill | Description |
 |-------|-------------|
-| [`ops/distill`](skills/ops/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy (capture), aggregates trends and creates GitHub issues (analyze) |
-| [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence — before/after, feature demos, interaction bugs |
+| [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
+| [`ops/entropy`](skills/ops/entropy/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
+| [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
+| [`ops/maintenance`](skills/ops/maintenance/) | Infra-only health audit — LaunchAgents, cron logs, system health, secrets scan |
+| [`ops/cto-review`](skills/ops/cto-review/) | Strategic CTO checklist for PR review — architecture impact, quality rubric adherence |
+| [`ops/double-check`](skills/ops/double-check/) | Second-pass PR double-check — fix must-fix issues, run tests, post curated review |
+| [`ops/distill`](skills/ops/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy |
+| [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
+| [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
+
+### standalone
+
+Top-level skills (no namespace).
+
+| Skill | Description |
+|-------|-------------|
+| [`daily-report`](skills/daily-report/) | Standard format for daily/rollcall team reports |
+| [`write-report`](skills/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
 
 ## Namespace Convention
 

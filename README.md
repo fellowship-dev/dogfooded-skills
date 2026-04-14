@@ -60,15 +60,8 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
-
-### standalone
-
-Top-level skills (no namespace).
-
-| Skill | Description |
-|-------|-------------|
-| [`daily-report`](skills/daily-report/) | Standard format for daily/rollcall team reports |
-| [`write-report`](skills/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
+| [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
+| [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
 
 ## Namespace Convention
 
@@ -81,6 +74,13 @@ Skills are organized into three namespaces:
 | `ops/` | Skills for operations: CI, auditing, evidence capture |
 
 Each skill lives at `skills/<namespace>/<skill-name>/SKILL.md`.
+
+## Install Gotchas
+
+- **`--full-depth` is required** for bulk install (`--skill` flag). Without it, only top-level skills are discovered — namespaced skills under `ops/`, `product/`, `meta/` are silently skipped.
+- **`--skill` must be repeated per skill**, not comma-separated: `--skill 'entropy' --skill 'hookshot'` (not `--skill 'entropy,hookshot'`).
+- **Subpath syntax** works for single skills but needs the full path including the `skills/` prefix: `fellowship-dev/dogfooded-skills/skills/ops/entropy`.
+- **`--skill '*'`** installs all discovered skills.
 
 ## Design Principles
 

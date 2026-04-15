@@ -219,13 +219,32 @@ elif [[ "$VERDICT" == "hold" || "$VERDICT" == "sendback" ]]; then
 fi
 ```
 
-### Step 5: Merge (if verdict is merge)
+### Step 5: Merge or Label (respects merge_strategy)
 
-Only merge if:
-1. Verdict is "merge immediately"
-2. All required labels are present (`reviewed`, `double-checked`)
-3. CI checks are passing
+Check `merge_strategy` from crew.yml for the team that owns this repo:
 
+```bash
+# Read merge_strategy from crew.yml
+CREW_FILE="/Users/maxfindel/Projects/fellowship-dev/commander/crew.yml"
+MERGE_STRATEGY=$(python3 -c "
+import yaml
+with open('$CREW_FILE') as f:
+    data = yaml.safe_load(f)
+for name, config in data.get('crew', {}).items():
+    for repo in config.get('repos', []):
+        if repo == '$REPO':
+            print(config.get('merge_strategy', 'auto'))
+            break
+" 2>/dev/null)
+```
+
+**If `label-only`:** apply `approved` label only — Max is the merge gatekeeper:
+```bash
+gh pr edit $PR --repo $REPO --add-label "approved"
+# Do NOT merge. Max will merge after reviewing the nightly recap.
+```
+
+**If `auto` (or unset):** merge directly after verifying CI and labels:
 ```bash
 # Verify CI is green before merging
 gh pr checks $PR --repo $REPO
@@ -306,7 +325,7 @@ print(json.dumps({
 
 | Verdict | Emoji | Label | Merge? |
 |---------|-------|-------|--------|
-| Merge immediately | ✅ | `approved` | Yes |
+| Merge immediately | ✅ | `approved` | Only if `merge_strategy: auto`. If `label-only`: label only, Max merges. |
 | Hold for action items | ⏸️ | `needs-work` | No |
 | Send back | 🔄 | `needs-work` | No |
 

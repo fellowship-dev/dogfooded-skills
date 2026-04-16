@@ -1,0 +1,191 @@
+# GitHub Actions Workflow for Fly.io Deployment
+# Place this file in: .github/workflows/deploy-flyio.yml
+
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches:
+      - main  # Deploy on push to main branch
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+
+    # Optional: Use GitHub Environments for deployment approvals
+    # environment:
+    #   name: production
+    #   url: https://your-app.fly.dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Fly.io CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Optional: Decrypt environment variables if using encryption
+      - name: Decrypt environment variables
+        if: ${{ hashFiles('.env.enc.prod') != '' }}
+        run: |
+          openssl enc -aes-256-cbc -pbkdf2 -salt -d \
+            -in .env.enc.prod -out .env -k ${{ secrets.ENV_PASS }}
+
+      # Optional: Run tests before deployment
+      # - name: Run tests
+      #   run: |
+      #     npm install
+      #     npm test
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # Optional: Health check after deployment
+      - name: Health check
+        run: |
+          sleep 30  # Wait for deployment to stabilize
+          curl --fail https://your-app.fly.dev/health || exit 1
+
+      # Optional: Notify on deployment status
+      # - name: Notify Slack on success
+      #   if: success()
+      #   uses: slackapi/slack-github-action@v1
+      #   with:
+      #     webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #     payload: |
+      #       {
+      #         "text": "Deployment to Fly.io successful! 🚀"
+      #       }
+
+      # - name: Notify Slack on failure
+      #   if: failure()
+      #   uses: slackapi/slack-github-action@v1
+      #   with:
+      #     webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #     payload: |
+      #       {
+      #         "text": "Deployment to Fly.io failed! ❌"
+      #       }
+
+---
+
+# Advanced Workflow with Multiple Environments
+# Uncomment and customize as needed
+
+# name: Deploy to Fly.io (Multi-Environment)
+#
+# on:
+#   push:
+#     branches:
+#       - main
+#       - develop
+#   pull_request:
+#     branches:
+#       - main
+#
+# jobs:
+#   # Deploy to staging on develop branch
+#   deploy-staging:
+#     if: github.ref == 'refs/heads/develop'
+#     runs-on: ubuntu-latest
+#     environment:
+#       name: staging
+#       url: https://your-app-staging.fly.dev
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: superfly/flyctl-actions/setup-flyctl@master
+#       - run: flyctl deploy --remote-only --app your-app-staging
+#         env:
+#           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
+#
+#   # Deploy to production on main branch
+#   deploy-production:
+#     if: github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     environment:
+#       name: production
+#       url: https://your-app.fly.dev
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: superfly/flyctl-actions/setup-flyctl@master
+#       - run: flyctl deploy --remote-only --app your-app
+#         env:
+#           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+#
+#   # Run smoke tests on PR
+#   test:
+#     if: github.event_name == 'pull_request'
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+#       - run: npm ci
+#       - run: npm test
+#       - run: npm run lint
+
+---
+
+# Required GitHub Secrets
+#
+# Add these secrets to your GitHub repository:
+# Settings > Secrets and variables > Actions > New repository secret
+#
+# 1. FLY_API_TOKEN
+#    - Generate: flyctl auth token
+#    - Description: Fly.io API token for deployments
+#
+# 2. ENV_PASS (if using encrypted environment files)
+#    - Description: Password for decrypting .env files
+#
+# 3. SLACK_WEBHOOK_URL (optional, for notifications)
+#    - Description: Slack webhook URL for deployment notifications
+#
+# For multiple environments, create separate tokens:
+# - FLY_API_TOKEN_STAGING
+# - FLY_API_TOKEN_PRODUCTION
+
+---
+
+# Deployment Workflow Notes
+#
+# 1. Remote-only builds:
+#    - Uses --remote-only flag to build on Fly.io servers
+#    - Faster for large applications
+#    - Reduces GitHub Actions minutes usage
+#
+# 2. Health checks:
+#    - Adjust sleep duration based on your app's startup time
+#    - Update health check URL to match your endpoint
+#    - Consider more sophisticated health check logic
+#
+# 3. Environment variables:
+#    - Store production .env as .env.enc.prod in repository
+#    - Decrypt during deployment using ENV_PASS secret
+#    - Never commit unencrypted .env files
+#
+# 4. Testing before deployment:
+#    - Uncomment test steps to run CI tests
+#    - Consider adding integration tests
+#    - Use GitHub Environments for approval gates
+#
+# 5. Notifications:
+#    - Uncomment Slack notification steps
+#    - Configure webhook URL in GitHub secrets
+#    - Customize message format as needed
+#
+# 6. Multiple environments:
+#    - Use separate Fly.io apps for staging/production
+#    - Configure different secrets for each environment
+#    - Use GitHub Environments for approval workflows
+#
+# 7. Rollback strategy:
+#    - Keep previous deployment artifacts
+#    - Document rollback procedures
+#    - Consider automated rollback on failed health checks

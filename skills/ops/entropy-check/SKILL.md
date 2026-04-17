@@ -211,7 +211,7 @@ GH_TOKEN=$GH_TOKEN gh api repos/fellowship-dev/spec-kit/contents/templates/comma
   --jq '.[].name' 2>/dev/null
 
 # For each active repo with speckit installed:
-for repo in Lexgo-cl/rails-backend fellowship-dev/booster-pack fellowship-dev/farmesa \
+for repo in Lexgo-cl/rails-backend fellowship-dev/booster-pack fellowship-dev/farmesa-v2 \
             fellowship-dev/mtg-lotr fellowship-dev/inbox-angel fellowship-dev/inbox-angel-worker; do
   echo "=== $repo ==="
   for cmd in specify plan tasks implement analyze checklist clarify; do

@@ -17,18 +17,63 @@ Standard report format for Pylot crew teams. Used in morning rollcall dispatch j
 
 ## Standard Sections
 
-### Section 0: Production Health (MANDATORY)
+### Section 0: Production Health (MANDATORY — P0/P1 verification required)
 
 One line per repo. Must appear FIRST — production issues are never buried below issues or PRs.
 
 Format:
 ```
 - org/repo — 🟢 green: up, no incidents
-- org/repo — 🔴 red: 500 errors on /api/products (issue #84, since 2026-04-11)
+- org/repo — 🔴 red: 500 errors on /api/products (issue #84, since 2026-04-11) [verified: curl → 503]
 - org/repo — 🟡 yellow: degraded response times, investigating
+- org/repo — ⚠️ UNVERIFIED: repo#84 claims 500 — production returns 200, likely false positive
 ```
 
 If no active incidents: `All repos: 🟢 green`
+
+#### P0/P1 Verification Protocol
+
+**Any issue claiming P0/P1 severity OR containing keywords `500`, `down`, `broken`, `production` in the title or body MUST be verified before being promoted to the briefing.** Unverified P0s waste Max's desk time — they are more harmful than missing a real incident.
+
+**Decision tree:**
+
+```
+Issue claims P0/P1 or has keywords (500, down, broken, production)?
+├── YES → Extract production URL from body (https:// that is NOT a GitHub URL)
+│   ├── URL found → run liveness check:
+│   │   STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$PROD_URL")
+│   │   ├── 5xx or timeout → CONFIRMED outage
+│   │   │   → 🔴 P0: org/repo — [title] (issue #N, since DATE) [verified: curl → $STATUS]
+│   │   └── 200 → UNVERIFIED — production is up, claim is questionable
+│   │       → ⚠️ UNVERIFIED: org/repo#N claims [keyword] — production returns 200, likely false positive
+│   └── No production URL → check issue body for evidence:
+│       ├── Has evidence (curl output, screenshot, error log, Sentry/Bugsnag link)
+│       │   → 🟡 NEEDS REVIEW: org/repo#N — [title] — has evidence, cannot auto-verify
+│       └── No evidence → comment on the issue asking for evidence (see template below)
+│           → ⚠️ UNVERIFIED: org/repo#N claims [keyword] — no production URL or evidence; asked filer
+└── NO → Standard reporting, no verification needed
+```
+
+**Output formats by scenario:**
+
+| Scenario | Format |
+|----------|--------|
+| Verified outage (curl 5xx) | `🔴 P0: org/repo — [title] [verified: curl → 503]` |
+| Unverified (curl 200) | `⚠️ UNVERIFIED: org/repo#N claims [keyword] — production returns 200, likely false positive` |
+| Has evidence, no URL | `🟡 NEEDS REVIEW: org/repo#N — [title] — has evidence, cannot auto-verify` |
+| No URL, no evidence | `⚠️ UNVERIFIED: org/repo#N claims [keyword] — no production URL or evidence; asked filer` |
+
+**Ask-filer comment template** (post when no URL and no evidence found):
+
+```bash
+gh issue comment $ISSUE_NUMBER --repo $ORG/$REPO --body "Promoting this to P0 in rollcall requires production evidence.
+Please add one of:
+- curl output showing the error: \`curl -I https://your-production-url.com\`
+- Screenshot or error log from production
+- Sentry/Bugsnag link
+
+Without evidence, this will appear as ⚠️ UNVERIFIED in the morning briefing."
+```
 
 ### Section 1: Open Issues
 
@@ -94,6 +139,7 @@ If nothing merged in 7 days: state it and note the last merge date.
 - "Quiet" is not a report — if nothing happened, say what SHOULD happen next from the backlog
 - Verify data freshness before reporting — call `gh issue list` and `gh pr list`, don't guess
 - Closed issues are NOT open — verify with `gh issue view N --repo org/repo --json state`
+- **P0/P1 production claims MUST be verified with curl before promoting to briefing** — see the P0/P1 Verification Protocol in Section 0. An unverified P0 in the briefing wastes more time than a missed real incident.
 
 ## Minimal Format for Idle Teams
 

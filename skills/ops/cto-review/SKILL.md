@@ -341,11 +341,12 @@ If `POST_MERGE` is set and the checklist surfaced action items (docs gaps, missi
 ```bash
 if [ -n "$POST_MERGE" ] && [ -n "$ACTION_ITEMS" ]; then
   # For each action item, open an issue referencing the merged PR
-  gh issue create --repo $REPO \
-    --title "[post-merge follow-up] $ITEM_TITLE (from PR #$PR)" \
-    --body "Surfaced during CTO post-merge review of #$PR.\n\n$ITEM_BODY\n\nMerged commit: $MERGE_COMMIT" \
-    --label "post-merge-followup"
-done
+  while IFS= read -r ITEM_TITLE; do
+    gh issue create --repo $REPO \
+      --title "[post-merge follow-up] $ITEM_TITLE (from PR #$PR)" \
+      --body "Surfaced during CTO post-merge review of #$PR.\n\nMerged commit: $MERGE_COMMIT" \
+      --label "post-merge-followup"
+  done <<< "$ACTION_ITEMS"
 fi
 ```
 
@@ -602,7 +603,7 @@ REPORT_PATH="$REPORT_DIR/$(date +%Y-%m-%d)-cto-heartbeat-$(echo $REPO | tr '/' '
 
 Report structure:
 ```markdown
-# CTO Heartbeat: booster-pack team
+# CTO Heartbeat: $REPO team
 
 **Date:** YYYY-MM-DD HH:MM CLT
 **Repos scanned:** [list]
@@ -648,7 +649,7 @@ content = open('$REPORT_PATH').read()
 print(json.dumps({
   'source': 'commander',
   'type': 'commander.report',
-  'title': 'CTO Heartbeat: booster-pack',
+  'title': 'CTO Heartbeat: $REPO',
   'meta': {'content': content, 'report_type': 'cto-heartbeat'}
 }))
 ")" 2>/dev/null || true

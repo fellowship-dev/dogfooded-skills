@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/check-md-lint.sh \"$(echo $CLAUDE_TOOL_INPUT | jq -r '.file_path // empty')\""
+          }
+        ]
+      }
+    ]
+  }
+}

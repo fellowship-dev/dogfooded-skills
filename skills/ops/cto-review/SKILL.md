@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: Strategic CTO checklist for PR review — documentation gaps, external dependencies, downstream/template impact, merge strategy, action items. Also supports heartbeat mode for full-context repo scanning. Posts structured GH review comment, applies label, merges if ready.
+description: Strategic CTO checklist for PR review — documentation gaps, external dependencies, downstream/template impact, merge strategy, action items. Also supports heartbeat mode as a WIP-first flow optimizer — finish before starting, persistent triage via labels. Posts structured GH review comment, applies label, merges if ready.
 argument-hint: "[pr-number] [org/repo] | heartbeat org/repo [goal-context]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -12,7 +12,7 @@ Strategic CTO-level PR review. Runs a structured checklist (docs, deps, downstre
 
 Supports two modes:
 - **PR Review** (`/cto-review PR_NUMBER org/repo`) — deep review of a single PR
-- **Heartbeat** (`/cto-review heartbeat org/repo [goal-context]`) — full-context scan of all open PRs and issues
+- **Heartbeat** (`/cto-review heartbeat org/repo [goal-context]`) — flow optimizer: unblock WIP first, triage new issues, dispatch one task at a time
 
 ## When to Use
 
@@ -464,183 +464,169 @@ print(json.dumps({
 
 ## Mode 2: Heartbeat Operating Loop
 
-Invoked as: `/cto-review heartbeat org/repo [goal-context]`
+Flow optimizer — finish before starting, persistent triage via labels.
 
-The heartbeat is an **hourly operating loop** — the CTO reads the team's full operational state and decides what to do next. PRs develop naturally through the existing review pipeline (double-check → CTO review). The heartbeat operates at a higher level: mission health, blockers, backlog hygiene, architecture, and prioritization.
+Invocation: `/cto-review heartbeat org/repo [goal-context]`
 
-### Heartbeat Step 1: Load Operational State
+### Step 0: Bootstrap Labels (idempotent)
+
+Create labels in the target repo if they do not exist. Run every time — `gh label create` is idempotent (errors silently if label exists).
 
 ```bash
-export REPO=$2   # second argument (primary repo — scan all team repos)
-export GOAL_CONTEXT="${@:3}"  # optional remainder
+export REPO=$2
+export GOAL_CONTEXT="${@:3}"
+export GH_TOKEN=$(grep "GH_PAT_FELLOWSHIP" $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 
-export GH_TOKEN=$(grep 'GH_PAT_FELLOWSHIP' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
-source $HOME/projects/fellowship-dev/claude-buddy/.env
+# Priority labels
+gh label create "P0" --repo $REPO --color "b60205" --description "Production broken, revenue impact, security — fix now" 2>/dev/null || true
+gh label create "P1" --repo $REPO --color "d93f0b" --description "Important but not urgent — fix this week" 2>/dev/null || true
+gh label create "P2" --repo $REPO --color "fbca04" --description "Nice to have — fix when convenient" 2>/dev/null || true
 
-# Team repos (booster-pack team)
-TEAM_REPOS="fellowship-dev/booster-pack fellowship-dev/farmesa-v2 fellowship-dev/quantic-v2 fellowship-dev/fellowship-dev-homepage-v2 fellowship-dev/tuebingen-v2 fellowship-dev/maxfindel-personal-website"
-
-# Read repo CLAUDE.md for architectural direction
-gh api repos/$REPO/contents/CLAUDE.md --jq '.content' | base64 -d 2>/dev/null || echo "(no CLAUDE.md)"
+# Status labels
+gh label create "dispatched" --repo $REPO --color "5319e7" --description "Work sent to a crew member" 2>/dev/null || true
+gh label create "blocked" --repo $REPO --color "c5def5" --description "Waiting on external input or another issue" 2>/dev/null || true
 ```
 
-### Heartbeat Step 2: Mission Log Review
+### Step 1: WIP Scan (unblock before new work)
 
-Read the event log and recent mission results to understand what the team has been doing.
-
-```bash
-# Recent missions (last 20) — what ran, what failed, costs
-curl -s "https://hooks.fellowship.dev/missions?limit=20" \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN"
-
-# Recent events from the ledger
-curl -s "https://hooks.fellowship.dev/events?limit=30" \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN"
-```
-
-Analyze:
-- **Failed missions**: What failed and why? Is it a recurring pattern or a one-off?
-- **Cost trends**: Are missions getting more expensive? Any runaway sessions?
-- **Duration trends**: Are similar tasks taking longer than before?
-- **Throughput**: How many missions completed since last heartbeat?
-
-### Heartbeat Step 3: Recent Merges & Regression Check
+Check the current state of in-flight work before doing anything else. The principle: **stop starting, start finishing.**
 
 ```bash
-for repo in $TEAM_REPOS; do
-  echo "=== $repo ==="
-  # PRs merged in the last 24h
-  gh pr list --repo $repo --state merged --json number,title,mergedAt,labels --limit 10
-  # Last 10 commits
-  gh api "repos/$repo/commits?per_page=10" --jq '.[].commit.message'
-done
-```
+# Open PRs across the repo
+gh pr list --repo $REPO --state open --json number,title,labels,createdAt,url
 
-For each recent merge:
-- Was it reviewed by the pipeline (has `double-checked` + `approved` labels)?
-- Does the commit message suggest anything risky (migration, breaking change, infra)?
-- Any follow-up fixes that suggest a regression was introduced?
+# Issues with dispatched label (work in progress)
+gh issue list --repo $REPO --label "dispatched" --state open --json number,title,labels,assignees,url
 
-### Heartbeat Step 4: Blocker Detection
+# Issues with blocked label
+gh issue list --repo $REPO --label "blocked" --state open --json number,title,labels,url
 
-```bash
-for repo in $TEAM_REPOS; do
-  echo "=== $repo ==="
-  # Open PRs — check pipeline progress, don't duplicate reviews
-  gh pr list --repo $repo --state open --json number,title,labels,createdAt,url
-  # CI status on default branch
-  gh api "repos/$repo/commits?per_page=1" --jq '.[0].sha' | xargs -I{} gh api "repos/$repo/commits/{}/status" --jq '.state' 2>/dev/null || echo "no CI"
-done
-```
-
-Identify blockers:
-- PRs stuck >3 days without progressing through pipeline labels
-- PRs with `needs-work` that haven't been updated (rework stalled)
-- CI red on default branch — this blocks everything
-- Dependencies between PRs across repos
-
-### Heartbeat Step 5: Issue Backlog Hygiene
-
-```bash
-for repo in $TEAM_REPOS; do
-  echo "=== $repo ==="
-  gh issue list --repo $repo --state open --json number,title,labels,createdAt,updatedAt --limit 20
-done
+# Check if any dispatched issues have associated merged PRs (work completed but label not cleaned up)
+# For each dispatched issue, check if there is a recently merged PR that references it
 ```
 
 Actions:
-- **Close resolved**: Issues whose work was completed by merged PRs
-- **Flag duplicates**: Issues that describe the same problem
-- **Prioritize**: Top 3 actionable items across all team repos
-- **Age check**: Issues >14 days without activity — still relevant?
+- **Dispatched issue has a merged PR?** → Close the issue or remove `dispatched` label, acknowledge completion
+- **Dispatched issue has an open PR stuck >2 days?** → Flag as blocker, investigate
+- **Dispatched issue has no PR at all and was dispatched >3 days ago?** → Flag as stale dispatch
+- **Blocked issue** → Check if the blocker is resolved; if so, remove `blocked` label and re-prioritize
+- **PR stuck without progressing through review pipeline** → Flag
 
-### Heartbeat Step 6: Worker & Tooling Gaps
+**Output**: List of WIP items and their status. Any actions taken (labels removed, issues closed).
 
-Review failed missions and worker logs for patterns:
+### Step 2: Active Epic Focus
+
+Determine which epic is currently in progress. An "active epic" is one that has at least one open issue with the `dispatched` label.
 
 ```bash
-# Recent failures
-curl -s "https://hooks.fellowship.dev/missions?status=failed&limit=10" \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN"
+# Find which epic labels have dispatched issues
+gh issue list --repo $REPO --label "dispatched" --state open --json labels --jq ".[].labels[].name" | sort -u
 ```
 
-Look for:
-- Same error recurring across missions → create issue for tool/skill fix
-- Workers unable to complete tasks in their domain → skill gap, needs training data or new capability
-- Workers exceeding turn budgets → prompt needs tuning or task needs decomposition
+Filter out metadata labels (P0, P1, P2, dispatched, blocked, bug, enhancement, documentation, etc.) — whatever remains is an epic label.
 
-### Heartbeat Step 7: Decide What's Next
+Rules:
+- If exactly one epic has dispatched work → that is the **active epic**. Focus all subsequent steps on it.
+- If multiple epics have dispatched work → the one with the most dispatched issues is active. Flag the split as a concern.
+- If no epic has dispatched work (WIP=0) → no active epic. Step 4 will pick from highest-priority across all epics.
 
-Based on all inputs, decide and act:
+**Output**: Active epic name (or "none — WIP is clear").
 
-| Situation | CTO action |
-|-----------|------------|
-| PR merged, no regressions | Acknowledge in report |
-| PR merged, regression detected | Create issue, recommend hotfix dispatch |
-| Mission failed repeatedly | Diagnose, create issue with root cause |
-| Worker hitting same error | Create issue for new tool/skill |
-| Goal stalled (no progress 24h) | Flag in report, recommend reprioritization |
-| Architecture drift | Create issue with recommended refactor |
-| Cost spike | Flag in report |
-| Backlog growing | Recommend scope reduction |
-| Issues resolved by merged PRs | Close them directly |
-| Duplicate issues | Close the duplicate, link to original |
+### Step 3: Triage New Issues (max 5)
 
-Create issues for significant findings:
+Find issues that lack priority labels and triage them.
+
 ```bash
-gh issue create --repo $REPO \
-  --title "[cto] [gap description]" \
-  --body "[detailed description and recommended approach]" \
-  --label "enhancement"
+# All open issues
+gh issue list --repo $REPO --state open --json number,title,labels,body,createdAt --limit 50
+
+# Filter: issues without P0, P1, or P2 labels (done in code/logic, not pure CLI)
 ```
 
-### Heartbeat Step 8: Output Report
+For each unlabeled issue (up to 5):
+1. Read the issue title and body
+2. Assign a priority label: P0, P1, or P2
+3. Assign an epic label if it fits an existing epic, or create a new epic label if the issue represents a new workstream
+4. Apply the labels:
+```bash
+gh issue edit $ISSUE_NUM --repo $REPO --add-label "P1,epic-name"
+```
+
+**Skip** issues that already have a priority label (P0/P1/P2). The heartbeat does not re-triage.
+
+**Output**: Table of triaged issues with assigned priority and epic.
+
+### Step 4: Dispatch One Task
+
+Pick exactly one issue to dispatch. Dispatch means: add the `dispatched` label so the crew lead knows to assign it.
+
+Priority order:
+1. **Active epic, highest priority first**: P0 > P1 > P2, within the active epic
+2. **If no active epic**: highest priority issue across all epics
+3. **If nothing to dispatch**: report "backlog clear" or "all dispatched"
+
+```bash
+# Find undispatched issues in the active epic, sorted by priority
+gh issue list --repo $REPO --label "$ACTIVE_EPIC" --state open --json number,title,labels --limit 20
+# Filter out issues that already have "dispatched" label
+# Pick the highest priority one
+
+# Add dispatched label
+gh issue edit $ISSUE_NUM --repo $REPO --add-label "dispatched"
+```
+
+Rules:
+- **Never dispatch if WIP > 3** — too much in flight. Focus on unblocking instead.
+- **One dispatch per heartbeat** — do not batch.
+
+**Output**: Issue number, title, priority, epic — or reason nothing was dispatched.
+
+### Step 5: Report
 
 ```bash
 REPORT_DIR="$(git rev-parse --show-toplevel)/reports"
-REPORT_PATH="$REPORT_DIR/$(date +%Y-%m-%d)-cto-heartbeat-$(echo $REPO | tr '/' '-').md"
+REPORT_PATH="$REPORT_DIR/$(date +%Y-%m-%d)-cto-heartbeat-$(echo $REPO | tr "/" "-").md"
 ```
 
 Report structure:
 ```markdown
-# CTO Heartbeat: $REPO team
+# CTO Heartbeat: [repo name]
 
-**Date:** YYYY-MM-DD HH:MM CLT
-**Repos scanned:** [list]
-**Goal context:** $GOAL_CONTEXT (or N/A)
+**Date:** YYYY-MM-DD HH:MM
+**Repo:** $REPO
+**Active epic:** [epic name or "none"]
+**Goal context:** $GOAL_CONTEXT (or "N/A")
 
-## Mission Health
-- Completed since last heartbeat: N
-- Failed: N (reasons)
-- Cost: $X.XX total
-- Patterns: [any recurring issues]
+## WIP Status
+| Issue | Title | Status | Epic | Priority |
+|-------|-------|--------|------|----------|
+| #N | ... | dispatched / blocked / stale | epic-name | P1 |
 
-## Recent Merges
-| Repo | PR# | Title | Reviewed? | Regression risk |
-|------|-----|-------|-----------|-----------------|
+## Actions Taken
+- Closed #N (resolved by PR #M)
+- Removed dispatched from #N (stale >3 days)
+- Unblocked #N (blocker resolved)
+
+## Triage
+| Issue | Title | Priority | Epic |
+|-------|-------|----------|------|
+| #N | ... | P1 | epic-name |
+
+## Dispatched
+- **#N — [title]** (P1, epic: [name]) — dispatched for crew execution
 
 ## Blockers
-- [blocker 1 — what's stuck and why]
-- [blocker 2]
-
-## Backlog Actions Taken
-- Closed #N (resolved by PR #M)
-- Closed #N (duplicate of #M)
-- Flagged #N as stale
-
-## Worker/Tooling Gaps
-- [gap 1 — created issue #N]
+- [blocker description — what is stuck and why]
 
 ## Recommendations
-1. [highest priority action for the lead]
+1. [highest priority action]
 2. [second priority]
-3. [third priority]
 ```
 
 Post report to Quest:
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
-curl -s -X POST "https://quest.fellowship.dev/api/event" \
+QUEST_TOKEN=$(grep "^QUEST_TOKEN=" $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+curl -s -X POST "http://127.0.0.1:4242/api/event" \
   -H "Authorization: Bearer $QUEST_TOKEN" \
   -H "Content-Type: application/json" \
   -d "$(python3 -c "
@@ -677,5 +663,5 @@ print(json.dumps({
 - **Action items must be specific.** "Update docs" is not actionable. "`docs/vercel-setup.md` — add `NEW_ENV_VAR` to the env var reference table (scope: production, required: yes)" is actionable.
 - **Never merge if CI is red.** Even if the CTO review passes, failing CI is a hard blocker.
 - **Post-merge reviews are valid, not wasteful.** If Max merges a PR before the CTO pipeline catches up, the checklist still runs — docs gaps, deps, and downstream impact are all still worth surfacing. The difference: action items become follow-up issues, not merge blockers. Never attempt `gh pr merge` or verdict labels on a merged PR; they're no-ops at best and loop-inducing errors at worst.
-- **Heartbeat is an operating loop, not a scanner.** It reads mission logs, detects blockers, closes resolved issues, and recommends what to build next. PRs flow through the existing review pipeline — the heartbeat does not duplicate reviews.
+- **Heartbeat is a flow optimizer, not a scanner.** It unblocks WIP first (stop starting, start finishing), triages unlabeled issues with P0/P1/P2 and epic labels, and dispatches exactly one task per run. One-at-a-time dispatch keeps the team focused and prevents WIP sprawl.
 - **The heartbeat acts on backlog hygiene.** Close issues resolved by merged PRs, flag duplicates, and keep the backlog clean. The lead owns dispatch decisions for new work.

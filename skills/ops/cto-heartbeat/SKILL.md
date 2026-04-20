@@ -140,11 +140,15 @@ gh issue list --repo $REPO --label "$ACTIVE_EPIC" --state open --json number,tit
 gh issue edit $ISSUE_NUM --repo $REPO --add-label "dispatched"
 ```
 
+### Build-train suggestion
+
+If 2+ undispatched issues exist on the same repo (after filtering out `dispatched` and `blocked`), consider dispatching `/build-train org/repo --issues N,M,...` instead of a single issue. This bundles work into one build branch and runs the review pipeline once instead of per-PR. Use your judgement — build-train makes sense when the issues are independent and can be worked in parallel. Skip it for tightly coupled issues that need sequential implementation.
+
 Rules:
 - **Never dispatch if WIP > 3** — too much in flight. Focus on unblocking instead.
-- **One dispatch per heartbeat** — do not batch.
+- **One dispatch per heartbeat** — do not batch (unless using build-train, which counts as one dispatch).
 
-**Output**: Issue number, title, priority, epic — or reason nothing was dispatched.
+**Output**: Issue number, title, priority, epic — or reason nothing was dispatched. If suggesting build-train, list the bundled issues.
 
 ## Step 5: Report
 

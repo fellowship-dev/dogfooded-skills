@@ -31,7 +31,7 @@ Strategic CTO-level PR review. Runs a structured checklist (docs, deps, downstre
 ## Token
 
 ```bash
-export GH_TOKEN=$(grep 'GH_TOKEN' /Users/maxfindel/Projects/claude-buddy/.env | grep -v '#' | head -1 | cut -d= -f2)
+export GH_TOKEN=$(grep 'GH_TOKEN' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | grep -v '#' | head -1 | cut -d= -f2)
 # Or for specific teams, use the team's token_var from crew.yml
 ```
 
@@ -53,7 +53,7 @@ export PR=$1          # first argument
 export REPO=$2        # second argument (org/repo)
 
 # Load token — try team-specific first, fall back to fellowship token
-export GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /Users/maxfindel/Projects/claude-buddy/.env | cut -d= -f2)
+export GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 
 # Fetch PR metadata
 gh pr view $PR --repo $REPO --json number,title,body,headRefName,baseRefName,url,files,labels,author,additions,deletions,commits
@@ -121,7 +121,7 @@ Identify repos that inherit from or depend on this repo:
 ```bash
 # If this is a template/booster repo, which downstream repos are affected?
 # Check crew.yml for repos under the same team
-cat /Users/maxfindel/Projects/Fellowship-dev/commander/crew.yml
+cat /home/ubuntu/projects/fellowship-dev/pylot/crew.yml
 ```
 
 For each downstream repo, assess:
@@ -225,7 +225,7 @@ Check `merge_strategy` from crew.yml for the team that owns this repo:
 
 ```bash
 # Read merge_strategy from crew.yml
-CREW_FILE="/Users/maxfindel/Projects/fellowship-dev/commander/crew.yml"
+CREW_FILE="/home/ubuntu/projects/fellowship-dev/pylot/crew.yml"
 MERGE_STRATEGY=$(python3 -c "
 import yaml
 with open('$CREW_FILE') as f:
@@ -263,7 +263,7 @@ If CI is failing: set verdict to "hold", note CI failure in comment, do NOT merg
 Write a report to the commander reports directory:
 
 ```bash
-REPORT_PATH="/Users/maxfindel/Projects/Fellowship-dev/commander/reports/$(date +%Y-%m-%d)-cto-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
+REPORT_PATH="/home/ubuntu/projects/fellowship-dev/pylot/reports/$(date +%Y-%m-%d)-cto-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
 ```
 
 Report format:
@@ -303,7 +303,7 @@ Posted at: [comment URL]
 
 Post report to Quest DB:
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /Users/maxfindel/Projects/claude-buddy/.env | cut -d= -f2)
+QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 curl -s -X POST "http://127.0.0.1:4242/api/event" \
   -H "Authorization: Bearer $QUEST_TOKEN" \
   -H "Content-Type: application/json" \

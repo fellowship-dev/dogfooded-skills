@@ -133,7 +133,7 @@ print(json.dumps(manifest, indent=2))
 Always attempt — skip silently on failure. Manifests are NOT posted, only `.md` reports:
 
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /Users/maxfindel/Projects/claude-buddy/.env | cut -d= -f2)
+QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 curl -s -X POST "http://127.0.0.1:4242/api/event" \
   -H "Authorization: Bearer $QUEST_TOKEN" \
   -H "Content-Type: application/json" \

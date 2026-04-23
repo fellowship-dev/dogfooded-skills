@@ -1,6 +1,6 @@
 ---
 name: entropy-check
-description: Sensor — checks doc freshness and computes domain quality grades. Never fixes. Detects staleness, missing coverage, and FlowChad gaps. Updates QUALITY_SCORE.md.
+description: Sensor — checks doc freshness and computes domain quality grades. Never fixes. Detects staleness, missing coverage, and FlowChad gaps. Updates QUALITY_SCORE.md. Skips inapplicable signals per repo.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
@@ -27,18 +27,20 @@ Entropy is a read-only sensor. It computes domain quality grades from mechanical
 | Signal | What it measures | Weight |
 |--------|-----------------|--------|
 | Doc coverage | Does `docs/code-structure.md` cover this domain? | Binary |
-| Flow coverage | FlowChad flow defined for critical paths? | Binary |
+| Flow coverage | FlowChad flow defined for critical paths? | Binary (frontend repos only) |
 | Staleness delta | Days since last code commit vs. last doc update | >30d = stale |
 | Open issues | Issues tagged to domain in GitHub | >3 open = signal |
 | Test coverage | From coverage report if available | <60% = signal |
 | Hookshot coverage | Is doc-coverage.json current vs docs? | Staleness |
 
 **Grade scale:**
-- **A** — All 6 signals green
-- **B** — 1 signal missing or yellow
-- **C** — 2 signals missing
-- **D** — 3+ signals missing
+- **A** — All applicable signals green
+- **B** — 1 applicable signal missing or yellow
+- **C** — 2 applicable signals missing
+- **D** — 3+ applicable signals missing
 - **F** — No docs at all for this domain
+
+Inapplicable signals are excluded from the grade denominator. A repo with 4 applicable signals all passing = grade A.
 
 ---
 
@@ -58,7 +60,35 @@ Read `QUALITY_SCORE.md` if it exists — this is the baseline to update.
 Read `ARCHITECTURE.md` if it exists — extract domain list.
 If neither exists, infer domains from directory structure (same logic as setup-harness).
 
-### 1. Determine Scope
+### 1. Determine Signal Applicability
+
+Before grading, determine which signals apply to this repo. Record applicability for the report.
+
+#### Frontend Detection (S2 FlowChad)
+
+```bash
+HAS_FRONTEND=false
+if [ -f "$REPO_ROOT/package.json" ]; then
+  grep -q '"next"\|"react"\|"vue"\|"angular"\|"svelte"' "$REPO_ROOT/package.json" && HAS_FRONTEND=true
+fi
+if [ -d "$REPO_ROOT/app" ] || [ -d "$REPO_ROOT/pages" ] || [ -d "$REPO_ROOT/src/components" ]; then
+  HAS_FRONTEND=true
+fi
+```
+
+If `HAS_FRONTEND=false`: S2 FlowChad is **inapplicable** — exclude from grade denominator.
+
+#### Hookshot Detection (S6)
+
+```bash
+HOOKSHOT_EXISTS=false
+git -C "$REPO_ROOT" log -1 --format="%ci" -- .claude/doc-coverage.json 2>/dev/null | grep -q . && HOOKSHOT_EXISTS=true
+[ -f "$REPO_ROOT/.claude/doc-coverage.json" ] && HOOKSHOT_EXISTS=true
+```
+
+S6 is always **applicable** but the score message differs — see Signal 6 below.
+
+### 2. Determine Scope
 
 **PR-triggered mode:** Given a PR number, identify which files changed:
 ```bash
@@ -70,7 +100,7 @@ Map each changed file to its domain using directory prefixes. Only grade domains
 
 **Full sweep mode:** Grade all domains. Read domain list from `ARCHITECTURE.md` or infer.
 
-### 2. Per-Domain Grading
+### 3. Per-Domain Grading
 
 For each domain in scope:
 
@@ -85,12 +115,16 @@ Score: ✅ covered / ❌ missing
 
 #### Signal 2: FlowChad Coverage
 
+**Skip entirely if `HAS_FRONTEND=false`.** Record as "N/A — no frontend detected" in applicability table.
+
 ```bash
-# Is there a flowchad flow for this domain's critical path?
-ls $REPO_ROOT/.flowchad/flows/ 2>/dev/null | grep -i "{domain_slug}" && echo "COVERED" || echo "MISSING"
+# Only run if HAS_FRONTEND=true
+if [ "$HAS_FRONTEND" = "true" ]; then
+  ls $REPO_ROOT/.flowchad/flows/ 2>/dev/null | grep -i "{domain_slug}" && echo "COVERED" || echo "MISSING"
+fi
 ```
 
-Score: ✅ has flow / ❌ no flow
+Score (frontend only): ✅ has flow / ❌ no flow
 
 #### Signal 3: Staleness Delta
 
@@ -136,27 +170,66 @@ Score: ✅ ≥80% / ⚠️ 60-79% / ❌ <60% (only when coverage data is availab
 #### Signal 6: Hookshot Coverage Staleness
 
 ```bash
-# Compare doc-coverage.json age vs docs/code-structure.md age
 COVERAGE_DATE=$(git -C $REPO_ROOT log -1 --format="%ci" -- .claude/doc-coverage.json 2>/dev/null)
 DOCS_DATE=$(git -C $REPO_ROOT log -1 --format="%ci" -- docs/code-structure.md 2>/dev/null)
 ```
 
-If docs/code-structure.md was updated more recently than .claude/doc-coverage.json → hooks are stale.
-If .claude/doc-coverage.json doesn't exist → no hookshot coverage.
-Score: ✅ coverage fresh / ⚠️ stale (docs newer than hooks) / ❌ no coverage map
+Distinguish two cases:
+
+- **Hookshot not configured** — `.claude/doc-coverage.json` has never existed (no git history for it, file absent):
+  Score: ❌ "Hookshot not configured — recommend setup"
+
+- **Hookshot stale** — file has existed (git history found) but docs were updated more recently:
+  Compute delta days between COVERAGE_DATE and DOCS_DATE.
+  Score: ⚠️ "Hookshot stale by {N} days"
+
+- **Hookshot current** — coverage was updated after or same day as docs:
+  Score: ✅ "Hookshot current"
+
+Detection logic:
+```bash
+if [ -z "$COVERAGE_DATE" ] && [ ! -f "$REPO_ROOT/.claude/doc-coverage.json" ]; then
+  # Never been set up
+  S6_SCORE="❌"
+  S6_NOTE="Hookshot not configured — recommend setup"
+elif [ -n "$DOCS_DATE" ] && [ -n "$COVERAGE_DATE" ]; then
+  # Both exist — compare dates
+  DOCS_EPOCH=$(date -d "$DOCS_DATE" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %z" "$DOCS_DATE" +%s 2>/dev/null)
+  COV_EPOCH=$(date -d "$COVERAGE_DATE" +%s 2>/dev/null || date -j -f "%Y-%m-%d %H:%M:%S %z" "$COVERAGE_DATE" +%s 2>/dev/null)
+  STALE_DAYS=$(( (DOCS_EPOCH - COV_EPOCH) / 86400 ))
+  if [ "$STALE_DAYS" -gt 0 ]; then
+    S6_SCORE="⚠️"
+    S6_NOTE="Hookshot stale by ${STALE_DAYS} days"
+  else
+    S6_SCORE="✅"
+    S6_NOTE="Hookshot current"
+  fi
+else
+  S6_SCORE="❌"
+  S6_NOTE="Hookshot not configured — recommend setup"
+fi
+```
 
 #### Compute Grade
 
-Count failing signals (❌):
-- 0 failing → **A**
-- 1 failing → **B**
-- 2 failing → **C**
-- 3 failing → **D**
+Collect only **applicable** signals. Count failing signals (❌) among applicable signals only:
+
+```
+APPLICABLE_SIGNALS = all signals minus inapplicable ones
+FAILING = count of ❌ in APPLICABLE_SIGNALS
+YELLOW = count of ⚠️ in APPLICABLE_SIGNALS
+SCORE = FAILING + (YELLOW * 0.5), rounded up
+```
+
+- SCORE = 0 → **A**
+- SCORE = 1 → **B**
+- SCORE = 2 → **C**
+- SCORE ≥ 3 → **D**
 - No docs at all → **F**
 
-Yellow signals (⚠️) count as 0.5 each toward the failing count. Round up for grade cutoffs.
+Example: repo with no frontend (S2 skipped), 5 applicable signals all green → grade A, not B.
 
-### 3. Update QUALITY_SCORE.md
+### 4. Update QUALITY_SCORE.md
 
 Read the existing file. Update each graded domain's row. Add new domains if discovered.
 Preserve existing rows for domains not in scope (only update what was re-scanned).
@@ -174,7 +247,31 @@ Write the updated file. Commit with message: `chore: entropy scan — PR #{N} {t
 | {TODAY} | {trigger: PR #{N} / weekly sweep / manual} | {N} domains scanned, {N} regressions, {N} improvements |
 ```
 
-### 4. Staleness Report
+### 5. Signal Applicability Section
+
+Include a "Signal Applicability" table in every report output:
+
+```markdown
+## Signal Applicability
+
+| Signal | Applicable? | Reason |
+|--------|------------|--------|
+| S1 Doc Coverage | Yes | — |
+| S2 FlowChad | No | No frontend framework detected (bash/python scripts only) |
+| S3 Staleness | Yes | — |
+| S4 Open Issues | Yes | — |
+| S5 Tests | Yes | No test framework found — recommend adding bats for shell scripts |
+| S6 Hookshot | Yes | — |
+```
+
+Populate the Reason column with specifics:
+- S2 not applicable: "No frontend framework detected" + what was found (e.g., "bash/python scripts only", "Go/Rails repo")
+- S2 applicable: list detected framework (e.g., "Next.js detected in package.json")
+- S5 no data: "No coverage report found — signal skipped"
+- S5 data found: leave Reason blank or note the coverage percentage
+- S6: always applicable; Reason shows the hookshot status detail
+
+### 6. Staleness Report
 
 For any domain graded C, D, or F — or where grade regressed from previous — output a finding:
 
@@ -199,7 +296,7 @@ For any domain graded C, D, or F — or where grade regressed from previous — 
 - {Domain}: {grade}
 ```
 
-### 5. Imported Lib Drift (Architecture Check)
+### 7. Imported Lib Drift (Architecture Check)
 
 **This check moved here from maintenance.** It is an architecture signal, not an infra check.
 
@@ -211,7 +308,7 @@ GH_TOKEN=$GH_TOKEN gh api repos/fellowship-dev/spec-kit/contents/templates/comma
   --jq '.[].name' 2>/dev/null
 
 # For each active repo with speckit installed:
-for repo in Lexgo-cl/rails-backend fellowship-dev/booster-pack fellowship-dev/farmesa \
+for repo in Lexgo-cl/rails-backend fellowship-dev/booster-pack fellowship-dev/farmesa-v2 \
             fellowship-dev/mtg-lotr fellowship-dev/inbox-angel fellowship-dev/inbox-angel-worker; do
   echo "=== $repo ==="
   for cmd in specify plan tasks implement analyze checklist clarify; do
@@ -232,7 +329,7 @@ Note: repos may have intentional customizations — flag for review, don't auto-
 
 Include drift findings in QUALITY_SCORE.md under a `## Tooling` section if any drift is found.
 
-### 6. PR-Triggered Output
+### 8. PR-Triggered Output
 
 When triggered by a PR merge event, output a comment-ready summary:
 
@@ -250,7 +347,9 @@ Domains affected: {list}
 Recommended: update docs/code-structure.md for these domains before the next PR in this area.
 ```
 
-### 7. Full Sweep Output (weekly cron)
+Include the Signal Applicability table (see step 5) at the end of the comment.
+
+### 9. Full Sweep Output (weekly cron)
 
 ```
 ## Entropy Weekly Sweep — {DATE}
@@ -259,6 +358,9 @@ Recommended: update docs/code-structure.md for these domains before the next PR 
 
 ### Grades
 {Full grade table}
+
+### Signal Applicability
+{Signal applicability table}
 
 ### Action Items
 {Domains graded D or F → create a GitHub issue if one doesn't already exist}

@@ -13,6 +13,16 @@ Architectural authority sitting between CEO (strategy) and Engineers (execution)
 
 Translates CEO goals into engineer-ready tasks with clear scope and acceptance criteria. After execution, verifies that the right steps happened — not that the code looks correct.
 
+## Operating Principles
+
+- **Phoenix Project principle:** deliver value with the least rework and downtime
+- **"Stop starting, start finishing":** unblock WIP before dispatching new work
+- **Epic focus rule:** finish one epic before starting another
+- **Priority definitions:**
+  - **P0:** Production broken, revenue impact, security — fix now
+  - **P1:** Important but not urgent — fix this week
+  - **P2:** Nice to have — fix when convenient
+
 ## CAN
 
 - Decompose CEO goals into scoped, assigned engineer tasks

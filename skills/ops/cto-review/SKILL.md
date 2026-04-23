@@ -1,7 +1,7 @@
 ---
 name: cto-review
 description: Strategic CTO checklist for PR review — documentation gaps, external dependencies, downstream/template impact, merge strategy, action items. Posts structured GH review comment, applies label, merges if ready.
-argument-hint: "[pr-number] [org/repo]"
+argument-hint: "pr-number org/repo"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
@@ -31,7 +31,7 @@ Strategic CTO-level PR review. Runs a structured checklist (docs, deps, downstre
 ## Token
 
 ```bash
-export GH_TOKEN=$(grep 'GH_TOKEN' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | grep -v '#' | head -1 | cut -d= -f2)
+export GH_TOKEN=$(grep 'GH_TOKEN' $HOME/projects/fellowship-dev/claude-buddy/.env | grep -v '#' | head -1 | cut -d= -f2)
 # Or for specific teams, use the team's token_var from crew.yml
 ```
 
@@ -44,19 +44,43 @@ gh pr view $PR_NUMBER --repo $REPO   # verify PR exists
 
 ---
 
-## Runbook
+## Mode 1: PR Review Runbook
+
+### Step 0: Gather Full Context
+
+Before looking at the PR diff, build architectural awareness:
+
+```bash
+export PR=$1
+export REPO=$2
+
+export GH_TOKEN=$(grep 'GH_PAT_FELLOWSHIP' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+
+# Read repo CLAUDE.md for architectural direction
+gh api repos/$REPO/contents/CLAUDE.md --jq '.content' | base64 -d 2>/dev/null || echo "(no CLAUDE.md)"
+
+# Recent commit history
+gh api "repos/$REPO/commits?per_page=10" --jq '.[].commit.message'
+
+# Open issues — see what the team is working on
+gh api "repos/$REPO/issues?state=open&per_page=10" --jq '.[].title'
+```
+
+**Systems thinking prompts — answer these before reviewing the diff:**
+- "How does this PR fit into the repo's architectural direction (per CLAUDE.md)?"
+- "Does this PR conflict with or duplicate any open issues?"
+- "Are there recent commits that this PR should have been aware of?"
+- "What is the downstream impact on repos that depend on this one?"
 
 ### Step 1: Gather PR Context
 
 ```bash
-export PR=$1          # first argument
-export REPO=$2        # second argument (org/repo)
+# Fetch PR metadata — INCLUDES state, mergedAt, mergeCommit so we know if it's already merged
+gh pr view $PR --repo $REPO --json number,title,body,state,mergedAt,mergedBy,mergeCommit,headRefName,baseRefName,url,files,labels,author,additions,deletions,commits
 
-# Load token — try team-specific first, fall back to fellowship token
-export GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
-
-# Fetch PR metadata
-gh pr view $PR --repo $REPO --json number,title,body,headRefName,baseRefName,url,files,labels,author,additions,deletions,commits
+# Capture state for branching downstream
+STATE=$(gh pr view $PR --repo $REPO --json state --jq '.state')
+MERGED_AT=$(gh pr view $PR --repo $REPO --json mergedAt --jq '.mergedAt')
 
 # Fetch linked issue (extract from PR body or branch name)
 gh pr view $PR --repo $REPO --json body --jq '.body'
@@ -70,9 +94,30 @@ gh pr diff $PR --repo $REPO --name-only
 
 **Key intel to extract:**
 - PR title, description, branch name
+- **PR state** — `OPEN`, `MERGED`, or `CLOSED`
 - Files changed (focus: docs, deps, config, templates)
 - Linked issue number and title
 - Whether `reviewed` and `double-checked` labels are present
+
+#### 1.1 Pre-flight state check
+
+Before running the checklist, branch on PR state. The checklist still runs for merged PRs — docs gaps, downstream impact, and deps findings are still valuable retrospectively — but the merge/label steps become no-ops.
+
+| State | What to do |
+|-------|------------|
+| `OPEN` | Normal flow — run Steps 2→6 as written. |
+| `MERGED` | **Post-merge review.** Run Steps 2, 3, 6. Prefix the review comment verdict with `[POST-MERGE]`. Skip Step 4 (labels — verdict labels are meaningless after merge) and Step 5 (merge — already merged, `gh pr merge` will error). If action items surface, **open GitHub issues** for each instead of blocking the PR. |
+| `CLOSED` (not merged) | PR was abandoned. Post a single comment `CTO review skipped — PR closed without merge (state=CLOSED).` and exit. No checklist, no report. |
+
+Shell guard at the top of Step 2 in scripts/flows:
+```bash
+if [ "$STATE" = "CLOSED" ] && [ -z "$MERGED_AT" ]; then
+  gh pr comment $PR --repo $REPO --body "CTO review skipped — PR closed without merge."
+  exit 0
+fi
+POST_MERGE=""
+[ "$STATE" = "MERGED" ] && POST_MERGE="true"
+```
 
 ### Step 2: Run CTO Checklist
 
@@ -121,7 +166,7 @@ Identify repos that inherit from or depend on this repo:
 ```bash
 # If this is a template/booster repo, which downstream repos are affected?
 # Check crew.yml for repos under the same team
-cat /home/ubuntu/projects/fellowship-dev/pylot/crew.yml
+cat $PYLOT_DIR/crew.yml
 ```
 
 For each downstream repo, assess:
@@ -129,18 +174,60 @@ For each downstream repo, assess:
 - Is the change breaking (requires update) or opt-in?
 - When do downstream repos need to pull these changes?
 
-#### 2.4 Merge Strategy Decision
+#### 2.4 Verdict Decision
 
-Based on findings above, decide one of:
-- **✅ Merge immediately** — all docs present, no breaking downstream changes, no required manual steps
-- **⏸️ Hold for action items** — code is good, but N documented items must be done first
-- **🔄 Send back** — code has issues that need fixing before merge is appropriate
+| Decision | When | Action |
+|----------|------|--------|
+| LGTM | All checks pass, no blocking issues | Apply `approved` label, merge (or label ready-to-merge per merge_strategy) |
+| REWORK | Code needs specific changes | Apply `needs-work` label, post specific required fixes, optionally dispatch dev mission |
+| BLOCKED | External dependency or missing info | Apply `needs-work` label, post what is needed, do NOT dispatch |
+| NEW_ISSUE | Review reveals separate work needed | Create new GitHub issue, approve/rework the current PR on its own merits |
 
 #### 2.5 Action Items
 
 List numbered must-do items. Each item should be specific and actionable:
 1. `path/to/file.md` — exact change needed
 2. `path/to/other.yml` — exact change needed
+
+
+#### 2.6 Process Verification
+
+Check that the right development process was followed — not the code itself, but the steps taken:
+
+**Was related code searched?**
+The #1585 class of bug: implementing something that already existed elsewhere. Verify:
+```bash
+# Check PR description or commits for evidence of pattern search
+gh pr view $PR --repo $REPO --json body --jq '.body' | grep -i "search\|grep\|existing\|pattern\|found"
+# If no evidence: note in review — "Was existing code searched before implementing?"
+```
+
+**Were docs updated alongside the code?**
+Beyond the doc check in 2.1 — check if inline comments, README, and any skill/runbook docs reflect the change:
+- New CLI flags → argument-hint in skill updated?
+- New config options → .env.example or setup docs updated?
+- Changed behavior → CLAUDE.md or runbooks updated?
+
+**Release train or direct merge?**
+```bash
+# Check if base branch is main/master or a release branch
+gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName'
+```
+- If PR touches shared infrastructure or templates → prefer release train
+- If PR is self-contained fix → direct merge is fine
+
+**Are FlowChad flows affected?**
+```bash
+# Check if any .flowchad/ files changed
+gh pr diff $PR --repo $REPO --name-only | grep -i "flowchad\.flow\|flows/"
+```
+If flows are affected or the PR changes how flows run: note that /flowchad-runner should be run post-merge to verify.
+
+**Production impact?**
+For PRs touching executor, dispatcher, or event routing:
+- Will this affect running jobs? (executor changes)
+- Will this break webhook processing? (event router changes)
+- Is there a safe rollback path?
 
 ### Step 3: Post Review Comment
 
@@ -183,6 +270,15 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 ### Merge Strategy
 - [VERDICT_EMOJI] [Merge immediately / Hold — pending N items / Send back — reason]
 
+### Process Verification
+| Check | Status |
+|-------|--------|
+| Related code searched | [✅ evidence found / ❌ no evidence / N/A] |
+| Docs updated | [✅ / ❌ what is missing] |
+| Merge strategy | [Direct merge / Release train — reason] |
+| FlowChad flows affected | [✅ none / ⚠️ re-run flowchad-runner post-merge / N/A] |
+| Production impact assessed | [✅ low risk / ⚠️ requires careful deploy / N/A] |
+
 ---
 
 ## Action Items Before Merge
@@ -206,54 +302,86 @@ COMMENT_EOF
 
 ### Step 4: Apply Label
 
-```bash
-# Create labels if they don't exist
-gh label create "approved" --repo $REPO --color "0e8a16" --description "CTO approved — ready to merge" 2>/dev/null || true
-gh label create "needs-work" --repo $REPO --color "d93f0b" --description "Needs work before merge" 2>/dev/null || true
+**Skip this step entirely if `POST_MERGE` is set** — labels on a merged PR are noise. For post-merge reviews, action items become follow-up issues (see Step 4.1 below), not labels on the PR.
 
-# Apply appropriate label based on verdict
-if [[ "$VERDICT" == "merge" ]]; then
-  gh pr edit $PR --repo $REPO --add-label "approved"
-elif [[ "$VERDICT" == "hold" || "$VERDICT" == "sendback" ]]; then
-  gh pr edit $PR --repo $REPO --add-label "needs-work"
+```bash
+if [ -n "$POST_MERGE" ]; then
+  echo "Post-merge review — skipping label step."
+else
+  # Create labels if they don't exist
+  gh label create "approved" --repo $REPO --color "0e8a16" --description "CTO approved — ready to merge" 2>/dev/null || true
+  gh label create "needs-work" --repo $REPO --color "d93f0b" --description "Needs work before merge" 2>/dev/null || true
+
+  # Apply appropriate label based on verdict
+  if [[ "$VERDICT" == "merge" ]]; then
+    gh pr edit $PR --repo $REPO --add-label "approved"
+  elif [[ "$VERDICT" == "hold" || "$VERDICT" == "sendback" ]]; then
+    gh pr edit $PR --repo $REPO --add-label "needs-work"
+  fi
 fi
 ```
 
-### Step 5: Merge or Label (respects merge_strategy)
+#### 4.1 Post-merge: open follow-up issues instead
 
-Check `merge_strategy` from crew.yml for the team that owns this repo:
+If `POST_MERGE` is set and the checklist surfaced action items (docs gaps, missing deps in `.env.example`, downstream migration steps, etc.), open one GitHub issue per item. The PR is already merged — blocking it via label is useless; issues are how follow-up work gets tracked.
 
 ```bash
-# Read merge_strategy from crew.yml
-CREW_FILE="/home/ubuntu/projects/fellowship-dev/pylot/crew.yml"
-MERGE_STRATEGY=$(python3 -c "
+if [ -n "$POST_MERGE" ] && [ -n "$ACTION_ITEMS" ]; then
+  # For each action item, open an issue referencing the merged PR
+  while IFS= read -r ITEM_TITLE; do
+    gh issue create --repo $REPO \
+      --title "[post-merge follow-up] $ITEM_TITLE (from PR #$PR)" \
+      --body "Surfaced during CTO post-merge review of #$PR.\n\nMerged commit: $MERGE_COMMIT" \
+      --label "post-merge-followup"
+  done <<< "$ACTION_ITEMS"
+fi
+```
+
+### Step 5: Merge or label (based on team merge_strategy)
+
+**Skip this step entirely if `POST_MERGE` is set** — `gh pr merge` on a merged PR errors out and can cause the runbook to loop or hang.
+
+Only proceed if:
+1. `POST_MERGE` is unset (PR is still open)
+2. Verdict is "merge immediately"
+3. All required labels are present (`reviewed`, `double-checked`)
+4. CI checks are passing
+
+```bash
+if [ -n "$POST_MERGE" ]; then
+  echo "Already merged at $MERGED_AT — skipping merge step."
+  # fall through to Step 6 (report)
+else
+  # Verify CI is green
+  gh pr checks $PR --repo $REPO
+
+  # Verify required labels
+  gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
+
+  # Check team merge_strategy from crew.yml (default: auto)
+  MERGE_STRATEGY=$(python3 -c "
 import yaml
-with open('$CREW_FILE') as f:
+with open('$PYLOT_DIR/crew.yml') as f:
     data = yaml.safe_load(f)
-for name, config in data.get('crew', {}).items():
-    for repo in config.get('repos', []):
-        if repo == '$REPO':
-            print(config.get('merge_strategy', 'auto'))
-            break
-" 2>/dev/null)
-```
+for team, cfg in data.get('crew', {}).items():
+    if not isinstance(cfg, dict): continue
+    for r in cfg.get('repos', []):
+        if r.lower() == '$REPO'.lower():
+            print(cfg.get('merge_strategy', 'auto'))
+            exit()
+print('auto')
+" 2>/dev/null || echo "auto")
 
-**If `label-only`:** apply `approved` label only — Max is the merge gatekeeper:
-```bash
-gh pr edit $PR --repo $REPO --add-label "approved"
-# Do NOT merge. Max will merge after reviewing the nightly recap.
-```
-
-**If `auto` (or unset):** merge directly after verifying CI and labels:
-```bash
-# Verify CI is green before merging
-gh pr checks $PR --repo $REPO
-
-# Verify required labels
-gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
-
-# Merge
-gh pr merge $PR --repo $REPO --merge
+  if [ "$MERGE_STRATEGY" = "label-only" ]; then
+    # Team requires human merge — label instead
+    gh label create "ready-to-merge" --repo $REPO --color "0e8a16" --description "Agent-verified, Max merges" 2>/dev/null || true
+    gh pr edit $PR --repo $REPO --add-label "ready-to-merge"
+    echo "Labeled ready-to-merge (merge_strategy: label-only)"
+  else
+    # Default: auto-merge
+    gh pr merge $PR --repo $REPO --merge
+  fi
+fi
 ```
 
 If CI is failing: set verdict to "hold", note CI failure in comment, do NOT merge.
@@ -263,7 +391,7 @@ If CI is failing: set verdict to "hold", note CI failure in comment, do NOT merg
 Write a report to the commander reports directory:
 
 ```bash
-REPORT_PATH="/home/ubuntu/projects/fellowship-dev/pylot/reports/$(date +%Y-%m-%d)-cto-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
+REPORT_PATH="$PYLOT_DIR/reports/$(date +%Y-%m-%d)-cto-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
 ```
 
 Report format:
@@ -303,7 +431,7 @@ Posted at: [comment URL]
 
 Post report to Quest DB:
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+QUEST_TOKEN=$(grep '^QUEST_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 curl -s -X POST "http://127.0.0.1:4242/api/event" \
   -H "Authorization: Bearer $QUEST_TOKEN" \
   -H "Content-Type: application/json" \
@@ -325,9 +453,11 @@ print(json.dumps({
 
 | Verdict | Emoji | Label | Merge? |
 |---------|-------|-------|--------|
-| Merge immediately | ✅ | `approved` | Only if `merge_strategy: auto`. If `label-only`: label only, Max merges. |
-| Hold for action items | ⏸️ | `needs-work` | No |
-| Send back | 🔄 | `needs-work` | No |
+| LGTM | ✅ | `approved` | Yes |
+| REWORK | 🔄 | `needs-work` | No |
+| BLOCKED | ⏸️ | `needs-work` | No |
+| NEW_ISSUE | 📋 | — | Approve PR on its own merits, create separate issue |
+| STALE | ⏰ | `needs-work` | No |
 
 ---
 
@@ -338,3 +468,5 @@ print(json.dumps({
 - **Downstream opt-in vs breaking.** Template changes that are opt-in (env var gate) are fine to merge. Changes that require downstream repos to update their code are "hold" until a migration plan exists.
 - **Action items must be specific.** "Update docs" is not actionable. "`docs/vercel-setup.md` — add `NEW_ENV_VAR` to the env var reference table (scope: production, required: yes)" is actionable.
 - **Never merge if CI is red.** Even if the CTO review passes, failing CI is a hard blocker.
+- **Post-merge reviews are valid, not wasteful.** If Max merges a PR before the CTO pipeline catches up, the checklist still runs — docs gaps, deps, and downstream impact are all still worth surfacing. The difference: action items become follow-up issues, not merge blockers. Never attempt `gh pr merge` or verdict labels on a merged PR; they're no-ops at best and loop-inducing errors at worst.
+- For flow optimizer / heartbeat functionality, see `/cto-heartbeat`. For CTO role principles, see the `cto` role skill.

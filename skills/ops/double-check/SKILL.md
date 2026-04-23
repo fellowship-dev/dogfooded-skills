@@ -33,7 +33,7 @@ Active PR review that reads the diff, curates CI findings, fixes must-fix issues
 Set `GH_TOKEN` in the environment before running. For Pylot crews, the team's `token_var` from `crew.yml` is used automatically. For manual runs:
 
 ```bash
-export GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+export GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 ```
 
 ## Primary Workflow: Local Checkout
@@ -264,7 +264,7 @@ Report format:
 
 Post to Quest DB:
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+QUEST_TOKEN=$(grep '^QUEST_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 curl -s -X POST "http://127.0.0.1:4242/api/event" \
   -H "Authorization: Bearer $QUEST_TOKEN" \
   -H "Content-Type: application/json" \

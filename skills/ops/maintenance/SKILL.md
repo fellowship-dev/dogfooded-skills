@@ -36,7 +36,7 @@ Run ALL checks. Each finding either becomes a GitHub issue in [fellowship-dev/cl
 
 ```bash
 # Set GH_TOKEN at the start of every run
-export GH_TOKEN=$(grep GH_TOKEN_FELLOWSHIP /Users/maxfindel/Projects/claude-buddy/.env | cut -d= -f2)
+export GH_TOKEN=$(grep GH_TOKEN_FELLOWSHIP /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 ```
 
 ---
@@ -44,7 +44,7 @@ export GH_TOKEN=$(grep GH_TOKEN_FELLOWSHIP /Users/maxfindel/Projects/claude-budd
 ### 1. Memory Consolidation (always)
 
 ```bash
-wc -l /Users/maxfindel/Projects/claude-buddy/memory/MEMORY.md
+wc -l /home/ubuntu/projects/fellowship-dev/claude-buddy/memory/MEMORY.md
 ls ~/.claude/projects/-Users-maxfindel-Projects-claude-buddy/*.jsonl | wc -l
 ```
 
@@ -57,7 +57,7 @@ ls ~/.claude/projects/-Users-maxfindel-Projects-claude-buddy/*.jsonl | wc -l
 
 ```bash
 grep -r "ghp_\|ghs_\|sk-\|xoxb-\|AAEi\|AAAA[a-zA-Z0-9]" \
-  /Users/maxfindel/Projects/claude-buddy/ \
+  /home/ubuntu/projects/fellowship-dev/claude-buddy/ \
   --include="*.md" --include="*.sh" --include="*.py" --include="*.mjs" \
   -l 2>/dev/null | grep -v ".git"
 ```

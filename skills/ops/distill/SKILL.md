@@ -75,7 +75,7 @@ fi
 The agent writes session transcripts to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
 
 The encoded path is the `cwd` with every `/` replaced by `-` and the leading `/` stripped:
-- `/Users/maxfindel/Projects/fellowship-dev/commander` → `-Users-maxfindel-Projects-fellowship-dev-commander`
+- `/home/ubuntu/projects/fellowship-dev/pylot` → `-home-ubuntu-projects-fellowship-dev-pylot`
 
 **If `--session <id>` provided:**
 
@@ -945,7 +945,7 @@ echo "Findings report written: $FINDINGS_REPORT"
 
 ```bash
 REPO="${REPO_ARG:-fellowship-dev/commander}"
-GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /Users/maxfindel/Projects/claude-buddy/.env | cut -d= -f2 2>/dev/null || echo "$GH_TOKEN")
+GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2 2>/dev/null || echo "$GH_TOKEN")
 export GH_TOKEN
 
 # Ensure labels exist
@@ -1027,7 +1027,7 @@ PYEOF
 ### Step 5: Post findings report to Quest DB
 
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /Users/maxfindel/Projects/claude-buddy/.env | cut -d= -f2 2>/dev/null || true)
+QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2 2>/dev/null || true)
 if [ -n "$QUEST_TOKEN" ]; then
   curl -s -X POST "http://127.0.0.1:4242/api/event" \
     -H "Authorization: Bearer $QUEST_TOKEN" \

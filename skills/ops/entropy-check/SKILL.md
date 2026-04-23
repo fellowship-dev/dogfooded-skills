@@ -242,7 +242,7 @@ Preserve existing rows for domains not in scope (only update what was re-scanned
 | {domain} | {grade} | {TODAY} | {brief note on what's missing, or "All signals green"} |
 ```
 
-Write the updated file. Then append to the History section:
+Write the updated file. Commit with message: `chore: entropy scan — PR #{N} {title} [skip ci]` — the `[skip ci]` tag is **mandatory** to prevent triggering production deploys. Then append to the History section:
 ```markdown
 | {TODAY} | {trigger: PR #{N} / weekly sweep / manual} | {N} domains scanned, {N} regressions, {N} improvements |
 ```

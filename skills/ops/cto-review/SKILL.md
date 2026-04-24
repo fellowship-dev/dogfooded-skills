@@ -229,6 +229,17 @@ For PRs touching executor, dispatcher, or event routing:
 - Will this break webhook processing? (event router changes)
 - Is there a safe rollback path?
 
+**Premature `Closes` on multi-phase issues?**
+```bash
+# Extract linked issue numbers from PR body (Closes #N or Refs #N)
+gh pr view $PR --repo $REPO --json body --jq '.body' | grep -oE '(Closes|Fixes|Resolves) #[0-9]+' | grep -oE '[0-9]+'
+```
+For each issue number found with a `Closes` keyword:
+```bash
+gh issue view ISSUE_N --repo $REPO --json body --jq '.body' | grep -c '- \[ \]' || echo 0
+```
+If the count is > 0 → **MUST FIX**: the PR uses `Closes #N` but the issue has unchecked acceptance criteria. The agent must change `Closes #N` to `Refs #N`. Only the final phase PR that completes all remaining work should use `Closes #N`.
+
 ### Step 3: Post Review Comment
 
 Post the CTO review as a PR comment in the exact format below:

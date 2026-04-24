@@ -66,12 +66,18 @@ for line in sys.stdin:
 print(json.dumps(hits))
 " 2>/dev/null) || commented="[]"
 
+  local debug_file commented_file
+  debug_file=$(mktemp)
+  commented_file=$(mktemp)
+  printf '%s' "$debug_hits" > "$debug_file"
+  printf '%s' "$commented" > "$commented_file"
   python3 -c "
 import json
-debug = json.loads('$debug_hits' if '$debug_hits' else '[]')
-commented = json.loads('$commented' if '$commented' else '[]')
+with open('$debug_file') as f: debug = json.loads(f.read() or '[]')
+with open('$commented_file') as f: commented = json.loads(f.read() or '[]')
 print(json.dumps(debug + commented))
 " 2>/dev/null || echo "[]"
+  rm -f "$debug_file" "$commented_file"
 }
 
 # --- misplaced: files in wrong directories ---
@@ -231,7 +237,7 @@ scan_unused_exports() {
   exports_file=$(mktemp)
 
   # Find all named exports
-  rg -n --no-heading 'export\s+(const|function|class|let|var|type|interface|enum|async function)\s+(\w+)' "$ROOT" \
+  rg --no-heading 'export\s+(const|function|class|let|var|type|interface|enum|async function)\s+(\w+)' "$ROOT" \
     --glob '!node_modules' --glob '!dist' --glob '!build' --glob '!*.min.*' --glob '!*.d.ts' \
     -r '$2' --only-matching 2>/dev/null | sort -u > "$exports_file" || true
 
@@ -301,9 +307,7 @@ case "$FOCUS" in
   all)
     echo '  "dead_code": '"$(scan_dead_code)"','
     echo '  "misplaced": '"$(scan_misplaced)"','
-    echo '  "committed_by_error": '"$(scan_committed_by_error)"','
-    echo '  "unused_functions": '"$(SCAN_ROOT="$ROOT" scan_unused_functions "$ROOT")"','
-    echo '  "unused_exports": '"$(scan_unused_exports)"
+    echo '  "committed_by_error": '"$(scan_committed_by_error)"
     ;;
   *)
     echo '  "error": "Unknown focus: '"$FOCUS"'. Use: dead-code|misplaced|committed-by-error|unused-functions|all"'

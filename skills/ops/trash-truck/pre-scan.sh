@@ -301,7 +301,9 @@ case "$FOCUS" in
   all)
     echo '  "dead_code": '"$(scan_dead_code)"','
     echo '  "misplaced": '"$(scan_misplaced)"','
-    echo '  "committed_by_error": '"$(scan_committed_by_error)"
+    echo '  "committed_by_error": '"$(scan_committed_by_error)"','
+    echo '  "unused_functions": '"$(SCAN_ROOT="$ROOT" scan_unused_functions "$ROOT")"','
+    echo '  "unused_exports": '"$(scan_unused_exports)"
     ;;
   *)
     echo '  "error": "Unknown focus: '"$FOCUS"'. Use: dead-code|misplaced|committed-by-error|unused-functions|all"'

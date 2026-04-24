@@ -32,7 +32,7 @@ Finds and removes code slop without changing behavior. Opens small, reviewable P
 | **drift** | Deviations from golden principles documented in `CLAUDE.md`, `docs/`, or established skill files |
 | **misplaced** | Files in wrong directories — test files outside test dirs, configs buried in source trees |
 | **committed-by-error** | Files that shouldn't be in version control — `.env`, `.DS_Store`, swap files, compiled bytecode, IDE configs, database files |
-| **unused-functions** | Functions/methods defined but never called or referenced anywhere in the codebase (Python via `ast`, JS/TS via export/import analysis). **Costs more tokens** — use as a targeted focus, not in `all` |
+| **unused-functions** | Functions/methods defined but never called or referenced anywhere in the codebase (Python via `ast`, JS/TS via export/import analysis) |
 
 ## How It Works
 
@@ -72,4 +72,3 @@ The script outputs JSON with findings grouped by category. Each finding has `fil
 - Do not refactor logic — only remove or consolidate dead/duplicate patterns
 - Do not open a single giant PR — small diffs or nothing
 - Do not touch tests unless the test itself is dead or duplicated
-- Do not include `unused-functions` in an `all` scan — it's too expensive for routine sweeps

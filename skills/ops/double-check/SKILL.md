@@ -209,6 +209,11 @@ REVIEW_EOF
 - If no CI findings exist: write "No CI review comments found — reviewed diff directly"
 - If tests weren't run: explain why (e.g., "deps-only change, no test suite applicable")
 - Verdict must be specific: either "ready for CTO review" or list what still needs work
+- **`Closes` vs `Refs` — MANDATORY check:** Before writing or approving `Closes #N` in any PR description, fetch the linked issue body and scan for unchecked items (`- [ ]`):
+  ```bash
+  gh issue view N --repo REPO --json body --jq '.body' | grep -c '- \[ \]' || echo 0
+  ```
+  If **any** `- [ ]` items remain, use `Refs #N` instead of `Closes #N`. Only use `Closes #N` when ALL acceptance criteria are checked. This prevents GitHub from auto-closing multi-phase issues when only the first PR merges.
 
 ### Step 8: Apply double-checked Label
 

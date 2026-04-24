@@ -140,16 +140,30 @@ suspect_patterns = [
     ('*.db', 'database file'),
 ]
 
-import fnmatch
-tracked = set()
-for dirpath, dirnames, filenames in os.walk(root):
-    dirnames[:] = [d for d in dirnames if d not in ('node_modules', 'vendor', '.git', 'dist')]
-    for f in filenames:
-        rel = os.path.relpath(os.path.join(dirpath, f), root)
+import fnmatch, subprocess
+# Only check files actually tracked by git
+try:
+    result = subprocess.run(['git', '-C', root, 'ls-files', '--cached'], capture_output=True, text=True, timeout=10)
+    tracked_files = set(result.stdout.strip().splitlines())
+except:
+    tracked_files = None  # fallback to os.walk if not a git repo
+
+if tracked_files is not None:
+    for rel in tracked_files:
+        f = os.path.basename(rel)
         for pattern, reason in suspect_patterns:
             if fnmatch.fnmatch(f, pattern) or f == pattern:
                 findings.append({'file': rel, 'kind': 'committed-by-error', 'detail': reason})
                 break
+else:
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in ('node_modules', 'vendor', '.git', 'dist')]
+        for f in filenames:
+            rel = os.path.relpath(os.path.join(dirpath, f), root)
+            for pattern, reason in suspect_patterns:
+                if fnmatch.fnmatch(f, pattern) or f == pattern:
+                    findings.append({'file': rel, 'kind': 'committed-by-error', 'detail': reason})
+                    break
 
 print(json.dumps(findings))
 " 2>/dev/null || echo "[]"

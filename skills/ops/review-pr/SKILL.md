@@ -79,7 +79,8 @@ DELETIONS=$(gh pr view $PR --repo $REPO --json deletions --jq '.deletions')
 FILE_COUNT=$(gh pr view $PR --repo $REPO --json files --jq '.files | length')
 
 # Repo conventions (best-effort)
-gh api repos/$REPO/contents/CLAUDE.md --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "(no CLAUDE.md)"
+DECODE_FLAG="-d"; uname 2>/dev/null | grep -qi darwin && DECODE_FLAG="-D"
+gh api repos/$REPO/contents/CLAUDE.md --jq '.content' 2>/dev/null | base64 $DECODE_FLAG 2>/dev/null || echo "(no CLAUDE.md)"
 
 # Existing PR comments (avoid duplicating observations)
 gh pr view $PR --repo $REPO --json comments --jq '.comments[].body'

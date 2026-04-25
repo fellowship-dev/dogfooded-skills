@@ -46,7 +46,24 @@ gh pr view $PR_NUMBER --repo $REPO   # verify PR exists
 
 ## Mode 1: PR Review Runbook
 
-### Step 0: Gather Full Context
+### Step 0: Dedup Gate
+
+Before doing any work, check if a CTO review comment has already been posted to this PR:
+
+```bash
+export PR=$1
+export REPO=$2
+
+EXISTING=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' | grep "CTO Review" || true)
+if [ -n "$EXISTING" ]; then
+  echo "[pylot] outcome=\"already complete — CTO review comment already posted\" status=success"
+  exit 0
+fi
+```
+
+If any comment containing `CTO Review` is found, the review has already run — exit immediately. Otherwise continue to Step 1.
+
+### Step 1: Gather Full Context
 
 Before looking at the PR diff, build architectural awareness:
 
@@ -72,7 +89,7 @@ gh api "repos/$REPO/issues?state=open&per_page=10" --jq '.[].title'
 - "Are there recent commits that this PR should have been aware of?"
 - "What is the downstream impact on repos that depend on this one?"
 
-### Step 1: Gather PR Context
+### Step 2: Gather PR Context
 
 ```bash
 # Fetch PR metadata — INCLUDES state, mergedAt, mergeCommit so we know if it's already merged
@@ -99,14 +116,14 @@ gh pr diff $PR --repo $REPO --name-only
 - Linked issue number and title
 - Whether `reviewed` and `double-checked` labels are present
 
-#### 1.1 Pre-flight state check
+#### 2.1 Pre-flight state check
 
 Before running the checklist, branch on PR state. The checklist still runs for merged PRs — docs gaps, downstream impact, and deps findings are still valuable retrospectively — but the merge/label steps become no-ops.
 
 | State | What to do |
 |-------|------------|
-| `OPEN` | Normal flow — run Steps 2→6 as written. |
-| `MERGED` | **Post-merge review.** Run Steps 2, 3, 6. Prefix the review comment verdict with `[POST-MERGE]`. Skip Step 4 (labels — verdict labels are meaningless after merge) and Step 5 (merge — already merged, `gh pr merge` will error). If action items surface, **open GitHub issues** for each instead of blocking the PR. |
+| `OPEN` | Normal flow — run Steps 3→7 as written. |
+| `MERGED` | **Post-merge review.** Run Steps 3, 4, 7. Prefix the review comment verdict with `[POST-MERGE]`. Skip Step 5 (labels — verdict labels are meaningless after merge) and Step 6 (merge — already merged, `gh pr merge` will error). If action items surface, **open GitHub issues** for each instead of blocking the PR. |
 | `CLOSED` (not merged) | PR was abandoned. Post a single comment `CTO review skipped — PR closed without merge (state=CLOSED).` and exit. No checklist, no report. |
 
 Shell guard at the top of Step 2 in scripts/flows:
@@ -119,11 +136,11 @@ POST_MERGE=""
 [ "$STATE" = "MERGED" ] && POST_MERGE="true"
 ```
 
-### Step 2: Run CTO Checklist
+### Step 3: Run CTO Checklist
 
 Work through each checklist item. Read the diff and relevant files from the repo.
 
-#### 2.1 Documentation Check
+#### 3.1 Documentation Check
 
 For each documentation file that SHOULD be updated given the PR's changes:
 
@@ -145,7 +162,7 @@ Look specifically for:
 - New setup steps that aren't reflected in setup guides
 - New features shipped to templates/blueprints
 
-#### 2.2 External Dependencies
+#### 3.2 External Dependencies
 
 Check for new packages, APIs, or services requiring manual setup:
 
@@ -159,7 +176,7 @@ For each new external dependency, ask:
 - Is there a manual registration/setup step?
 - Is the setup documented somewhere?
 
-#### 2.3 Downstream Impact
+#### 3.3 Downstream Impact
 
 Identify repos that inherit from or depend on this repo:
 
@@ -174,7 +191,7 @@ For each downstream repo, assess:
 - Is the change breaking (requires update) or opt-in?
 - When do downstream repos need to pull these changes?
 
-#### 2.4 Verdict Decision
+#### 3.4 Verdict Decision
 
 | Decision | When | Action |
 |----------|------|--------|
@@ -183,14 +200,14 @@ For each downstream repo, assess:
 | BLOCKED | External dependency or missing info | Apply `needs-work` label, post what is needed, do NOT dispatch |
 | NEW_ISSUE | Review reveals separate work needed | Create new GitHub issue, approve/rework the current PR on its own merits |
 
-#### 2.5 Action Items
+#### 3.5 Action Items
 
 List numbered must-do items. Each item should be specific and actionable:
 1. `path/to/file.md` — exact change needed
 2. `path/to/other.yml` — exact change needed
 
 
-#### 2.6 Process Verification
+#### 3.6 Process Verification
 
 Check that the right development process was followed — not the code itself, but the steps taken:
 
@@ -240,7 +257,7 @@ gh issue view ISSUE_N --repo $REPO --json body --jq '.body' | grep -c '- \[ \]' 
 ```
 If the count is > 0 → **MUST FIX**: the PR uses `Closes #N` but the issue has unchecked acceptance criteria. The agent must change `Closes #N` to `Refs #N`. Only the final phase PR that completes all remaining work should use `Closes #N`.
 
-### Step 3: Post Review Comment
+### Step 4: Post Review Comment
 
 Post the CTO review as a PR comment in the exact format below:
 
@@ -311,9 +328,9 @@ COMMENT_EOF
 - Action items: numbered, `**path**` bold, then dash + description
 - No trailing whitespace in table cells
 
-### Step 4: Apply Label
+### Step 5: Apply Label
 
-**Skip this step entirely if `POST_MERGE` is set** — labels on a merged PR are noise. For post-merge reviews, action items become follow-up issues (see Step 4.1 below), not labels on the PR.
+**Skip this step entirely if `POST_MERGE` is set (Step 5)** — labels on a merged PR are noise. For post-merge reviews, action items become follow-up issues (see Step 5.1 below), not labels on the PR.
 
 ```bash
 if [ -n "$POST_MERGE" ]; then
@@ -332,7 +349,7 @@ else
 fi
 ```
 
-#### 4.1 Post-merge: open follow-up issues instead
+#### 5.1 Post-merge: open follow-up issues instead
 
 If `POST_MERGE` is set and the checklist surfaced action items (docs gaps, missing deps in `.env.example`, downstream migration steps, etc.), open one GitHub issue per item. The PR is already merged — blocking it via label is useless; issues are how follow-up work gets tracked.
 
@@ -348,9 +365,9 @@ if [ -n "$POST_MERGE" ] && [ -n "$ACTION_ITEMS" ]; then
 fi
 ```
 
-### Step 5: Merge or label (based on team merge_strategy)
+### Step 6: Merge or label (based on team merge_strategy)
 
-**Skip this step entirely if `POST_MERGE` is set** — `gh pr merge` on a merged PR errors out and can cause the runbook to loop or hang.
+**Skip this step entirely if `POST_MERGE` is set (Step 6)** — `gh pr merge` on a merged PR errors out and can cause the runbook to loop or hang.
 
 Only proceed if:
 1. `POST_MERGE` is unset (PR is still open)
@@ -361,7 +378,7 @@ Only proceed if:
 ```bash
 if [ -n "$POST_MERGE" ]; then
   echo "Already merged at $MERGED_AT — skipping merge step."
-  # fall through to Step 6 (report)
+  # fall through to Step 7 (report)
 else
   # Verify CI is green
   gh pr checks $PR --repo $REPO
@@ -397,7 +414,7 @@ fi
 
 If CI is failing: set verdict to "hold", note CI failure in comment, do NOT merge.
 
-### Step 6: Report
+### Step 7: Report
 
 Write a report to the commander reports directory:
 

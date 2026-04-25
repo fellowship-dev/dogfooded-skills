@@ -48,6 +48,23 @@ If the repo requires a specific runtime environment (e.g., Rails, Python with sy
 
 ## Runbook
 
+### Step 0: Dedup Gate
+
+Before doing any work, check if the `double-checked` label has already been applied to this PR:
+
+```bash
+export PR=$1
+export REPO=$2
+
+ALREADY_DONE=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name] | contains(["double-checked"])')
+if [ "$ALREADY_DONE" = "true" ]; then
+  echo "[pylot] outcome=\"already complete — double-checked label already applied\" status=success"
+  exit 0
+fi
+```
+
+If the label is already present, the double-check has already run — exit immediately. Otherwise continue to Step 1.
+
 ### Step 1: Pre-Flight
 
 ```bash

@@ -143,7 +143,7 @@ Run this before opening or marking a PR ready for review:
 - [ ] **No manual caveats?** Zero "you'll need to X manually" instructions in the PR body.
 - [ ] **Tests pass?** Ran them yourself right now — not trusting earlier cached output.
 - [ ] **Evidence present?** Screenshots or test output embedded for every meaningful change.
-- [ ] **Issue linked?** `Closes #N` in the body.
+- [ ] **Issue linked?** `Closes #N` in the body — or `Refs #N` if the issue has unchecked acceptance criteria (prevents premature auto-close on multi-phase work).
 
 **If the "No manual caveats?" check fails: close the PR. File a blocker report instead.** A PR that punts work back is worse than no PR. Reroute around obstacles — if the UI is the only path, use the API; if the API is missing, script it.
 

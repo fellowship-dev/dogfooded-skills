@@ -55,6 +55,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
 | [`ops/maintenance`](skills/ops/maintenance/) | Infra-only health audit — LaunchAgents, cron logs, system health, secrets scan |
 | [`ops/cto-review`](skills/ops/cto-review/) | Strategic CTO checklist for PR review — architecture impact, quality rubric adherence |
+| [`ops/review-pr`](skills/ops/review-pr/) | Read-only first-pass PR review — confidence-scored findings (≥80), no checkout, chains into double-check pipeline |
 | [`ops/double-check`](skills/ops/double-check/) | Second-pass PR double-check — fix must-fix issues, run tests, post curated review |
 | [`ops/distill`](skills/ops/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |

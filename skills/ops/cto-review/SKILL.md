@@ -365,6 +365,43 @@ if [ -n "$POST_MERGE" ] && [ -n "$ACTION_ITEMS" ]; then
 fi
 ```
 
+#### 5.2 REWORK branch — reset pipeline and dispatch double-check
+
+Skip if `POST_MERGE` is set. Run only when verdict is REWORK.
+
+Removing `double-checked` resets the dedup gate so double-check runs fresh when dispatched.
+
+```bash
+if [ -z "$POST_MERGE" ] && [[ "$VERDICT" == "rework" || "$VERDICT" == "sendback" ]]; then
+  # Remove pipeline labels so double-check runs fresh
+  gh pr edit $PR --repo $REPO --remove-label "double-checked" 2>/dev/null || true
+  gh pr edit $PR --repo $REPO --remove-label "chad-approves" 2>/dev/null || true
+  gh pr edit $PR --repo $REPO --remove-label "chad-rejects" 2>/dev/null || true
+
+  # Resolve team from crew.yml
+  TEAM=$(python3 -c "
+import yaml
+with open('$PYLOT_DIR/crew.yml') as f:
+    data = yaml.safe_load(f)
+for team, cfg in data.get('crew', {}).items():
+    if not isinstance(cfg, dict): continue
+    for r in cfg.get('repos', []):
+        if r.lower() == '$REPO'.lower():
+            print(team)
+            exit()
+print('fellowship')
+" 2>/dev/null || echo "fellowship")
+
+  # Dispatch double-check with CTO fix items as context
+  export PYLOT_DISPATCH_TOKEN=$(grep '^PYLOT_DISPATCH_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+  export PYLOT_DISPATCH_URL="http://127.0.0.1:3000/dispatch"
+  source $PYLOT_DIR/dispatch.sh
+  dispatch_mission "$TEAM" "Double-check PR $REPO#$PR — re-verify after CTO REWORK" \
+    --repo "$REPO" \
+    --context "CTO REWORK: re-check PR #$PR after required fixes. Fix items: $ACTION_ITEMS. Run /double-check $PR $REPO"
+fi
+```
+
 ### Step 6: Merge or label (based on team merge_strategy)
 
 **Skip this step entirely if `POST_MERGE` is set (Step 6)** — `gh pr merge` on a merged PR errors out and can cause the runbook to loop or hang.

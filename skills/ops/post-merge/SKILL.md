@@ -106,16 +106,16 @@ Document the command executed and its output.
 
 ### Step 4: Dispatch deployment-checker Job
 
-Dispatch a new job to the team's `deploy-checker` worker with full PR context:
+Dispatch a new job to the team's CTO worker with full PR context:
 
 ```bash
 PYLOT_DIR="${PYLOT_DIR:-$HOME/projects/fellowship-dev/pylot}"
+export PYLOT_DISPATCH_TOKEN=$(grep '^PYLOT_DISPATCH_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+export PYLOT_DISPATCH_URL="http://127.0.0.1:3000/dispatch"
 source "$PYLOT_DIR/dispatch.sh"
 
-dispatch_job \
-  --agent "${TEAM}.deploy-checker" \
+dispatch_mission "${TEAM}.cto" "Check deployment for $REPO#$PR — $PR_TITLE" \
   --repo "$REPO" \
-  --task "Check deployment for $REPO#$PR — $PR_TITLE" \
   --context "PR: $PR. Repo: $REPO. SHA: $PR_SHA. URL: $PR_URL.
 Deploy method: $DEPLOY_METHOD.
 Health URL: $HEALTH_URL.

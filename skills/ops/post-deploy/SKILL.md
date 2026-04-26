@@ -177,20 +177,22 @@ echo "smoke-test: event-router dry-run complete"
 ### Step 5: Post Summary Comment
 
 ```bash
-gh pr comment $PR --repo $REPO --body "$(cat <<'EOF'
-## Post-deploy actions
+# Build table rows before heredoc (<<'EOF' prevents expansion — pre-build instead)
+ACTION_TABLE=""
+for action_entry in $TRIGGERED_ACTION_ENTRIES; do
+  ACTION_NAME=$(echo "$action_entry" | cut -d: -f1)
+  ACTION_FILES=$(echo "$action_entry" | cut -d: -f2)
+  ACTION_RESULT=$(echo "$action_entry" | cut -d: -f3)
+  ACTION_TABLE="${ACTION_TABLE}| ${ACTION_NAME} | ${ACTION_FILES} | ${ACTION_RESULT} |\n"
+done
+[ -z "$ACTION_TABLE" ] && ACTION_TABLE="_No file-match rules triggered for this PR's changed files._\n"
+
+gh pr comment $PR --repo $REPO --body "$(printf '%s' "## Post-deploy actions
 
 | Action | Matched Files | Result |
 |--------|--------------|--------|
-$(for action in $TRIGGERED_ACTIONS; do
-  echo "| $ACTION_NAME | $MATCHED_FILES | $ACTION_RESULT |"
-done)
-
-$([ -z "$TRIGGERED_ACTIONS" ] && echo "_No file-match rules triggered for this PR's changed files._")
-
-**Pipeline complete.** This PR is live and verified.
-EOF
-)"
+$(printf '%b' "$ACTION_TABLE")
+**Pipeline complete.** This PR is live and verified.")"
 ```
 
 ### Step 6: Write Report

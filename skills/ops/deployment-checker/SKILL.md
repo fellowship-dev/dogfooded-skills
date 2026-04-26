@@ -104,10 +104,10 @@ else
 
   echo "Checker output: $POLL_OUTPUT"
 
-  # Parse structured output
-  DEPLOY_STATUS=$(echo "$POLL_OUTPUT" | grep -oP 'deploy_status=\K\S+' | tail -1 || echo "failed")
-  DEPLOYED_SHA=$(echo "$POLL_OUTPUT" | grep -oP 'sha=\K\S+' | tail -1 || echo "")
-  FAILURE_REASON=$(echo "$POLL_OUTPUT" | grep -oP 'reason=\K[^\n]+' | tail -1 || echo "unknown")
+  # Parse structured output (python3 avoids grep -P which is unavailable on macOS/BSD)
+  DEPLOY_STATUS=$(echo "$POLL_OUTPUT" | python3 -c "import sys,re; m=re.search(r'deploy_status=(\S+)', sys.stdin.read()); print(m.group(1) if m else 'failed')" 2>/dev/null || echo "failed")
+  DEPLOYED_SHA=$(echo "$POLL_OUTPUT" | python3 -c "import sys,re; m=re.search(r'sha=(\S+)', sys.stdin.read()); print(m.group(1) if m else '')" 2>/dev/null || echo "")
+  FAILURE_REASON=$(echo "$POLL_OUTPUT" | python3 -c "import sys,re; m=re.search(r'reason=(.+)', sys.stdin.read()); print(m.group(1).strip() if m else 'unknown')" 2>/dev/null || echo "unknown")
 fi
 ```
 

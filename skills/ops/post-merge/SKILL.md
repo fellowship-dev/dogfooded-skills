@@ -83,7 +83,7 @@ deploy:
 
 | Method | Action |
 |--------|--------|
-| `auto-pull` | Deploy is automatic (cron-driven). Skip to Step 4. |
+| `auto-pull` | Deploy is automatic. Skip Step 3 and Step 4 (auto-deploy.sh handles deploy-check). |
 | `github-actions` | Deploy triggered by merge. Wait ~2 min, then Step 4. |
 | `manual` | CTO runs deploy command now (Step 3), then Step 4. |
 
@@ -106,23 +106,21 @@ Document the command executed and its output.
 
 ### Step 4: Dispatch deployment-checker Job
 
-Dispatch a new job to the team's CTO worker with full PR context:
+**Skip this step if `method: auto-pull`.** Auto-pull repos have their deploy-check dispatched by `auto-deploy.sh` after the executor restarts — dispatching here would create a chicken-and-egg deadlock (deploy-checker blocks the queue, which blocks the deploy it's waiting for).
+
+For other deploy methods (`github-actions`, `manual`), dispatch a new job:
 
 ```bash
-PYLOT_DIR="${PYLOT_DIR:-$HOME/projects/fellowship-dev/pylot}"
-export PYLOT_DISPATCH_TOKEN=$(grep '^PYLOT_DISPATCH_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
-export PYLOT_DISPATCH_URL="http://127.0.0.1:3000/dispatch"
-source "$PYLOT_DIR/dispatch.sh"
-
-dispatch_mission "${TEAM}.cto" "Check deployment for $REPO#$PR — $PR_TITLE" \
-  --repo "$REPO" \
-  --context "PR: $PR. Repo: $REPO. SHA: $PR_SHA. URL: $PR_URL.
-Deploy method: $DEPLOY_METHOD.
-Health URL: $HEALTH_URL.
-Timeout: ${TIMEOUT_MINUTES:-5} minutes.
-Checker script: ${CHECKER_SCRIPT}.
-Run /deployment-checker $PR $REPO." \
-  --job-id "deploy-check-${PR}-$(date +%s)"
+if [ "$DEPLOY_METHOD" != "auto-pull" ]; then
+  PYLOT_DIR="${PYLOT_DIR:-$HOME/projects/fellowship-dev/pylot}"
+  curl -sS -X POST \
+    -H "Authorization: Bearer $(grep '^PYLOT_DISPATCH_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)" \
+    -H "Content-Type: application/json" \
+    -d "$(python3 -c "import json; print(json.dumps({'agent':'${TEAM}.intern','task':'Check deployment for $REPO#$PR — $PR_TITLE','repo':'$REPO','context':'SHA: $PR_SHA. Health URL: $HEALTH_URL. Timeout: ${TIMEOUT_MINUTES:-5} minutes. Checker script: ${CHECKER_SCRIPT}. Run /deployment-checker $PR $REPO.'}))")" \
+    "http://127.0.0.1:3000/dispatch"
+else
+  echo "[post-merge] Skipping deploy-check dispatch — auto-pull deploys are checked by auto-deploy.sh"
+fi
 ```
 
 ### Step 5: Post Comment on PR

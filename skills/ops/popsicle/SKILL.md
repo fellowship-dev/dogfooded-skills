@@ -152,7 +152,7 @@ Question: [concept.question from knowledge map]" \
   2>/dev/null > "$RESULTS_DIR/concept-N.txt"
 ```
 
-**Each invocation must be truly fresh — no `--continue`, no shared context.** Run up to 5 concepts in parallel to save time (background the `claude -p` calls and `wait`).
+**Each invocation must be truly fresh — no `--continue`, no shared context.** Run up to 3 concepts in parallel to save time (background the `claude -p` calls and `wait`). Do not exceed 3 concurrent sessions — small machines will OOM.
 
 ---
 

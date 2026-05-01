@@ -131,17 +131,17 @@ Concepts targeted: [list the concept names]"
 
 **Critical: the knowledge map must be invisible to validation sessions.** It's already in `/tmp` (not in the repo), so fresh sessions can't see it.
 
-For each concept in the knowledge map, spawn a fresh `claude -p` session. Each session gets ONLY the repo context — no discovery artifacts, no hints. Use `--model sonnet` for validators — they only need to read docs and answer questions.
+For each concept in the knowledge map, spawn 2 fresh `claude -p` sessions. Each session gets ONLY the repo context — no discovery artifacts, no hints. Use `--model sonnet` for validators — they only need to read docs and answer questions. Two independent sessions per concept ensures signal quality — if both pass with clean context, the docs genuinely work.
 
 ```bash
 RESULTS_DIR="/tmp/popsicle-results-$(date +%s)"
 mkdir -p "$RESULTS_DIR"
 ```
 
-For each concept, run a fresh session:
+For each concept, run 2 independent sessions:
 
 ```bash
-# For concept N:
+# For concept N, session S:
 claude -p "You are examining the repository at $REPO_ROOT. \
 Using ONLY the documentation and docs in this repo (CLAUDE.md, README, docs/, etc.), \
 answer this question. Do not read source code — only docs. \
@@ -149,10 +149,10 @@ If the docs don't cover this, say 'NOT DOCUMENTED'. \
 \
 Question: [concept.question from knowledge map]" \
   --model sonnet --output-format text \
-  2>/dev/null > "$RESULTS_DIR/concept-N.txt"
+  2>/dev/null > "$RESULTS_DIR/concept-N-session-S.txt"
 ```
 
-**Each invocation must be truly fresh — no `--continue`, no shared context.** Run up to 3 concepts in parallel to save time (background the `claude -p` calls and `wait`). Do not exceed 3 concurrent sessions — small machines will OOM.
+**Each invocation must be truly fresh — no `--continue`, no shared context.** Run up to 3 sessions in parallel to save time (background the `claude -p` calls and `wait`). Do not exceed 3 concurrent sessions — small machines will OOM.
 
 ---
 
@@ -160,9 +160,9 @@ Question: [concept.question from knowledge map]" \
 
 Read each validation response. For each concept, score it:
 
-- **PASS**: The session found and explained the concept correctly from docs alone.
-- **PARTIAL**: The session found something relevant but the answer is incomplete or vague.
-- **FAIL**: The session couldn't answer from docs, or said "NOT DOCUMENTED".
+- **PASS** (2/2): Both sessions found and explained the concept correctly from docs alone.
+- **WEAK** (1/2): One session got it, one didn't. Docs exist but aren't clear enough.
+- **FAIL** (0/2): Neither session could answer from docs. Gap confirmed.
 
 Use your own judgment — semantic understanding matters more than keyword matching. A response that explains the concept in different words is still a PASS.
 
@@ -194,11 +194,11 @@ Report format:
 
 ## Results
 
-| # | Concept | Category | Verdict |
-|---|---------|----------|---------|
-| 1 | {name}  | arch     | PASS    |
-| 2 | {name}  | config   | PARTIAL |
-| 3 | {name}  | api      | FAIL    |
+| # | Concept | Category | S1 | S2 | Verdict |
+|---|---------|----------|----|----|---------|
+| 1 | {name}  | arch     | PASS | PASS | PASS |
+| 2 | {name}  | config   | PASS | FAIL | WEAK |
+| 3 | {name}  | api      | FAIL | FAIL | FAIL |
 
 ## Gaps Remaining
 

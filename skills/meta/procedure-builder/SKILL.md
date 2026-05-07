@@ -190,11 +190,11 @@ Read `references/icm-conventions.md` before starting -- every convention applies
    ```
 4. Write each stage CONTEXT.md from the contracts using the stage-context-template:
    - Title + one-sentence purpose
-   - Inputs table (with selective section routing per ICM Pattern 4). Previous stage input is the handoff file (`$PROC_OUTPUT/0(N-1)-<name>.md`), not the actual artifact.
-   - Process steps (concrete, numbered). For Pylot procedures, the standard pattern is: prepare worker prompt from handoff data, spawn worker via `spawn-worker.sh`, wait via `wait-for-worker.sh`, read worker log + verify via GitHub API, write handoff file with artifact metadata (path, line count, summary, checklist).
+   - Inputs table (with selective section routing per ICM Pattern 4)
+   - Process steps (concrete, numbered)
    - Checkpoints section (if stage type is creative -- delete section otherwise)
-   - Audit section (if applicable -- checks run against GitHub API and worker log, not repo files)
-   - Outputs table. Output is always a handoff file: `$PROC_OUTPUT/0N-<name>.md`
+   - Audit section (if applicable)
+   - Outputs table
    - **Hard cap: 80 lines.** Move content to `references/` if exceeded.
 5. Write the procedure-level CONTEXT.md:
    - Task routing table

@@ -127,15 +127,13 @@ Questionnaire rules:
 - Placeholders: `{{SCREAMING_SNAKE_CASE}}`
 - Conditional sections: `{{?SECTION}}...{{/SECTION}}` wraps entire sections only
 
-## Pylot Adaptations
+## Skill Integration
 
-- **Operator runs the procedure, workers do the work.** The procedure is operator-level choreography. Each stage spawns a worker via `spawn-worker.sh`, waits via `wait-for-worker.sh`, observes the result, and writes a handoff file. The operator never touches code or reads repo files directly.
-- **Stage handoffs are contract files, not artifacts.** In vanilla ICM, Stage N writes an artifact to `output/` and Stage N+1 reads it. In Pylot, the artifact lives in the worker's repo (inaccessible to the operator). Instead, the operator writes a handoff file describing the artifact: path, line count, summary, and a checklist of qualities (open questions, test updates, breaking changes, etc.). The next stage reads this metadata to make decisions.
-- **Handoff files live in `.procedure-output/<name>/`.** Written by the operator in its working directory. One file per stage: `01-<name>.md`, `02-<name>.md`, etc.
-- **Verification via GitHub API.** The operator checks results using `gh pr view`, `gh issue view`, worker logs, and outcome markers -- not by reading repo files.
-- **Checkpoints become optional review gates.** Controlled by `--review` flag at dispatch.
-- **SKILL.md replaces CLAUDE.md** as the Layer 0 entry point.
+- **SKILL.md replaces CLAUDE.md** as the Layer 0 entry point. Procedures are skills with ICM internal structure.
+- **Checkpoints become optional review gates.** Controlled by `--review` flag at invocation.
+- **Stage artifacts live in `.procedure-output/<name>/`.** Written in the working directory. One file per stage: `01-<name>.md`, `02-<name>.md`, etc.
 - **Questionnaires still apply.** Domain procedures (marketing, onboarding) need system-level config via `setup/questionnaire.md`.
+- **Process steps are procedure-specific.** Each procedure defines its own stage logic -- the runtime does not prescribe how work is done, only that contracts are followed.
 
 ## Validation Checks (13 total)
 

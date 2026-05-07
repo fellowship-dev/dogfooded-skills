@@ -1,6 +1,6 @@
 ---
 name: procedure-builder
-description: Scaffold a multi-stage ICM procedure from a structured spec -- five-stage pipeline producing workflow map, stage contracts, folder scaffold, onboarding questionnaire, and validation report.
+description: Scaffold a multi-stage ICM procedure from a structured spec -- six-stage pipeline that bootstraps `_core/` if needed, then produces the workflow map, stage contracts, folder scaffold, onboarding questionnaire, and validation report.
 argument-hint: "[spec-file-path]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 # procedure-builder
 
-Build a complete ICM (Interpreted Context Methodology) procedure from a structured spec file. Follows the same five-stage pipeline as the ICM workspace-builder, producing the same intermediate artifacts at each stage.
+Build a complete ICM (Interpreted Context Methodology) procedure from a structured spec file. Bootstraps `_core/` on first run, then follows the five-stage pipeline of the ICM workspace-builder.
 
 ## When to Use
 
@@ -32,9 +32,55 @@ The spec file must follow the format in `references/spec-format.md`.
 
 ## Procedure
 
-This skill runs five stages sequentially, each producing an artifact that feeds the next. The stages mirror the ICM workspace-builder exactly.
+This skill runs six stages sequentially. The first is a one-time bootstrap; the remaining five mirror the ICM workspace-builder exactly. Each stage produces an artifact that feeds the next.
 
 Read `references/icm-conventions.md` before starting -- every convention applies.
+
+### Stage 00: Bootstrap `_core/`
+
+**Ensure the workspace has the canonical ICM `_core/` directory at the repo root before any scaffolding runs.** This makes a fresh repo ICM-compliant with one command and keeps later stages offline-deterministic. Run on every invocation; no-op if already bootstrapped.
+
+**Input:** The current working directory (must be a repo root).
+
+**Process:**
+
+1. Check whether `_core/` exists at the repo root:
+   ```bash
+   test -d "_core" && echo "present" || echo "missing"
+   ```
+2. If present, skip to Stage 01. Print `[bootstrap] _core/ already present, skipping`.
+3. If missing, copy the vendored template from this skill into the repo root. Resolve the skill's installed location (one of: `.claude/skills/procedure-builder/`, `.agents/skills/procedure-builder/`, `~/.claude/skills/procedure-builder/`):
+   ```bash
+   for SKILL_DIR in \
+       ".claude/skills/procedure-builder" \
+       ".agents/skills/procedure-builder" \
+       "$HOME/.claude/skills/procedure-builder"; do
+     if [ -d "$SKILL_DIR/templates/_core" ]; then
+       cp -R "$SKILL_DIR/templates/_core" "./_core"
+       break
+     fi
+   done
+   ```
+4. Verify the copy succeeded:
+   - `_core/CONVENTIONS.md` exists and is non-empty
+   - `_core/placeholder-syntax.md` exists
+   - `_core/templates/` contains `stage-context-template.md` and `questionnaire-template.md`
+   - `_core/SOURCE.md` exists (documents provenance)
+5. Run the audit checks:
+   - `_core/` is a directory at the repo root, not nested elsewhere
+   - All expected files are present and non-empty
+   - File contents match the bundled templates byte-for-byte (`diff -r ./_core "$SKILL_DIR/templates/_core"` returns no differences)
+
+**Output:** Write `bootstrap-result.md` to the working directory:
+```markdown
+# Bootstrap Result
+- bootstrapped: yes | no
+- core_files: <count>
+- skill_dir: <path>
+- audit: PASS | FAIL
+```
+
+If audit fails, stop the procedure -- do not proceed to Stage 01 with a broken `_core/`.
 
 ### Stage 01: Discovery
 

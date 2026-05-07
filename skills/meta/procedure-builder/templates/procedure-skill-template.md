@@ -3,7 +3,7 @@ name: {{PROCEDURE_NAME}}
 description: {{PROCEDURE_DESCRIPTION}}
 argument-hint: "{{ARGUMENT_HINT}}"
 user-invocable: true
-allowed-tools: Read, Write, Bash, Glob, Grep, Agent
+allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
 # {{PROCEDURE_TITLE}}
@@ -20,27 +20,55 @@ allowed-tools: Read, Write, Bash, Glob, Grep, Agent
 
 ## Procedure
 
-This is a multi-stage ICM procedure. Each stage has an explicit contract (Inputs/Process/Outputs) in its CONTEXT.md.
+This is a multi-stage ICM procedure run by the **operator**. Each stage dispatches work to a worker and produces a handoff file describing the result. The operator never reads worker repo files directly -- it observes results via worker logs, GitHub API, and structured handoff contracts.
 
 ### Arguments
 
 - First positional argument: {{PRIMARY_ARG_DESCRIPTION}}
 {{ADDITIONAL_ARGS}}
-- `--stage N` -- resume from stage N (reads prior stage outputs from `.procedure-output/`)
+- `--stage N` -- resume from stage N (reads prior handoff files)
 - `--review` -- pause at checkpoint stages, post output, exit with `status=review`
 
-### Output Location
+### Handoff Files
 
-Working artifacts are written to the repo, not this skill directory:
+Each stage writes a handoff file -- a contract describing what the worker produced, NOT the artifact itself. The operator cannot access the worker repo, so handoff files capture metadata the operator needs to make decisions.
 
 ```
-$REPO_DIR/.procedure-output/{{PROCEDURE_NAME}}/
-├── 01-{{STAGE_1_NAME}}/
-│   └── {{STAGE_1_ARTIFACT}}
-├── 02-{{STAGE_2_NAME}}/
-│   └── {{STAGE_2_ARTIFACT}}
+.procedure-output/{{PROCEDURE_NAME}}/
+├── 01-{{STAGE_1_NAME}}.md     (handoff: path, summary, checklist)
+├── 02-{{STAGE_2_NAME}}.md     (handoff: path, summary, checklist)
 └── ...
 ```
+
+Handoff file format:
+
+```markdown
+# Handoff: Stage 0N — <name>
+
+## Artifact
+- Path in repo: `<path to file the worker created>`
+- Lines: <line count>
+- Branch: `<branch name>`
+
+## Summary
+<2-3 sentences: what the worker produced>
+
+## Checklist
+- [ ] Has open questions: yes/no
+- [ ] Includes test updates: yes/no
+- [ ] Includes doc updates: yes/no
+- [ ] Breaking changes: yes/no
+{{STAGE_SPECIFIC_CHECKLIST_ITEMS}}
+
+## Worker Status
+- Exit: success/failed/partial
+- Log excerpt: <last 5 lines of worker log>
+```
+
+The operator constructs handoff files from:
+1. Worker log output (via `wait-for-worker.sh`)
+2. GitHub API calls (`gh pr view`, `gh issue view`, etc.)
+3. The worker's outcome marker
 
 ## Execution
 
@@ -51,7 +79,6 @@ $REPO_DIR/.procedure-output/{{PROCEDURE_NAME}}/
    STAGE_START=1
    REVIEW_MODE=false
 
-   # Parse flags
    for arg in "$@"; do
      case "$arg" in
        --stage) shift; STAGE_START="$1"; shift ;;
@@ -60,14 +87,14 @@ $REPO_DIR/.procedure-output/{{PROCEDURE_NAME}}/
    done
    ```
 
-2. **Create output directory**
+2. **Create handoff directory**
 
    ```bash
-   PROC_OUTPUT="$REPO_DIR/.procedure-output/{{PROCEDURE_NAME}}"
+   PROC_OUTPUT=".procedure-output/{{PROCEDURE_NAME}}"
    mkdir -p "$PROC_OUTPUT"
    ```
 
-3. **Read CONTEXT.md** for the stage chain and shared context list. Load shared context files listed in the Shared Context table.
+3. **Read CONTEXT.md** for the stage chain and shared context list.
 
 4. **Run stages sequentially** starting from `$STAGE_START`:
 
@@ -76,24 +103,27 @@ $REPO_DIR/.procedure-output/{{PROCEDURE_NAME}}/
    a. Read `stages/0N-<name>/CONTEXT.md`
 
    b. **Load inputs** per the Inputs table:
-      - Previous stage output: read from `$PROC_OUTPUT/0(N-1)-<prev>/`
+      - Previous stage handoff: read from `$PROC_OUTPUT/0(N-1)-<prev>.md`
       - Reference material: read from `stages/0N-<name>/references/` or `shared/`
-      - Respect selective section routing -- load only the sections specified in the Inputs table
 
-   c. **Execute Process steps** numbered in the CONTEXT.md. Each step is a concrete action -- follow them in order.
+   c. **Execute Process steps.** The typical pattern for each stage:
+      1. Prepare the worker prompt from the stage contract + prior handoff data
+      2. Spawn worker: `bash scripts/spawn-worker.sh <env> <job_id> <session> <repo_dir> "<prompt>" <model>`
+      3. Wait for worker: `bash scripts/wait-for-worker.sh <pid|container|arn> <log_file> <timeout>`
+      4. Read worker log tail and outcome marker
+      5. Verify result via GitHub API (check PR exists, issue state, labels, etc.)
 
-   d. **Run Audit checks** if the stage has an Audit section. For each check:
-      - Evaluate the pass condition
-      - If any check fails: revise the output and re-run the failed check
-      - Do not proceed to the next step until all checks pass
+   d. **Run Audit checks** if the stage has an Audit section:
+      - Evaluate each pass condition using GitHub API or worker log data
+      - If any check fails and is retriable: re-spawn worker with adjusted prompt
+      - If not retriable: record failure in handoff, decide whether to continue or abort
 
-   e. **Checkpoint gate** (if stage has a Checkpoints section AND `$REVIEW_MODE` is true):
-      - Complete the stage and write output
-      - Post a summary of what was produced to the mission log
+   e. **Write handoff file** to `$PROC_OUTPUT/0N-<name>.md` with the structured format above
+
+   f. **Checkpoint gate** (if stage has a Checkpoints section AND `$REVIEW_MODE` is true):
+      - Post handoff summary to the mission log
       - Exit with: `[pylot] outcome="stage 0N complete, awaiting review" status=review`
-      - The operator re-dispatches with `--stage (N+1)` after review
-
-   f. **Write artifacts** to `$PROC_OUTPUT/0N-<name>/`
+      - Re-dispatch with `--stage (N+1)` after review
 
 5. **Emit outcome marker** after all stages complete:
 
@@ -106,37 +136,35 @@ $REPO_DIR/.procedure-output/{{PROCEDURE_NAME}}/
 When invoked with `--stage N`:
 
 1. Skip stages 1 through N-1
-2. Read their outputs from `$PROC_OUTPUT/` -- they must exist
-3. If prior outputs are missing, exit with `status=failed` and report which stage output is missing
-4. Start execution at stage N
-
-This enables: run stages 01-03, human reviews output, re-dispatches with `--stage 4`.
+2. Read their handoff files from `$PROC_OUTPUT/` -- they must exist
+3. If prior handoffs are missing, exit with `status=failed` and report which handoff file is absent
+4. Start execution at stage N using data from prior handoffs
 
 ## Review Gates
 
 When invoked with `--review`:
 
-- Stages WITHOUT a Checkpoints section run straight through (no pause)
-- Stages WITH a Checkpoints section pause after completion:
-  1. Write the stage output to `$PROC_OUTPUT/`
-  2. Post a summary to the log describing what was produced and what the Checkpoints table says the human should decide
-  3. Exit with `status=review`
+- Stages WITHOUT a Checkpoints section run straight through
+- Stages WITH a Checkpoints section pause after writing the handoff file:
+  1. Post a summary describing what the worker produced and what the Checkpoints table says to review
+  2. Exit with `status=review`
 
-Without `--review`, all stages run straight through regardless of Checkpoints sections.
+Without `--review`, all stages run straight through.
 
 ## Error Handling
 
-**Prior stage output missing on resume** -- exit with `status=failed`. Report which stage output directory is empty or missing. Do not attempt to re-run the missing stage.
+**Worker fails** -- read the worker log. If the error is transient (timeout, network), retry the spawn (max 3 attempts per stage). If the error is structural (missing deps, blocked), record in handoff file and exit with `status=failed`.
 
-**Audit check fails after 3 revision attempts** -- exit with `status=partial`. Report which check keeps failing, what the output looks like, and which stages completed successfully.
+**Prior handoff missing on resume** -- exit with `status=failed`. Report which handoff file is absent.
 
-**External tool not available** -- check prerequisites. If a required tool is missing, exit with `status=blocked` and name the tool + install instructions from the stage's `references/` folder.
+**Audit check fails after retries** -- exit with `status=partial`. Report which check fails, include worker log excerpt, list stages that completed successfully.
 
 ## Critical Rules
 
-- **Follow the stage contracts exactly.** The CONTEXT.md is the spec. Do not improvise steps.
+- **The operator dispatches, it does not implement.** Every code-touching action happens in a worker. The operator reads contracts, spawns workers, observes results, writes handoffs.
+- **Handoff files describe artifacts, they do not contain them.** Path, line count, summary, checklist -- never the full content. The operator cannot access the worker repo.
+- **Follow the stage contracts exactly.** The CONTEXT.md is the spec.
 - **Load only what the Inputs table says.** Extra context dilutes quality.
-- **Write to `$PROC_OUTPUT/`, never to the skill directory.** The skill is mounted read-only.
-- **Audit before output.** Never write to the output directory until all audit checks pass.
-- **Docs over outputs.** Reference files in `references/` and `shared/` are authoritative. Do not learn patterns from previous stage outputs (ICM Pattern 14).
-- **One stage at a time.** Do not read ahead to later stages. Each stage is self-contained via its contract.
+- **Verify via GitHub API.** The operator checks PR state, labels, comments, issue state -- not repo files.
+- **One stage at a time.** Do not read ahead to later stages.
+- **Audit before handoff.** Never write the handoff file until audit checks pass.

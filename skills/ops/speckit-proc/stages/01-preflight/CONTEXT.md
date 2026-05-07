@@ -1,6 +1,6 @@
 # Pre-flight
 
-Gather all context needed before writing a single line of code. Real data eliminates guesswork.
+Gather all context needed before touching code. Operator-only -- no worker needed.
 
 ## Inputs
 
@@ -23,36 +23,28 @@ Gather all context needed before writing a single line of code. Real data elimin
    gh issue view $0 --repo $1 --json title,body,labels,comments
    ```
 
-3. Ensure `in-progress` label exists on the repo:
+3. Ensure `in-progress` label exists:
    ```bash
    gh label create "in-progress" --repo $1 --color "FBCA04" 2>/dev/null || true
    ```
 
-4. Read issue comments -- may contain clarifying Q&A from humans.
+4. Read issue comments for clarifying Q&A.
 
 5. Identify every URL, file path, data source, and API the issue references.
 
-6. Gather real data from the repo and live services:
-   - If scraping needed: fetch target pages, extract real CSS selectors
-   - If APIs needed: curl real endpoints, document request/response shapes
-   - If data needed: get real samples, not fabricated examples
-   - Read existing code patterns for similar features in the repo
-   - If dev server running (`curl -sf localhost:1337/_health` or `localhost:3000`): inspect real responses
+6. If issue has `bugsnag` label: run dedup check per `references/bugsnag-dedup.md`. If confident duplicate: close issue, link, emit `status=success`, stop.
 
-7. If issue has `bugsnag` label: run dedup check per `references/bugsnag-dedup.md`.
-
-8. Write pre-flight report with: issue metadata, real data findings, dedup decision.
+7. Write handoff with: issue title, body, labels, comments summary, referenced resources, dedup decision.
 
 ## Audit
 
 | Check | Pass Condition |
 |-------|---------------|
 | Issue accessible | `gh issue view` returns valid JSON, state is OPEN |
-| Real data gathered | Report contains at least one concrete data point from the repo or live services |
 | Dedup decided | If bugsnag: explicit proceed/dup/link decision. Otherwise: N/A |
 
 ## Outputs
 
 | Artifact | Location | Format |
 |----------|----------|--------|
-| Pre-flight report | `.procedure-output/speckit-proc/01-preflight/report.md` | Markdown: issue metadata, real data findings, dedup decision |
+| Pre-flight handoff | `.procedure-output/speckit-proc/01-preflight/handoff.md` | Markdown: issue metadata, resources, dedup decision |

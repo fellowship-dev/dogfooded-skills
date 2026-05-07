@@ -1,43 +1,43 @@
 # Plan
 
-Design the implementation approach and break it into atomic, dependency-ordered tasks.
+Resume worker to design the implementation approach.
 
 ## Inputs
 
 | Source | File/Location | Section/Scope | Why |
 |--------|--------------|---------------|-----|
-| Previous stage | `.procedure-output/speckit-proc/02-specify/result.md` | Full file | Spec path and branch name |
+| Previous stage | `.procedure-output/speckit-proc/02-specify/handoff.md` | Full file | Session ID, spec path |
+| Shared | `../../shared/worker-dispatch.md` | "Resume" section | How to resume the worker |
 
 ## Process
 
-1. Read the specify output. Confirm you are on the feature branch.
+1. Read the specify handoff. Extract worker session ID.
 
-2. Run the plan phase:
+2. Build resume prompt:
    ```
-   /speckit-plan $ISSUE
-   ```
-
-3. Read `specs/{issue-slug}/plan.md`. Verify the approach makes sense given the codebase.
-
-4. Run the tasks phase:
-   ```
-   /speckit-tasks $ISSUE
+   Read the spec at $SPEC_PATH. Verify it makes sense given the codebase.
+   Run /speckit-plan $ISSUE to create the implementation plan.
+   Read the plan. Verify the approach is sound.
+   Report: plan path, any concerns about the approach.
    ```
 
-5. Read `specs/{issue-slug}/tasks.md`. Verify tasks are concrete, atomic, and implementable.
+3. Resume worker per `shared/worker-dispatch.md` -- use `--resume` with session ID from handoff.
 
-6. Write plan output: plan path, tasks path, task count, any concerns about the approach.
+4. Wait for completion. Read worker log.
+
+5. Extract: plan file path, any concerns flagged.
+
+6. Write handoff with: session ID, plan path, concerns.
 
 ## Audit
 
 | Check | Pass Condition |
 |-------|---------------|
-| Plan exists | `specs/{issue-slug}/plan.md` is present, 60 lines or fewer |
-| Tasks exist | `specs/{issue-slug}/tasks.md` has at least one task |
-| Tasks are atomic | Each task describes a single, concrete action |
+| Worker completed | Exit code 0 or outcome marker in log |
+| Plan created | Worker log references a plan file path |
 
 ## Outputs
 
 | Artifact | Location | Format |
 |----------|----------|--------|
-| Plan result | `.procedure-output/speckit-proc/03-plan/result.md` | Markdown: plan path, tasks path, task count, concerns |
+| Plan handoff | `.procedure-output/speckit-proc/03-plan/handoff.md` | Markdown: session ID, plan path, concerns |

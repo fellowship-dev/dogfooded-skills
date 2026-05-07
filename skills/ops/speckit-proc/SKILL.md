@@ -1,6 +1,6 @@
 ---
 name: speckit-proc
-description: Issue-to-PR pipeline as an ICM procedure -- pre-flight, specify, plan, implement, deliver. Replaces speckit-runner with structured stage contracts.
+description: Issue-to-PR pipeline as an ICM procedure -- 7 stages from pre-flight through delivery. Operator drives a persistent worker session through speckit phases. Replaces speckit-runner.
 argument-hint: "[issue-number] [org/repo]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -8,12 +8,12 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 # speckit-proc
 
-Structured issue-to-PR pipeline. Takes a GitHub issue through pre-flight, specification, planning, implementation, and delivery -- each as a formally contracted stage.
+Issue-to-PR pipeline. The operator triages via GitHub API, then drives a persistent worker session through specify, plan, tasks, implement, test, and deliver -- one resume per stage.
 
 ## When to Use
 
 - Implementing a GitHub issue that requires code changes
-- Any dev task that should go through specify, plan, tasks, implement
+- Any dev task routed through the speckit pipeline
 - MANDATORY for all code tasks dispatched through Pylot crews
 
 ## Prerequisites
@@ -22,7 +22,7 @@ Structured issue-to-PR pipeline. Takes a GitHub issue through pre-flight, specif
 gh issue view $0 --repo $1 --json state --jq '.state' 2>/dev/null || echo "ERROR: cannot access issue"
 ```
 
-Requires `gh` CLI with valid `GH_TOKEN`. Speckit skills (`/speckit-specify`, `/speckit-plan`, etc.) enhance each stage but are not strictly required -- Process steps can be followed directly.
+Requires `gh` CLI with valid `GH_TOKEN` and worker dispatch scripts (`spawn-worker.sh` with `--resume` support, `wait-for-worker.sh`).
 
 ## Procedure
 
@@ -37,15 +37,17 @@ This is a multi-stage ICM procedure. Each stage has an explicit contract (Inputs
 
 ### Output Location
 
-Stage artifacts are written to:
+Stage handoffs are written to:
 
 ```
 .procedure-output/speckit-proc/
 ├── 01-preflight/
 ├── 02-specify/
 ├── 03-plan/
-├── 04-implement/
-└── 05-deliver/
+├── 04-tasks/
+├── 05-implement/
+├── 06-test/
+└── 07-deliver/
 ```
 
 ## Execution
@@ -56,7 +58,7 @@ Stage artifacts are written to:
    mkdir -p ".procedure-output/speckit-proc"
    ```
 
-2. **Read CONTEXT.md** for the stage chain and shared context.
+2. **Read CONTEXT.md** for the stage chain and worker session info.
 
 3. **Run stages sequentially:**
 
@@ -67,7 +69,7 @@ Stage artifacts are written to:
    c. Follow the Process steps exactly as written
    d. Run Audit checks if present -- revise until all pass
    e. If checkpoint + `--review`: write output, exit with `status=review`
-   f. Write artifacts to `.procedure-output/speckit-proc/0N-<name>/`
+   f. Write handoff to `.procedure-output/speckit-proc/0N-<name>/`
 
 4. **Emit outcome marker:**
 
@@ -77,7 +79,7 @@ Stage artifacts are written to:
 
 ## Resume
 
-With `--stage N`: skip stages 1 through N-1, read their outputs from `.procedure-output/`, start at stage N. If prior outputs are missing, exit with `status=failed`.
+With `--stage N`: skip stages 1 through N-1, read their handoffs from `.procedure-output/`, start at stage N. If prior handoffs are missing, exit with `status=failed`.
 
 ## Review Gates
 
@@ -87,8 +89,8 @@ With `--review`: stages with a Checkpoints section pause after completion and ex
 
 - **Follow the stage contracts.** The CONTEXT.md Process section is the spec.
 - **Load only what the Inputs table says.** Extra context dilutes quality.
-- **Audit before output.** Do not write to the output directory until all checks pass.
-- **Docs over outputs.** Reference files are authoritative, not previous stage outputs.
+- **Audit before output.** Do not write the handoff until all checks pass.
+- **Docs over outputs.** Reference files are authoritative, not previous handoffs.
 - **One stage at a time.** Do not read ahead to later stages.
 - **Pre-flight is mandatory.** No real data = garbage output. Never skip stage 01.
-- **Run tests yourself.** Never trust documented results from earlier phases.
+- **One worker session.** Stage 02 spawns it, stages 03-07 resume it. Do not spawn fresh workers per stage.

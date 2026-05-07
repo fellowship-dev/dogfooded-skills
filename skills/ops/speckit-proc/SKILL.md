@@ -1,6 +1,6 @@
 ---
 name: speckit-proc
-description: ICM procedure for issue-to-PR pipeline -- triage, worker dispatch, verification. Operator-level choreography using speckit phases.
+description: Issue-to-PR pipeline as an ICM procedure -- pre-flight, specify, plan, implement, deliver. Replaces speckit-runner with structured stage contracts.
 argument-hint: "[issue-number] [org/repo]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -8,13 +8,13 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 # speckit-proc
 
-Structured operator procedure for implementing GitHub issues via the speckit pipeline. Triages the issue, dispatches a worker to run speckit phases, and verifies the deliverable.
+Structured issue-to-PR pipeline. Takes a GitHub issue through pre-flight, specification, planning, implementation, and delivery -- each as a formally contracted stage.
 
 ## When to Use
 
 - Implementing a GitHub issue that requires code changes
-- Any dev task routed through specify, plan, tasks, implement
-- Operator needs auditable, staged issue-to-PR workflow
+- Any dev task that should go through specify, plan, tasks, implement
+- MANDATORY for all code tasks dispatched through Pylot crews
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ Structured operator procedure for implementing GitHub issues via the speckit pip
 gh issue view $0 --repo $1 --json state --jq '.state' 2>/dev/null || echo "ERROR: cannot access issue"
 ```
 
-The operator environment must have `gh` CLI with valid `GH_TOKEN`, and worker dispatch scripts (`spawn-worker.sh`, `wait-for-worker.sh`) available.
+Requires `gh` CLI with valid `GH_TOKEN`. Speckit skills (`/speckit-specify`, `/speckit-plan`, etc.) enhance each stage but are not strictly required -- Process steps can be followed directly.
 
 ## Procedure
 
@@ -41,9 +41,11 @@ Stage artifacts are written to:
 
 ```
 .procedure-output/speckit-proc/
-├── 01-triage/
-├── 02-implement/
-└── 03-verify/
+├── 01-preflight/
+├── 02-specify/
+├── 03-plan/
+├── 04-implement/
+└── 05-deliver/
 ```
 
 ## Execution
@@ -88,3 +90,5 @@ With `--review`: stages with a Checkpoints section pause after completion and ex
 - **Audit before output.** Do not write to the output directory until all checks pass.
 - **Docs over outputs.** Reference files are authoritative, not previous stage outputs.
 - **One stage at a time.** Do not read ahead to later stages.
+- **Pre-flight is mandatory.** No real data = garbage output. Never skip stage 01.
+- **Run tests yourself.** Never trust documented results from earlier phases.

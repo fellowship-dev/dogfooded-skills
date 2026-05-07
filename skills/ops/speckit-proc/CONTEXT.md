@@ -1,6 +1,6 @@
 # speckit-proc
 
-Issue-to-PR pipeline. Operator triages, dispatches a worker for speckit phases, verifies the result.
+Issue-to-PR pipeline using structured speckit phases.
 
 ## Arguments
 
@@ -13,18 +13,22 @@ Issue-to-PR pipeline. Operator triages, dispatches a worker for speckit phases, 
 
 | Stage | Input From | Output |
 |-------|-----------|--------|
-| 01-triage | Arguments | `.procedure-output/speckit-proc/01-triage/triage.md` |
-| 02-implement | 01-triage output | `.procedure-output/speckit-proc/02-implement/result.md` |
-| 03-verify | 02-implement output | `.procedure-output/speckit-proc/03-verify/report.md` |
+| 01-preflight | Arguments | `.procedure-output/speckit-proc/01-preflight/report.md` |
+| 02-specify | 01-preflight output | `.procedure-output/speckit-proc/02-specify/result.md` |
+| 03-plan | 02-specify output | `.procedure-output/speckit-proc/03-plan/result.md` |
+| 04-implement | 03-plan output | `.procedure-output/speckit-proc/04-implement/result.md` |
+| 05-deliver | 04-implement output | `.procedure-output/speckit-proc/05-deliver/report.md` |
 
 ## Stage Routing
 
 | Task | Go To |
 |------|-------|
-| Check issue state and deduplicate | `stages/01-triage/CONTEXT.md` |
-| Dispatch worker for speckit pipeline | `stages/02-implement/CONTEXT.md` |
-| Verify PR and deliverables | `stages/03-verify/CONTEXT.md` |
+| Gather issue context and real data | `stages/01-preflight/CONTEXT.md` |
+| Create feature specification | `stages/02-specify/CONTEXT.md` |
+| Design plan and break into tasks | `stages/03-plan/CONTEXT.md` |
+| Execute tasks and run tests | `stages/04-implement/CONTEXT.md` |
+| Create PR, review, verify | `stages/05-deliver/CONTEXT.md` |
 
 ## Shared Context
 
-None. All inputs are per-run arguments or GitHub API responses.
+None. All inputs are per-run arguments, repo state, or GitHub API responses.

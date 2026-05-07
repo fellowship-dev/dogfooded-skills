@@ -201,12 +201,12 @@ Read `references/icm-conventions.md` before starting -- every convention applies
    - Stage chain table (stage, input from, output)
    - Shared context table
    - **Hard cap: 80 lines.**
-6. Write the SKILL.md entry point:
-   - Frontmatter: name, description, argument-hint, user-invocable, allowed-tools
-   - Procedure execution instructions: read CONTEXT.md, run stages sequentially
-   - Working artifacts write to `$REPO_DIR/.procedure-output/<name>/`
-   - Resume support: `--stage N` to start from a specific stage
-   - Checkpoint support: `--review` flag for review gates
+6. Write the SKILL.md entry point using `templates/procedure-skill-template.md` as the base. Copy the template, then replace all `{{PLACEHOLDER}}` variables with values from the workflow map and contracts:
+   - `{{PROCEDURE_NAME}}`, `{{PROCEDURE_TITLE}}`, `{{PROCEDURE_PURPOSE}}`, `{{PROCEDURE_DESCRIPTION}}`
+   - `{{ARGUMENT_HINT}}`, `{{PRIMARY_ARG_DESCRIPTION}}`, `{{ADDITIONAL_ARGS}}`
+   - `{{WHEN_TO_USE_BULLETS}}`, `{{PREREQUISITES}}`
+   - `{{STAGE_N_NAME}}`, `{{STAGE_N_ARTIFACT}}` for each stage
+   - The template handles: stage chain execution, output directory management, `--stage N` resume, `--review` checkpoint gates, error handling, and critical rules. Do not modify the execution, resume, or error handling sections -- they are standardized across all procedures.
 7. Create placeholder reference files in `shared/` for each shared context item from the workflow map. Use `{{PLACEHOLDER}}` variables for user-specific content.
 8. Create stage-specific reference files in `stages/NN/references/` where needed
 9. If skills were identified, note them in the SKILL.md prerequisites. If they should be bundled (domain-specific knowledge), create a `skills/` folder and document the bundle.

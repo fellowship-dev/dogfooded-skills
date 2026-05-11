@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Read-only first-pass PR review — read diff, score findings by confidence, post structured comment, apply reviewed label. No checkout, no fixes. Chains into double-check pipeline.
+description: Read-only first-pass PR review — read diff, score findings by confidence, post structured comment, apply reviewed label. No checkout, no fixes, no tests.
 argument-hint: "[pr-number] [org/repo]"
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Agent
@@ -8,7 +8,7 @@ allowed-tools: Read, Bash, Glob, Grep, Agent
 
 # review-pr
 
-Read-only first-pass PR review. Reads the diff, checks repo conventions, scores findings by confidence, posts a structured review comment, and applies the `reviewed` label. Never checks out code, never fixes issues, never pushes commits — that's double-check's job.
+Read-only first-pass PR review. Reads the diff, checks repo conventions, scores findings by confidence, posts a structured review comment, and applies the `reviewed` label. Never checks out code, never fixes issues, never runs tests, never pushes commits.
 
 ## When to Use
 

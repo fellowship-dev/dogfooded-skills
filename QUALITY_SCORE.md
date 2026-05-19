@@ -1,22 +1,22 @@
 # Quality Score — fellowship-dev/dogfooded-skills
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Domains
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
-| meta | B | 2026-05-18 | S3 ✅ (last commit 2026-05-11, 7d); S4 ✅ (3 open: benchmarking, measurement, hyperskills); S6 ❌ (hookshot not configured) |
-| ops | C | 2026-05-18 | S3 ✅ (last commit 2026-05-11, 7d); S4 ⚠️ (4 open: cto-heartbeat, hookshot, security-check, pii-check); S6 ❌ (hookshot not configured) |
-| product | B | 2026-05-18 | S3 ✅ (last commit 2026-05-11, 7d); S4 ✅ (0 open); S6 ❌ (hookshot not configured) |
+| meta | B | 2026-05-19 | S3 ✅ (last commit 2026-05-11, 8d); S4 ✅ (3 open: benchmarking, measurement, hyperskills); S6 ❌ (hookshot not configured) |
+| ops | C | 2026-05-19 | S3 ✅ (last commit 2026-05-11, 8d); S4 ⚠️ (4 open: cto-heartbeat, hookshot, security-check, pii-check); S6 ❌ (hookshot not configured) |
+| product | B | 2026-05-19 | S3 ✅ (last commit 2026-05-11, 8d); S4 ✅ (0 open); S6 ❌ (hookshot not configured) |
 
 ## Signal Matrix
 
 | Domain | S1 Doc | S2 FlowChad | S3 Stale | S4 Issues | S5 Tests | S6 Hookshot |
 |--------|--------|-------------|----------|-----------|----------|-------------|
-| meta | N/A | N/A | ✅ (7d) | ✅ (3) | N/A | ❌ |
-| ops | N/A | N/A | ✅ (7d) | ⚠️ (4) | N/A | ❌ |
-| product | N/A | N/A | ✅ (7d) | ✅ (0) | N/A | ❌ |
+| meta | N/A | N/A | ✅ (8d) | ✅ (3) | N/A | ❌ |
+| ops | N/A | N/A | ✅ (8d) | ⚠️ (4) | N/A | ❌ |
+| product | N/A | N/A | ✅ (8d) | ✅ (0) | N/A | ❌ |
 
 ## Signal Applicability
 
@@ -27,7 +27,7 @@ Last updated: 2026-05-18
 | S3 Staleness | Yes | — |
 | S4 Open Issues | Yes | — |
 | S5 Tests | No | No coverage reports found |
-| S6 Hookshot | Yes | Not configured ❌ (previously incorrectly marked N/A — methodology correction in this sweep) |
+| S6 Hookshot | Yes | Not configured ❌ |
 
 ## Grade Summary
 
@@ -44,3 +44,4 @@ Last updated: 2026-05-18
 |------|---------|---------|
 | 2026-04-21 | weekly sweep | 3 domains scanned; meta A, ops B, product A. S6 incorrectly excluded. |
 | 2026-05-18 | weekly sweep | 3 domains; S6 methodology corrected. meta B, ops C, product B. Ops S4 improved (3 issues closed). 0 regressions (methodology fix), 0 real improvements. |
+| 2026-05-19 | daily sweep | 3 domains, 0 regressions, 0 improvements. All signals stable. |

@@ -1,22 +1,22 @@
 # Quality Score — fellowship-dev/dogfooded-skills
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 ## Domains
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
-| meta | B | 2026-05-19 | S3 ✅ (last commit 2026-05-11, 8d); S4 ✅ (3 open: benchmarking, measurement, hyperskills); S6 ❌ (hookshot not configured) |
-| ops | C | 2026-05-19 | S3 ✅ (last commit 2026-05-11, 8d); S4 ⚠️ (4 open: cto-heartbeat, hookshot, security-check, pii-check); S6 ❌ (hookshot not configured) |
-| product | B | 2026-05-19 | S3 ✅ (last commit 2026-05-11, 8d); S4 ✅ (0 open); S6 ❌ (hookshot not configured) |
+| meta | B | 2026-05-20 | S3 ✅ (last commit 2026-05-07, 13d); S4 ✅ (3 open: measurement, benchmarking, hyperskills); S6 ❌ (hookshot not configured) |
+| ops | B | 2026-05-20 | S3 ✅ (last commit 2026-05-20, 0d); S4 ✅ (3 open: cto-heartbeat, hookshot, pii-check); S6 ❌ (hookshot not configured) |
+| product | B | 2026-05-20 | S3 ✅ (last commit 2026-04-25, 25d); S4 ✅ (0 open); S6 ❌ (hookshot not configured) |
 
 ## Signal Matrix
 
 | Domain | S1 Doc | S2 FlowChad | S3 Stale | S4 Issues | S5 Tests | S6 Hookshot |
 |--------|--------|-------------|----------|-----------|----------|-------------|
-| meta | N/A | N/A | ✅ (8d) | ✅ (3) | N/A | ❌ |
-| ops | N/A | N/A | ✅ (8d) | ⚠️ (4) | N/A | ❌ |
-| product | N/A | N/A | ✅ (8d) | ✅ (0) | N/A | ❌ |
+| meta | N/A | N/A | ✅ (13d) | ✅ (3) | N/A | ❌ |
+| ops | N/A | N/A | ✅ (0d) | ✅ (3) | N/A | ❌ |
+| product | N/A | N/A | ✅ (25d) | ✅ (0) | N/A | ❌ |
 
 ## Signal Applicability
 
@@ -32,11 +32,22 @@ Last updated: 2026-05-19
 ## Grade Summary
 
 - A: 0
-- B: 2 (meta, product)
-- C: 1 (ops)
+- B: 3 (meta, ops, product)
+- C: 0
 - D: 0
 
-**Methodology note (2026-05-18)**: S6 (Hookshot) corrected from N/A to applicable per entropy-check spec ("S6 is always applicable"). Previous audits incorrectly excluded it. This caused meta and product to drop from A→B and ops from B→C. Real regression in ops: 3 issues closed since 2026-04-21 (cto-review, review-pr, cold-start-check resolved), reducing S4 from ❌ (7 issues) to ⚠️ (4 issues) — improvement in signal but grade still C due to S6.
+## Entropy Findings — 2026-05-20
+
+### Improvements (grade improved)
+- ops: C → B
+  Reason: security-check issue closed; S4 dropped from ⚠️ (4 open) to ✅ (3 open)
+
+### Stable issues (same grade)
+- meta: B (S6 hookshot not configured)
+- product: B (S6 hookshot not configured)
+
+### Action Items
+- None — no domains at D or F
 
 ## History
 
@@ -45,3 +56,4 @@ Last updated: 2026-05-19
 | 2026-04-21 | weekly sweep | 3 domains scanned; meta A, ops B, product A. S6 incorrectly excluded. |
 | 2026-05-18 | weekly sweep | 3 domains; S6 methodology corrected. meta B, ops C, product B. Ops S4 improved (3 issues closed). 0 regressions (methodology fix), 0 real improvements. |
 | 2026-05-19 | daily sweep | 3 domains, 0 regressions, 0 improvements. All signals stable. |
+| 2026-05-20 | daily sweep | 3 domains, 0 regressions, 1 improvement. ops C→B (security-check closed, S4 ⚠️→✅). |

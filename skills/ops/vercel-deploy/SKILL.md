@@ -16,15 +16,17 @@ Must be available as environment variables (from crew secret store):
 - `VERCEL_TOKEN` — Access token with deploy permissions
 - `VERCEL_ORG_ID` — Organization/team ID (starts with `team_`)
 - `VERCEL_PROJECT_ID` — Project ID (starts with `prj_`)
-- `VERCEL_DEPLOY_AUTHOR` — Git name of a verified Vercel team member (e.g. `maxfindel`)
-- `VERCEL_DEPLOY_EMAIL` — Email matching the above (e.g. `maxfindel@pm.me`)
 
 ## Required Inputs
 
-The dispatch task MUST specify:
+All inputs are passed as `KEY=value` pairs in the skill invocation or task description. Parse them from the args — **never read these from environment variables**.
 
 - `DEPLOY_DIR` — Path to the deployable directory (e.g., `./ui`, repo root)
 - `PROD_DOMAIN` — Expected production domain (e.g., `pylot.fellowship.dev`)
+- `DEPLOY_AUTHOR` — Git name of a verified Vercel team member (e.g., `maxfindel`)
+- `DEPLOY_EMAIL` — Git email matching the author (e.g., `maxfindel@pm.me`)
+
+These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), not from secrets. The operator reads the playbook and passes them when invoking this skill.
 
 ## Optional Inputs
 
@@ -57,16 +59,15 @@ Vercel blocks CLI deploys when the HEAD commit author is not a verified Vercel t
 **Before any deploy attempt:**
 
 ```bash
-# Read author identity from crew secrets — never hardcode
-VERCEL_AUTHOR="${VERCEL_DEPLOY_AUTHOR}"
-VERCEL_EMAIL="${VERCEL_DEPLOY_EMAIL}"
+# DEPLOY_AUTHOR and DEPLOY_EMAIL are passed as skill params (from the repo playbook)
+# Parse them from the task/args — never read from env vars
 HEAD_AUTHOR=$(git log -1 --format='%an')
 
-if [ "$HEAD_AUTHOR" != "$VERCEL_AUTHOR" ]; then
+if [ "$HEAD_AUTHOR" != "$DEPLOY_AUTHOR" ]; then
   echo "[vercel-deploy] HEAD author '$HEAD_AUTHOR' is not a Vercel team member."
-  echo "[vercel-deploy] Creating empty commit with author '$VERCEL_AUTHOR' to unblock deploy."
+  echo "[vercel-deploy] Creating empty commit with author '$DEPLOY_AUTHOR' to unblock deploy."
   git commit --allow-empty \
-    --author="$VERCEL_AUTHOR <$VERCEL_EMAIL>" \
+    --author="$DEPLOY_AUTHOR <$DEPLOY_EMAIL>" \
     -m "chore: vercel deploy author fix (empty commit)"
   git push origin HEAD
   # Note: this commit is a no-op. If the deploy fails later, clean up with:
@@ -83,16 +84,16 @@ This creates a no-op commit so Vercel sees a team member as the author. The comm
 Verify all secrets and inputs exist, tools are installed, and checkout the deploy branch.
 
 ```bash
-# Verify required secrets
-[ -z "$VERCEL_TOKEN" ]          && { echo "[vercel-deploy] MISSING secret: VERCEL_TOKEN"; exit 1; }
-[ -z "$VERCEL_ORG_ID" ]         && { echo "[vercel-deploy] MISSING secret: VERCEL_ORG_ID"; exit 1; }
-[ -z "$VERCEL_PROJECT_ID" ]     && { echo "[vercel-deploy] MISSING secret: VERCEL_PROJECT_ID"; exit 1; }
-[ -z "$VERCEL_DEPLOY_AUTHOR" ]  && { echo "[vercel-deploy] MISSING secret: VERCEL_DEPLOY_AUTHOR"; exit 1; }
-[ -z "$VERCEL_DEPLOY_EMAIL" ]   && { echo "[vercel-deploy] MISSING secret: VERCEL_DEPLOY_EMAIL"; exit 1; }
+# Verify required secrets (from crew secret store)
+[ -z "$VERCEL_TOKEN" ]      && { echo "[vercel-deploy] MISSING secret: VERCEL_TOKEN"; exit 1; }
+[ -z "$VERCEL_ORG_ID" ]     && { echo "[vercel-deploy] MISSING secret: VERCEL_ORG_ID"; exit 1; }
+[ -z "$VERCEL_PROJECT_ID" ] && { echo "[vercel-deploy] MISSING secret: VERCEL_PROJECT_ID"; exit 1; }
 
-# Verify required inputs
-[ -z "$DEPLOY_DIR" ]   && { echo "[vercel-deploy] MISSING input: DEPLOY_DIR"; exit 1; }
-[ -z "$PROD_DOMAIN" ]  && { echo "[vercel-deploy] MISSING input: PROD_DOMAIN"; exit 1; }
+# Verify required inputs (parsed from skill args / task description)
+[ -z "$DEPLOY_DIR" ]    && { echo "[vercel-deploy] MISSING input: DEPLOY_DIR"; exit 1; }
+[ -z "$PROD_DOMAIN" ]   && { echo "[vercel-deploy] MISSING input: PROD_DOMAIN"; exit 1; }
+[ -z "$DEPLOY_AUTHOR" ] && { echo "[vercel-deploy] MISSING input: DEPLOY_AUTHOR — check the repo playbook"; exit 1; }
+[ -z "$DEPLOY_EMAIL" ]  && { echo "[vercel-deploy] MISSING input: DEPLOY_EMAIL — check the repo playbook"; exit 1; }
 
 # Verify vercel CLI is available
 command -v vercel >/dev/null 2>&1 || command -v npx >/dev/null 2>&1 || {

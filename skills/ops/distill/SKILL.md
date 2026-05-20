@@ -46,98 +46,79 @@ Use code `??` for incidents that don't fit any category — `??` frequency feeds
 
 ### Invocation
 
+Task field: `distill capture <job_id>`
+
+The skill receives `job_id` from the task input (e.g. `task: 'distill capture abc123-uuid'`).
+
+### Environment
+
 ```bash
-/distill capture reports/2026-04-12-speckit-fellowship-dev-myrepo-branch.md
-/distill capture reports/2026-04-12-speckit-fellowship-dev-myrepo-branch.md --session abc123-uuid
+# Required
+PYLOT_API_TOKEN    # Bearer token for Pylot API
+PYLOT_GATEWAY_URL  # e.g. https://gateway.pylot.dev
 ```
 
-### Step 1: Guard — already captured?
+All API calls include the header:
+```
+Authorization: Bearer $PYLOT_API_TOKEN
+```
 
-Check if the audit file already exists. Presence = skip.
+### Step 1: Fetch mission metadata + anti-recursion guard
+
+Fetch mission record from the Pylot API. Extract metadata and apply the anti-recursion guard before doing any further work.
 
 ```bash
-REPORT="$1"
-AUDIT="${REPORT%.md}-audit.json"
+MISSION=$(curl -sf \
+  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  "${PYLOT_GATEWAY_URL}/missions/${job_id}")
 
-if [ -f "$AUDIT" ]; then
-  echo "Already captured: $AUDIT — skipping"
-  exit 0
-fi
-
-if [ ! -f "$REPORT" ]; then
-  echo "ERROR: Report not found: $REPORT"
+if [ $? -ne 0 ] || [ -z "$MISSION" ]; then
+  echo "ERROR: Failed to fetch mission $job_id"
   exit 1
 fi
-```
 
-### Step 2: Resolve the JSONL session file
+# Extract metadata fields
+TASK=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('task',''))")
+STATUS=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('status',''))")
+EXIT_CODE=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('exit_code',''))")
+TEAM=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('team',''))")
+AGENT=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('agent',''))")
+STARTED_AT=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('started_at',''))")
+FINISHED_AT=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('finished_at',''))")
+REPORT=$(echo "$MISSION" | python3 -c "import json,sys; m=json.load(sys.stdin); print(m.get('report',''))")
 
-The agent writes session transcripts to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
-
-The encoded path is the `cwd` with every `/` replaced by `-` and the leading `/` stripped:
-- `/home/ubuntu/projects/fellowship-dev/pylot` → `-home-ubuntu-projects-fellowship-dev-pylot`
-
-**If `--session <id>` provided:**
-
-```bash
-ENCODED_CWD=$(pwd | sed 's|/|-|g' | sed 's|^-||')
-SESSIONS_DIR="$HOME/.claude/projects/$ENCODED_CWD"
-JSONL="$SESSIONS_DIR/${SESSION_ARG}.jsonl"
-
-if [ ! -f "$JSONL" ]; then
-  echo "WARN: Session file not found: $JSONL — proceeding with report-only audit"
-  JSONL=""
+# Anti-recursion guard — never capture a capture/audit/analyze mission
+if echo "$TASK" | grep -qiE 'distill|capture|audit|analyze'; then
+  echo "Anti-recursion: skipping capture for task: $TASK"
+  exit 0
 fi
 ```
 
-**If no session provided — infer by report date:**
+### Step 2: Stream CloudWatch logs via SSE
 
 ```bash
-REPORT_DATE=$(basename "$REPORT" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
-ENCODED_CWD=$(pwd | sed 's|/|-|g' | sed 's|^-||')
-SESSIONS_DIR="$HOME/.claude/projects/$ENCODED_CWD"
+curl -sf \
+  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Accept: text/event-stream" \
+  "${PYLOT_GATEWAY_URL}/missions/${job_id}/logs/stream" \
+  > /tmp/distill_logs_${job_id}.txt
 
-# Find JSONL modified on the report date; fall back to most recent
-JSONL=$(ls -t "$SESSIONS_DIR"/*.jsonl 2>/dev/null | while IFS= read -r f; do
-  # macOS: date -r; Linux: stat -c
-  MOD_DATE=$(date -r "$f" +%Y-%m-%d 2>/dev/null || stat -c %y "$f" 2>/dev/null | cut -d' ' -f1)
-  [ "$MOD_DATE" = "$REPORT_DATE" ] && echo "$f" && break
-done | head -1)
-
-# Fallback: most recent session regardless of date
-[ -z "$JSONL" ] && JSONL=$(ls -t "$SESSIONS_DIR"/*.jsonl 2>/dev/null | head -1)
-
-[ -z "$JSONL" ] && echo "WARN: No JSONL found in $SESSIONS_DIR — proceeding without session data"
+echo "Log stream saved."
 ```
 
-### Step 3: Count JSONL lines and decide chunking
+The SSE stream delivers CloudWatch log lines as JSON events. Each `data:` line is a JSON object with `timestamp`/`ts` and `message`/`msg` fields.
+
+### Step 3: Parse SSE events — extract signals
+
+Write and run the SSE parser:
 
 ```bash
-if [ -n "$JSONL" ] && [ -f "$JSONL" ]; then
-  LINE_COUNT=$(wc -l < "$JSONL")
-  CHUNK_THRESHOLD=2000
-  echo "Session: $JSONL ($LINE_COUNT lines)"
-else
-  LINE_COUNT=0
-fi
-```
+cat > /tmp/distill_parse_sse.py << 'PYEOF'
+import re, sys, json, collections
 
-### Step 4: Parse JSONL — extract signals
-
-**If LINE_COUNT ≤ 2000 — parse directly:**
-
-Write the signals extraction script to a temp file and run it:
-
-```bash
-cat > /tmp/distill_parse.py << 'PYEOF'
-import json, re, sys, collections
-
-path = sys.argv[1]
+log_file = sys.argv[1]
 signals = {
-    "session_id": None,
     "session_complete": True,
-    "start_ts": None,
-    "end_ts": None,
     "tool_counts": {},
     "error_tool_results": [],
     "workers_spawned": 0,
@@ -157,84 +138,85 @@ signals = {
         "issue_closed": False,
         "committed_to_main": False,
         "push_verified": False
+    },
+    "timing": {
+        "container_start_ts": None,
+        "first_claude_call_ts": None,
+        "first_token_ts": None,
+        "done_signal_ts": None
     }
 }
 tool_counts = collections.Counter()
 
 try:
-    with open(path) as f:
-        lines = f.readlines()
+    with open(log_file) as f:
+        content = f.read()
 except Exception as e:
     signals["session_complete"] = False
     print(json.dumps(signals))
     sys.exit(0)
 
-for line in lines:
-    line = line.strip()
-    if not line:
+# Parse SSE data lines — each is a CloudWatch log entry JSON
+for line in content.splitlines():
+    if not line.startswith("data: "):
+        continue
+    raw = line[6:].strip()
+    if not raw or raw == "[DONE]":
         continue
     try:
-        entry = json.loads(line)
+        entry = json.loads(raw)
     except json.JSONDecodeError:
         signals["session_complete"] = False
         continue
 
-    if not signals["session_id"] and entry.get("sessionId"):
-        signals["session_id"] = entry["sessionId"]
+    ts = entry.get("timestamp") or entry.get("ts")
+    msg = entry.get("message", "") or entry.get("msg", "")
+    msg_lower = msg.lower()
 
-    ts = entry.get("timestamp")
-    if ts:
-        if not signals["start_ts"]:
-            signals["start_ts"] = ts
-        signals["end_ts"] = ts
+    # Timing markers
+    timing = signals["timing"]
+    if not timing["container_start_ts"] and any(k in msg_lower for k in [
+            "container start", "ecs task started", "bootstrap"]):
+        timing["container_start_ts"] = ts
+    if not timing["first_claude_call_ts"] and any(k in msg_lower for k in [
+            "claude api", "anthropic.messages.create", "invoking claude"]):
+        timing["first_claude_call_ts"] = ts
+    if not timing["first_token_ts"] and any(k in msg_lower for k in [
+            "first token", "stream started", "content_block_start"]):
+        timing["first_token_ts"] = ts
+    if not timing["done_signal_ts"] and re.search(r'\bdone\b', msg_lower):
+        timing["done_signal_ts"] = ts
 
-    # Original prompt — first user message with string content
-    if (not signals["original_prompt"] and
-            entry.get("type") == "user" and
-            isinstance(entry.get("message"), dict) and
-            entry["message"].get("role") == "user"):
-        content = entry["message"].get("content", "")
-        if isinstance(content, str) and len(content) > 10:
-            signals["original_prompt"] = content[:500]
+    # Tool call detection from log message text
+    tool_match = re.search(
+        r'\b(Read|Bash|Edit|Write|Grep|Glob|Agent|WebFetch|WebSearch|TodoWrite|TodoRead)\b',
+        msg
+    )
+    if tool_match:
+        tool = tool_match.group(1)
+        tool_counts[tool] += 1
 
-    # Tool use blocks from assistant messages
-    if entry.get("type") == "assistant":
-        msg = entry.get("message", {})
-        usage = msg.get("usage", {})
-        signals["total_input_tokens"] += usage.get("input_tokens", 0)
-        signals["total_output_tokens"] += usage.get("output_tokens", 0)
-
-        for block in msg.get("content", []):
-            if not isinstance(block, dict) or block.get("type") != "tool_use":
-                continue
-            tool = block.get("name", "")
-            tool_counts[tool] += 1
-            inp = block.get("input", {})
-
-            if tool == "Agent":
-                signals["workers_spawned"] += 1
-
-            elif tool == "Read":
-                path_val = str(inp.get("file_path", ""))
-                if ".claude/skills" in path_val:
-                    parts = path_val.split(".claude/skills/")
-                    if len(parts) > 1:
-                        skill_name = parts[1].split("/")[0]
-                        if skill_name and skill_name not in signals["skills_loaded"]:
-                            signals["skills_loaded"].append(skill_name)
-
-            elif tool == "Bash":
-                cmd = inp.get("command", "")
-                signals["bash_calls"].append(cmd[:300])
-                # Detect claude -p worker spawns (new pattern; Agent tool is the old pattern)
-                if re.search(r'\bclaude\s+(-p|--print)\b', cmd):
-                    signals["workers_spawned"] += 1
-                    sid = re.search(r'--session-id\s+(\S+)', cmd)
-                    if sid:
-                        signals["workers_spawned_sessions"].append(sid.group(1))
+        if tool == "Agent":
+            signals["workers_spawned"] += 1
+        elif tool == "Write":
+            path_match = re.search(r'file_path["\s:]+([^\s",}]+)', msg)
+            if path_match:
+                signals["write_paths"].append(path_match.group(1))
+        elif tool == "Read":
+            path_match = re.search(r'file_path["\s:]+([^\s",}]+)', msg)
+            if path_match and ".claude/skills" in path_match.group(1):
+                parts = path_match.group(1).split(".claude/skills/")
+                if len(parts) > 1:
+                    skill_name = parts[1].split("/")[0]
+                    if skill_name and skill_name not in signals["skills_loaded"]:
+                        signals["skills_loaded"].append(skill_name)
+        elif tool == "Bash":
+            cmd_match = re.search(r'command["\s:]+(.+?)(?:,\s*"|\}|$)', msg)
+            if cmd_match:
+                cmd = cmd_match.group(1).strip('"')[:300]
+                signals["bash_calls"].append(cmd)
                 if any(v in cmd for v in ["curl ", "gh pr view", "gh pr merge", "gh pr list", "gh run"]):
                     signals["verification_calls"].append(cmd[:200])
-                # Git workflow signals
                 gs = signals["git_signals"]
                 if re.search(r'git\s+(checkout\s+-b|switch\s+-c)', cmd):
                     gs["branch_created"] = True
@@ -250,23 +232,30 @@ for line in lines:
                         re.search(r'gh\s+api.*commits/', cmd) or
                         re.search(r'git\s+log.*origin/', cmd)):
                     gs["push_verified"] = True
+                if re.search(r'\bclaude\s+(-p|--print)\b', cmd):
+                    signals["workers_spawned"] += 1
+                    sid = re.search(r'--session-id\s+(\S+)', cmd)
+                    if sid:
+                        signals["workers_spawned_sessions"].append(sid.group(1))
 
-            elif tool == "Write":
-                fp = str(inp.get("file_path", ""))
-                signals["write_paths"].append(fp)
+    # Error patterns — ENOENT, permission denied, timeout, crash
+    error_patterns = ["enoent", "permission denied", "timeout", "crash", "error:", "exception:"]
+    if any(p in msg_lower for p in error_patterns):
+        signals["error_tool_results"].append(msg[:300])
 
-    # Tool results with errors
-    if entry.get("type") == "user":
-        content = entry.get("message", {}).get("content", [])
-        if isinstance(content, list):
-            for block in content:
-                if (isinstance(block, dict) and
-                        block.get("type") == "tool_result" and
-                        block.get("is_error")):
-                    err_text = str(block.get("content", ""))[:300]
-                    signals["error_tool_results"].append(err_text)
+    # Original prompt — first assistant message with task context
+    if not signals["original_prompt"] and "task:" in msg_lower:
+        signals["original_prompt"] = msg[:500]
 
-# committed_to_main: git commit found but no feature branch created in session
+    # Token usage from log lines
+    tok_in = re.search(r'input_tokens["\s:]+(\d+)', msg)
+    if tok_in:
+        signals["total_input_tokens"] += int(tok_in.group(1))
+    tok_out = re.search(r'output_tokens["\s:]+(\d+)', msg)
+    if tok_out:
+        signals["total_output_tokens"] += int(tok_out.group(1))
+
+# committed_to_main heuristic
 if any(re.search(r'git\s+commit', b) for b in signals["bash_calls"]):
     signals["git_signals"]["committed_to_main"] = not signals["git_signals"]["branch_created"]
 
@@ -274,95 +263,54 @@ signals["tool_counts"] = dict(tool_counts)
 print(json.dumps(signals, default=str))
 PYEOF
 
-SIGNALS=$(python3 /tmp/distill_parse.py "$JSONL")
+SIGNALS=$(python3 /tmp/distill_parse_sse.py "/tmp/distill_logs_${job_id}.txt")
 echo "Signals extracted."
 ```
 
-**If LINE_COUNT > 2000 — chunk via subagents:**
-
-Split into 2000-line chunks and spawn one subagent per chunk. Each subagent runs the same `distill_parse.py` on its chunk. Merge results: sum token counts, concatenate lists, union skills.
+### Step 4: Extract timing metrics from log timestamps
 
 ```bash
-CHUNK_DIR=$(mktemp -d /tmp/distill_chunks_XXXX)
-split -l 2000 "$JSONL" "$CHUNK_DIR/chunk_"
-
-# Spawn one subagent per chunk, collect JSON signals
-MERGED_SIGNALS='{"session_id":null,"start_ts":null,"end_ts":null,"tool_counts":{},"error_tool_results":[],"workers_spawned":0,"skills_loaded":[],"verification_calls":[],"total_input_tokens":0,"total_output_tokens":0,"original_prompt":null,"write_paths":[],"bash_calls":[],"git_signals":{"branch_created":false,"pushed":false,"push_force":false,"pr_created":false,"issue_closed":false,"committed_to_main":false,"push_verified":false},"session_complete":true}'
-
-for chunk in "$CHUNK_DIR"/chunk_*; do
-  # Each subagent: run distill_parse.py on chunk, return JSON
-  # Merge into MERGED_SIGNALS using python3 merge script
-  :
-done
-```
-
-Use Agent tool to spawn one subagent per chunk with instructions: "Run `python3 /tmp/distill_parse.py {chunk_path}` and return the JSON output verbatim."
-
-Merge all chunk signals with:
-
-```python
-# merge_signals.py
-import json, sys, collections
-
-chunks = [json.loads(line) for line in sys.stdin]
-merged = {
-    "session_id": next((c["session_id"] for c in chunks if c.get("session_id")), None),
-    "start_ts": min((c["start_ts"] for c in chunks if c.get("start_ts")), default=None),
-    "end_ts": max((c["end_ts"] for c in chunks if c.get("end_ts")), default=None),
-    "tool_counts": dict(sum((collections.Counter(c.get("tool_counts", {})) for c in chunks), collections.Counter())),
-    "error_tool_results": sum((c.get("error_tool_results", []) for c in chunks), []),
-    "workers_spawned": sum(c.get("workers_spawned", 0) for c in chunks),
-    "workers_spawned_sessions": sum((c.get("workers_spawned_sessions", []) for c in chunks), []),
-    "skills_loaded": list(set(sum((c.get("skills_loaded", []) for c in chunks), []))),
-    "verification_calls": sum((c.get("verification_calls", []) for c in chunks), []),
-    "total_input_tokens": sum(c.get("total_input_tokens", 0) for c in chunks),
-    "total_output_tokens": sum(c.get("total_output_tokens", 0) for c in chunks),
-    "original_prompt": next((c["original_prompt"] for c in chunks if c.get("original_prompt")), None),
-    "write_paths": sum((c.get("write_paths", []) for c in chunks), []),
-    "bash_calls": sum((c.get("bash_calls", []) for c in chunks), []),
-    "git_signals": {
-        k: any(c.get("git_signals", {}).get(k, False) for c in chunks)
-        for k in ["branch_created", "pushed", "push_force", "pr_created",
-                  "issue_closed", "committed_to_main", "push_verified"]
-    },
-    "session_complete": all(c.get("session_complete", True) for c in chunks)
-}
-print(json.dumps(merged))
-```
-
-### Step 5: Extract metadata from mission report
-
-```bash
-TASK_SUMMARY=$(grep -m1 "^# Mission:" "$REPORT" | sed 's/^# Mission: //' | head -c 200)
-[ -z "$TASK_SUMMARY" ] && TASK_SUMMARY=$(head -1 "$REPORT" | sed 's/^# //')
-
-OUTCOME=$(grep -m1 "^\*\*Status\*\*:" "$REPORT" | sed 's/\*\*Status\*\*: *//' | tr '[:upper:]' '[:lower:]' | tr -d ' ')
-[ -z "$OUTCOME" ] && OUTCOME="unknown"
-
-CREW=$(basename "$(pwd)")
-REPORT_DATE=$(basename "$REPORT" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
-```
-
-Compute duration from `start_ts` and `end_ts` in signals:
-
-```python
+TIMING_METRICS=$(python3 << PYEOF
+import json
 from datetime import datetime
-start = datetime.fromisoformat(start_ts.replace("Z", "+00:00"))
-end = datetime.fromisoformat(end_ts.replace("Z", "+00:00"))
-duration_minutes = round((end - start).total_seconds() / 60)
-```
 
-Compute cost estimate (Sonnet 4.6 rates as of 2026-04: $3/MTok input, $15/MTok output):
+signals = json.loads('''$SIGNALS''')
+finished_at = "$FINISHED_AT"
+timing = signals.get("timing", {})
 
-```python
-cost_usd = round(
-    (total_input_tokens / 1_000_000 * 3.0) +
-    (total_output_tokens / 1_000_000 * 15.0),
-    2
+def parse_ts(ts):
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+def ms_between(a, b):
+    if a and b:
+        return round((b - a).total_seconds() * 1000)
+    return None
+
+container_start   = parse_ts(timing.get("container_start_ts"))
+first_claude_call = parse_ts(timing.get("first_claude_call_ts"))
+first_token       = parse_ts(timing.get("first_token_ts"))
+done_signal       = parse_ts(timing.get("done_signal_ts"))
+finished          = parse_ts(finished_at)
+
+print(json.dumps({
+    "cold_start_ms":    ms_between(container_start, first_claude_call),
+    "first_token_ms":   ms_between(first_claude_call, first_token),
+    "done_to_ended_ms": ms_between(done_signal, finished)
+}))
+PYEOF
 )
 ```
 
-### Step 6: Classify incidents
+- **cold_start_ms** — time from container start log to first Claude API call log
+- **first_token_ms** — time from first Claude API call to first token received
+- **done_to_ended_ms** — time from `done` signal in logs to `finished_at` in missions DB
+
+### Step 5: Classify incidents
 
 Apply taxonomy rules to the extracted signals. Produce an `incidents` array.
 
@@ -373,7 +321,7 @@ cat > /tmp/distill_classify.py << 'PYEOF'
 import json, re, sys
 
 signals = json.loads(sys.argv[1])
-report_text = open(sys.argv[2]).read().lower()
+report_text = open(sys.argv[2]).read().lower()  # mission report text (from API)
 
 tool_counts = signals.get("tool_counts", {})
 bash_calls = signals.get("bash_calls", [])
@@ -548,16 +496,21 @@ result = {
 print(json.dumps(result))
 PYEOF
 
-CLASSIFIED=$(python3 /tmp/distill_classify.py "$SIGNALS" "$REPORT")
+echo "$REPORT" > /tmp/distill_report_${job_id}.txt
+CLASSIFIED=$(python3 /tmp/distill_classify.py "$SIGNALS" "/tmp/distill_report_${job_id}.txt")
 ```
 
-### Step 7: Extract rules compliance
+### Step 6: Extract rules compliance
 
 ```bash
-python3 << PYEOF
+HAS_REPORT="True"
+[ -z "$REPORT" ] && HAS_REPORT="False"
+
+COMPLIANCE=$(python3 << PYEOF
 import json, sys
 
 signals = json.loads('''$SIGNALS''')
+task = "$TASK".lower()
 tool_counts = signals.get("tool_counts", {})
 bash_calls = signals.get("bash_calls", [])
 write_paths = signals.get("write_paths", [])
@@ -565,9 +518,7 @@ skills_loaded = signals.get("skills_loaded", [])
 verification_calls = signals.get("verification_calls", [])
 git_signals = signals.get("git_signals", {})
 
-bash_all = " ".join(bash_calls).lower()
-original_prompt = (signals.get("original_prompt") or "").lower()
-is_feature = any(kw in original_prompt for kw in
+is_feature = any(kw in task for kw in
                  ["implement", "feature", "add", "build", "create", "fix", "update"])
 
 compliance = {
@@ -576,72 +527,91 @@ compliance = {
                    not any("src/" in p or "app/" in p for p in write_paths)),
     "R4_read_skills": len(skills_loaded) > 0,
     "R6_verify": len(verification_calls) > 0,
-    "R7_report": any("reports/" in p for p in write_paths),
+    "R7_report": $HAS_REPORT,  # True if mission API returned a non-empty report field
     "R_branch": git_signals.get("branch_created", False),
     "R_push": git_signals.get("pushed", False),
     "R_pr": git_signals.get("pr_created", False) or not is_feature
 }
 print(json.dumps(compliance))
 PYEOF
+)
 ```
 
-### Step 8: Build and write audit JSON
+### Step 7: Build and POST audit JSON
 
-Use python3 to assemble the final audit JSON cleanly:
+Assemble the audit JSON and POST it to the Pylot API:
 
 ```bash
-python3 << PYEOF
-import json, sys
-from datetime import datetime, timezone
+AUDIT_JSON=$(python3 << PYEOF
+import json
+from datetime import datetime
 
-signals = json.loads('''$SIGNALS''')
+signals   = json.loads('''$SIGNALS''')
 classified = json.loads('''$CLASSIFIED''')
 compliance = json.loads('''$COMPLIANCE''')
+timing    = json.loads('''$TIMING_METRICS''')
 
-# Duration
-start_ts = signals.get("start_ts")
-end_ts = signals.get("end_ts")
-duration_minutes = 0
-if start_ts and end_ts:
+started_at  = "$STARTED_AT"
+finished_at = "$FINISHED_AT"
+
+def parse_ts(ts):
+    if not ts:
+        return None
     try:
-        start = datetime.fromisoformat(start_ts.replace("Z", "+00:00"))
-        end = datetime.fromisoformat(end_ts.replace("Z", "+00:00"))
-        duration_minutes = round((end - start).total_seconds() / 60)
-    except:
-        pass
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except Exception:
+        return None
 
-# Cost estimate (Sonnet 4.6: $3/MTok input, $15/MTok output)
-input_tok = signals.get("total_input_tokens", 0)
+duration_minutes = 0
+s, e = parse_ts(started_at), parse_ts(finished_at)
+if s and e:
+    duration_minutes = round((e - s).total_seconds() / 60)
+
+input_tok  = signals.get("total_input_tokens", 0)
 output_tok = signals.get("total_output_tokens", 0)
-cost_usd = round((input_tok / 1_000_000 * 3.0) + (output_tok / 1_000_000 * 15.0), 2)
+cost_usd   = round((input_tok / 1_000_000 * 3.0) + (output_tok / 1_000_000 * 15.0), 2)
 
 audit = {
-    "job_id": "$REPORT_JOB_ID",
-    "date": "$REPORT_DATE",
-    "crew": "$CREW",
-    "task_summary": "$TASK_SUMMARY",
-    "outcome": "$OUTCOME",
-    "session_id": signals.get("session_id"),
-    "session_complete": signals.get("session_complete", True),
-    "duration_minutes": duration_minutes,
-    "cost_usd": cost_usd,
-    "token_usage": {"input": input_tok, "output": output_tok},
-    "workers_spawned": signals.get("workers_spawned", 0),
-    "skills_loaded": signals.get("skills_loaded", []),
-    "rules_compliance": compliance,
-    "incidents": classified.get("incidents", []),
-    "what_worked": classified.get("what_worked", []),
+    "job_id":            "$job_id",
+    "team":              "$TEAM",
+    "agent":             "$AGENT",
+    "task_summary":      "$TASK",
+    "status":            "$STATUS",
+    "exit_code":         "$EXIT_CODE",
+    "started_at":        started_at,
+    "finished_at":       finished_at,
+    "duration_minutes":  duration_minutes,
+    "cost_usd":          cost_usd,
+    "token_usage":       {"input": input_tok, "output": output_tok},
+    "timing_metrics":    timing,
+    "workers_spawned":   signals.get("workers_spawned", 0),
+    "skills_loaded":     signals.get("skills_loaded", []),
+    "session_complete":  signals.get("session_complete", True),
+    "rules_compliance":  compliance,
+    "incidents":         classified.get("incidents", []),
+    "what_worked":       classified.get("what_worked", []),
     "missed_opportunity": classified.get("missed_opportunity", "")
 }
-
 print(json.dumps(audit, indent=2))
-PYEOF > "$AUDIT"
+PYEOF
+)
 
-echo "Audit written: $AUDIT"
-python3 -m json.tool "$AUDIT" > /dev/null && echo "JSON valid" || echo "WARN: JSON validation failed"
+# POST audit to Pylot API
+HTTP_STATUS=$(curl -sf -w "%{http_code}" -o /tmp/distill_audit_response.txt \
+  -X POST \
+  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$AUDIT_JSON" \
+  "${PYLOT_GATEWAY_URL}/missions/${job_id}/audit")
+
+if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+  echo "Audit posted: $HTTP_STATUS"
+else
+  echo "ERROR: Audit POST failed with HTTP $HTTP_STATUS"
+  cat /tmp/distill_audit_response.txt
+  exit 1
+fi
 ```
-
-Replace `$REPORT_JOB_ID` with `$(basename "$REPORT" .md)` before running.
 
 ---
 

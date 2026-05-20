@@ -89,6 +89,10 @@ if [ "$ALERT_COUNT" = "0" ]; then
   echo "**No open Dependabot alerts.**" >> "$REPORT_PATH"
   exit 0
 fi
+
+# Initialize counters used in Step 5 report
+COUNT_P0=0; COUNT_P1=0; COUNT_P2=0; COUNT_BACKLOG=0; COUNT_DISMISS=0
+DETAIL_LOG=""
 ```
 
 ---
@@ -108,8 +112,9 @@ classify_alert() {
   if [ "$scope" = "runtime" ]; then
     exploitability="network-reachable"
   fi
-  # test-only: infer from manifest path
-  if echo "$manifest" | grep -qiE 'test|spec|__tests__|cypress'; then
+  # test-only: infer from manifest path — only when not explicitly runtime-scoped
+  # (guards against false downgrades on monorepos where test/ dirs contain runtime deps)
+  if [ "$scope" != "runtime" ] && echo "$manifest" | grep -qiE 'test|spec|__tests__|cypress'; then
     exploitability="test-only"
   fi
 
@@ -156,16 +161,14 @@ process_p0_p1_alert() {
       --label "security,$priority" \
       --body "## Vulnerability\n\nPackage: \`$pkg\`\nPriority: $priority\nDependabot alert: $alert_url\n\nNo patched version available. Options:\n- [ ] Pin to last non-vulnerable version\n- [ ] Find alternative package\n- [ ] Remove dependency if unused\n\ncc: @maxfindel" 2>/dev/null
   else
-    # Patch available — trigger Dependabot PR or open manually
-    echo "  → Patch available: $patched — triggering Dependabot PR for $pkg"
-    # Trigger Dependabot to re-evaluate and create PR
-    gh api repos/"$REPO"/dependabot/alerts \
-      --method POST \
-      --input - <<EOF 2>/dev/null || true
-{}
-EOF
-    # Note: Dependabot PR creation is async. If it doesn't appear within 24h, open manually.
-    echo "  → PR will appear in Dependabot queue. Monitor: https://github.com/$REPO/security/dependabot"
+    # No public GitHub API endpoint exists to trigger Dependabot PR creation directly.
+    # Create a tracking issue and direct the team to bump manually or await Dependabot's schedule.
+    echo "  → Patch available ($patched) — creating tracking issue for $pkg"
+    gh issue create --repo "$REPO" \
+      --title "security: bump $pkg to $patched ($priority)" \
+      --label "security,$priority" \
+      --body "## Action Required\n\nPackage: \`$pkg\`\nFixed in: \`$patched\`\nPriority: $priority\nDependabot alert: $alert_url\n\nDependabot has not auto-created a PR. Options:\n- [ ] Wait for Dependabot's next scheduled run (Mon 05:00)\n- [ ] Manually bump \`$pkg\` to \`$patched\` and open a PR\n\nMonitor: https://github.com/$REPO/security/dependabot" 2>/dev/null && \
+      echo "  → Tracking issue created for $pkg → $patched"
   fi
 }
 ```
@@ -210,6 +213,50 @@ dismiss_alert() {
     --field dismissed_comment="Dismissed by security-runner: $reason. Review quarterly." 2>/dev/null
   echo "  → Dismissed alert #$alert_number (reason: $reason)"
 }
+```
+
+---
+
+## Step 3b: Orchestrate — Iterate Over All Alerts
+
+After defining the functions above, iterate over `$ALERTS` and route each alert:
+
+```bash
+echo "$ALERTS" | while IFS= read -r alert_json; do
+  [ -z "$alert_json" ] && continue
+
+  pkg=$(echo "$alert_json"       | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['package'])")
+  severity=$(echo "$alert_json"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['severity'])")
+  scope=$(echo "$alert_json"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('scope','development'))")
+  manifest=$(echo "$alert_json"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['manifest'])")
+  patched=$(echo "$alert_json"   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['patched_versions'])")
+  summary=$(echo "$alert_json"   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary'])")
+  alert_url=$(echo "$alert_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['html_url'])")
+  alert_num=$(echo "$alert_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['number'])")
+
+  priority=$(classify_alert "$severity" "$scope" "$manifest")
+  echo "[$priority] $pkg ($severity, scope=$scope)"
+  DETAIL_LOG="${DETAIL_LOG}\n- [$priority] \`$pkg\` — $severity — $summary"
+
+  case "$priority" in
+    P0|P1)
+      process_p0_p1_alert "$pkg" "$patched" "$alert_url" "$priority"
+      [ "$priority" = "P0" ] && COUNT_P0=$((COUNT_P0 + 1)) || COUNT_P1=$((COUNT_P1 + 1))
+      ;;
+    P2)
+      process_p2_backlog_alert "$pkg" "$severity" "$summary" "$alert_url" "$priority"
+      COUNT_P2=$((COUNT_P2 + 1))
+      ;;
+    backlog)
+      process_p2_backlog_alert "$pkg" "$severity" "$summary" "$alert_url" "$priority"
+      COUNT_BACKLOG=$((COUNT_BACKLOG + 1))
+      ;;
+    dismiss)
+      dismiss_alert "$alert_num" "tolerated_risk"
+      COUNT_DISMISS=$((COUNT_DISMISS + 1))
+      ;;
+  esac
+done
 ```
 
 ---

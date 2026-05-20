@@ -45,10 +45,10 @@ REPO="${1:-$PYLOT_REPO}"
 TODAY=$(date +%Y-%m-%d)
 REPORT_PATH="/tmp/security-runner-${REPO//\//-}-${TODAY}.md"
 
-# Check merge strategy (fail safe: treat as restricted if missing)
-MERGE_STRATEGY=$(gh api repos/"$REPO"/contents/crew.yml 2>/dev/null | \
-  python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content']).decode())" 2>/dev/null | \
-  grep -m1 'merge_strategy' | awk '{print $2}' || echo "restricted")
+# Check merge strategy — read from Pylot control plane, not target repo
+# (crew.yml lives in $PYLOT_DIR, not in the repos being scanned)
+MERGE_STRATEGY=$(grep -A5 "$(echo "$REPO" | cut -d/ -f2)" "$PYLOT_DIR/crew.yml" 2>/dev/null | \
+  grep merge_strategy | head -1 | awk '{print $2}' || echo "restricted")
 
 echo "Repo: $REPO"
 echo "Merge strategy: $MERGE_STRATEGY"
@@ -151,6 +151,14 @@ process_p0_p1_alert() {
   if [ -n "$EXISTING_PR" ]; then
     echo "  → Existing PR #$EXISTING_PR for $pkg — labeling $priority"
     gh pr edit "$EXISTING_PR" --repo "$REPO" --add-label "security,$priority" 2>/dev/null || true
+    # Apply merge strategy here where $EXISTING_PR is in scope
+    if [ "$MERGE_STRATEGY" = "auto-merge" ]; then
+      gh pr merge "$EXISTING_PR" --repo "$REPO" --auto --squash 2>/dev/null && \
+        echo "  → Auto-merge enabled on PR #$EXISTING_PR"
+    else
+      gh pr edit "$EXISTING_PR" --repo "$REPO" --add-label "ready-to-merge" 2>/dev/null && \
+        echo "  → Labeled PR #$EXISTING_PR as ready-to-merge (restricted repo — human must merge)"
+    fi
     return
   fi
 
@@ -222,7 +230,10 @@ dismiss_alert() {
 After defining the functions above, iterate over `$ALERTS` and route each alert:
 
 ```bash
-echo "$ALERTS" | while IFS= read -r alert_json; do
+# Process substitution keeps the loop in the current shell so counter variables
+# (COUNT_P0, DETAIL_LOG, etc.) survive to Step 5. A pipe would run the body in a
+# subshell and silently discard every assignment.
+while IFS= read -r alert_json; do
   [ -z "$alert_json" ] && continue
 
   pkg=$(echo "$alert_json"       | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['package'])")
@@ -256,26 +267,16 @@ echo "$ALERTS" | while IFS= read -r alert_json; do
       COUNT_DISMISS=$((COUNT_DISMISS + 1))
       ;;
   esac
-done
+done < <(echo "$ALERTS")
 ```
 
 ---
 
 ## Step 4: Respect Merge Strategy
 
-**Before merging any PR, check merge_strategy:**
-
-```bash
-if [ "$MERGE_STRATEGY" = "auto-merge" ]; then
-  # Enable auto-merge on the PR after CI passes
-  gh pr merge "$PR_NUMBER" --repo "$REPO" --auto --squash 2>/dev/null && \
-    echo "  → Auto-merge enabled on PR #$PR_NUMBER"
-else
-  # Restricted repo — label for human review
-  gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ready-to-merge" 2>/dev/null && \
-    echo "  → Labeled PR #$PR_NUMBER as ready-to-merge (restricted repo — human must merge)"
-fi
-```
+Merge-strategy enforcement is applied inside `process_p0_p1_alert` (Step 3 above)
+where the PR number is already in scope via `$EXISTING_PR`. The strategy is read once
+in Step 0 (`$MERGE_STRATEGY`) and is available to the function as a global.
 
 ---
 

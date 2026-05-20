@@ -13,9 +13,7 @@ Deploy an existing Vercel project to production from a local directory. Designed
 
 Must be available as environment variables (from crew secret store):
 
-- `VERCEL_TOKEN` — Access token with deploy permissions
-- `VERCEL_ORG_ID` — Organization/team ID (starts with `team_`)
-- `VERCEL_PROJECT_ID` — Project ID (starts with `prj_`)
+- `VERCEL_TOKEN` — Access token with deploy permissions (this is the only real secret)
 
 ## Required Inputs
 
@@ -25,6 +23,8 @@ All inputs are passed as `KEY=value` pairs in the skill invocation or task descr
 - `PROD_DOMAIN` — Expected production domain (e.g., `pylot.fellowship.dev`)
 - `DEPLOY_AUTHOR` — Git name of a verified Vercel team member (e.g., `maxfindel`)
 - `DEPLOY_EMAIL` — Git email matching the author (e.g., `maxfindel@pm.me`)
+- `VERCEL_ORG_ID` — Organization/team ID (starts with `team_`)
+- `VERCEL_PROJECT_ID` — Project ID (starts with `prj_`)
 
 These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), not from secrets. The operator reads the playbook and passes them when invoking this skill.
 
@@ -84,16 +84,16 @@ This creates a no-op commit so Vercel sees a team member as the author. The comm
 Verify all secrets and inputs exist, tools are installed, and checkout the deploy branch.
 
 ```bash
-# Verify required secrets (from crew secret store)
-[ -z "$VERCEL_TOKEN" ]      && { echo "[vercel-deploy] MISSING secret: VERCEL_TOKEN"; exit 1; }
-[ -z "$VERCEL_ORG_ID" ]     && { echo "[vercel-deploy] MISSING secret: VERCEL_ORG_ID"; exit 1; }
-[ -z "$VERCEL_PROJECT_ID" ] && { echo "[vercel-deploy] MISSING secret: VERCEL_PROJECT_ID"; exit 1; }
+# Verify required secret (from crew secret store — the only real secret)
+[ -z "$VERCEL_TOKEN" ] && { echo "[vercel-deploy] MISSING secret: VERCEL_TOKEN"; exit 1; }
 
-# Verify required inputs (parsed from skill args / task description)
-[ -z "$DEPLOY_DIR" ]    && { echo "[vercel-deploy] MISSING input: DEPLOY_DIR"; exit 1; }
-[ -z "$PROD_DOMAIN" ]   && { echo "[vercel-deploy] MISSING input: PROD_DOMAIN"; exit 1; }
-[ -z "$DEPLOY_AUTHOR" ] && { echo "[vercel-deploy] MISSING input: DEPLOY_AUTHOR — check the repo playbook"; exit 1; }
-[ -z "$DEPLOY_EMAIL" ]  && { echo "[vercel-deploy] MISSING input: DEPLOY_EMAIL — check the repo playbook"; exit 1; }
+# Verify required inputs (parsed from skill args / task description — from the repo playbook)
+[ -z "$DEPLOY_DIR" ]        && { echo "[vercel-deploy] MISSING input: DEPLOY_DIR — check the repo playbook"; exit 1; }
+[ -z "$PROD_DOMAIN" ]       && { echo "[vercel-deploy] MISSING input: PROD_DOMAIN — check the repo playbook"; exit 1; }
+[ -z "$DEPLOY_AUTHOR" ]     && { echo "[vercel-deploy] MISSING input: DEPLOY_AUTHOR — check the repo playbook"; exit 1; }
+[ -z "$DEPLOY_EMAIL" ]      && { echo "[vercel-deploy] MISSING input: DEPLOY_EMAIL — check the repo playbook"; exit 1; }
+[ -z "$VERCEL_ORG_ID" ]     && { echo "[vercel-deploy] MISSING input: VERCEL_ORG_ID — check the repo playbook"; exit 1; }
+[ -z "$VERCEL_PROJECT_ID" ] && { echo "[vercel-deploy] MISSING input: VERCEL_PROJECT_ID — check the repo playbook"; exit 1; }
 
 # Verify vercel CLI is available
 command -v vercel >/dev/null 2>&1 || command -v npx >/dev/null 2>&1 || {

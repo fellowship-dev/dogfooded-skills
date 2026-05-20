@@ -21,8 +21,6 @@ All inputs are passed as `KEY=value` pairs in the skill invocation or task descr
 
 - `DEPLOY_DIR` — Path to the deployable directory (e.g., `./ui`, repo root)
 - `PROD_DOMAIN` — Expected production domain (e.g., `pylot.fellowship.dev`)
-- `DEPLOY_AUTHOR` — Git name of a verified Vercel team member (e.g., `maxfindel`)
-- `DEPLOY_EMAIL` — Git email matching the author (e.g., `maxfindel@pm.me`)
 - `VERCEL_ORG_ID` — Organization/team ID (starts with `team_`)
 - `VERCEL_PROJECT_ID` — Project ID (starts with `prj_`)
 
@@ -31,6 +29,8 @@ These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), no
 ## Optional Inputs
 
 - `DEPLOY_BRANCH` — Git branch to deploy from. **Defaults to `main`** if not specified. Always checks out and pulls before deploying.
+- `DEPLOY_AUTHOR` — Git name of a verified Vercel team member (e.g., `maxfindel`). If provided along with `DEPLOY_EMAIL`, Stage 00 will fix the commit author before deploying. Only needed when Vercel enforces team membership on the commit author.
+- `DEPLOY_EMAIL` — Git email matching the author. Required if `DEPLOY_AUTHOR` is set.
 
 ## Forbidden Actions
 
@@ -45,39 +45,35 @@ These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), no
 
 | Stage | Name | Purpose |
 |-------|------|---------|
-| 00 | author-fix | Ensure HEAD commit author matches a Vercel team member |
+| 00 | author-fix | Fix commit author if DEPLOY_AUTHOR is set (optional, skipped otherwise) |
 | 01 | preflight | Verify secrets, tools, compute deploy context |
 | 02 | link | Ensure `.vercel/project.json` exists; verify project via API |
 | 03 | deploy | Run `vercel deploy --prod` non-interactively |
 | 04 | poll | Poll Vercel API until deployment reaches READY or ERROR |
 | 05 | verify | Confirm production domain is reachable, emit outcome |
 
-## Stage 00 — Author Fix (CRITICAL)
+## Stage 00 — Author Fix (conditional)
 
-Vercel blocks CLI deploys when the HEAD commit author is not a verified Vercel team member (`TEAM_ACCESS_REQUIRED` / `seatBlock`). This happens when bot accounts (e.g. `fry-lobster`) push commits.
+**Skip this stage if `DEPLOY_AUTHOR` is not provided.** Not all Vercel projects enforce team membership on commit authors.
 
-**Before any deploy attempt:**
+When Vercel does enforce it (`TEAM_ACCESS_REQUIRED` / `seatBlock`), bot accounts (e.g. `fry-lobster`) will block CLI deploys. The fix is an empty commit with a team member as author.
 
 ```bash
-# DEPLOY_AUTHOR and DEPLOY_EMAIL are passed as skill params (from the repo playbook)
-# Parse them from the task/args — never read from env vars
-HEAD_AUTHOR=$(git log -1 --format='%an')
-
-if [ "$HEAD_AUTHOR" != "$DEPLOY_AUTHOR" ]; then
-  echo "[vercel-deploy] HEAD author '$HEAD_AUTHOR' is not a Vercel team member."
-  echo "[vercel-deploy] Creating empty commit with author '$DEPLOY_AUTHOR' to unblock deploy."
-  git commit --allow-empty \
-    --author="$DEPLOY_AUTHOR <$DEPLOY_EMAIL>" \
-    -m "chore: vercel deploy author fix (empty commit)"
-  git push origin HEAD
-  # Note: this commit is a no-op. If the deploy fails later, clean up with:
-  #   git revert HEAD --no-edit && git push origin HEAD
+# Only run if DEPLOY_AUTHOR is set in the skill params
+if [ -n "$DEPLOY_AUTHOR" ] && [ -n "$DEPLOY_EMAIL" ]; then
+  HEAD_AUTHOR=$(git log -1 --format='%an')
+  if [ "$HEAD_AUTHOR" != "$DEPLOY_AUTHOR" ]; then
+    echo "[vercel-deploy] HEAD author '$HEAD_AUTHOR' is not a Vercel team member."
+    echo "[vercel-deploy] Creating empty commit with author '$DEPLOY_AUTHOR' to unblock deploy."
+    git commit --allow-empty \
+      --author="$DEPLOY_AUTHOR <$DEPLOY_EMAIL>" \
+      -m "chore: vercel deploy author fix (empty commit)"
+    git push origin HEAD
+  fi
+else
+  echo "[vercel-deploy] Stage 00 skipped — no DEPLOY_AUTHOR configured"
 fi
 ```
-
-This creates a no-op commit so Vercel sees a team member as the author. The commit is pushed to the deploy branch (usually `main`).
-
-**Do NOT skip this stage.** Every blocked deploy costs ~$1 in Fargate time and delays the pipeline.
 
 ## Stage 01 — Preflight
 
@@ -90,10 +86,13 @@ Verify all secrets and inputs exist, tools are installed, and checkout the deplo
 # Verify required inputs (parsed from skill args / task description — from the repo playbook)
 [ -z "$DEPLOY_DIR" ]        && { echo "[vercel-deploy] MISSING input: DEPLOY_DIR — check the repo playbook"; exit 1; }
 [ -z "$PROD_DOMAIN" ]       && { echo "[vercel-deploy] MISSING input: PROD_DOMAIN — check the repo playbook"; exit 1; }
-[ -z "$DEPLOY_AUTHOR" ]     && { echo "[vercel-deploy] MISSING input: DEPLOY_AUTHOR — check the repo playbook"; exit 1; }
-[ -z "$DEPLOY_EMAIL" ]      && { echo "[vercel-deploy] MISSING input: DEPLOY_EMAIL — check the repo playbook"; exit 1; }
 [ -z "$VERCEL_ORG_ID" ]     && { echo "[vercel-deploy] MISSING input: VERCEL_ORG_ID — check the repo playbook"; exit 1; }
 [ -z "$VERCEL_PROJECT_ID" ] && { echo "[vercel-deploy] MISSING input: VERCEL_PROJECT_ID — check the repo playbook"; exit 1; }
+
+# Optional: warn if author-fix params are incomplete (both or neither)
+if [ -n "$DEPLOY_AUTHOR" ] && [ -z "$DEPLOY_EMAIL" ]; then
+  echo "[vercel-deploy] WARNING: DEPLOY_AUTHOR set but DEPLOY_EMAIL missing — Stage 00 will be skipped"
+fi
 
 # Verify vercel CLI is available
 command -v vercel >/dev/null 2>&1 || command -v npx >/dev/null 2>&1 || {

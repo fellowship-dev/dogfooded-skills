@@ -321,7 +321,7 @@ cat > /tmp/distill_classify.py << 'PYEOF'
 import json, re, sys
 
 signals = json.loads(sys.argv[1])
-report_text = sys.argv[2].lower()   # task string from mission metadata
+report_text = open(sys.argv[2]).read().lower()  # mission report text (from API)
 
 tool_counts = signals.get("tool_counts", {})
 bash_calls = signals.get("bash_calls", [])
@@ -496,12 +496,16 @@ result = {
 print(json.dumps(result))
 PYEOF
 
-CLASSIFIED=$(python3 /tmp/distill_classify.py "$SIGNALS" "$TASK")
+echo "$REPORT" > /tmp/distill_report_${job_id}.txt
+CLASSIFIED=$(python3 /tmp/distill_classify.py "$SIGNALS" "/tmp/distill_report_${job_id}.txt")
 ```
 
 ### Step 6: Extract rules compliance
 
 ```bash
+HAS_REPORT="True"
+[ -z "$REPORT" ] && HAS_REPORT="False"
+
 COMPLIANCE=$(python3 << PYEOF
 import json, sys
 
@@ -523,7 +527,7 @@ compliance = {
                    not any("src/" in p or "app/" in p for p in write_paths)),
     "R4_read_skills": len(skills_loaded) > 0,
     "R6_verify": len(verification_calls) > 0,
-    "R7_report": bool(signals.get("original_prompt")),
+    "R7_report": $HAS_REPORT,  # True if mission API returned a non-empty report field
     "R_branch": git_signals.get("branch_created", False),
     "R_push": git_signals.get("pushed", False),
     "R_pr": git_signals.get("pr_created", False) or not is_feature

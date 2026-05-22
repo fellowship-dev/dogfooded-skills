@@ -8,21 +8,20 @@ allowed-tools: Read, Write, Bash, Glob, Grep, Agent
 
 Post-mission audit and distillation for crew operations. Two modes:
 
-- **capture** — reads a session JSONL + mission report, classifies failure incidents using the 8-code taxonomy, outputs a structured audit JSON co-located with the report
+- **capture** — fetches mission metadata and CloudWatch logs via the hooks.fellowship.dev API, classifies incidents using the 8-code taxonomy, and POSTs a structured audit JSON to the API
 - **analyze** — reads all audit JSONs in `reports/`, aggregates trends, produces a findings report and GitHub issues with recommendations
 
 ## When to Use
 
 - **capture**: after every mission (pass or fail) — triggered by the poller as a follow-up mission
 - **analyze**: weekly via cron, or manually to survey trends across missions
-- Skip capture if `{report-name}-audit.json` already exists — idempotent guard
+- Idempotent — the API rejects duplicate audits for the same job_id (409 response)
 
 ## Prerequisites
 
 ```bash
-gh auth status                          # needed for analyze mode
-python3 --version                       # needed for JSONL parsing
-ls ~/.claude/projects/                  # session JSONL files must be accessible
+python3 --version                       # needed for log parsing
+echo "${PYLOT_DISPATCH_TOKEN:?PYLOT_DISPATCH_TOKEN not set}"  # auth token required
 ```
 
 ## Failure Taxonomy
@@ -54,13 +53,12 @@ The skill receives `job_id` from the task input (e.g. `task: 'distill capture ab
 
 ```bash
 # Required
-PYLOT_API_TOKEN    # Bearer token for Pylot API
-PYLOT_GATEWAY_URL  # e.g. https://gateway.pylot.dev
+PYLOT_DISPATCH_TOKEN    # Bearer token for hooks.fellowship.dev
 ```
 
-All API calls include the header:
+All API calls go to `https://hooks.fellowship.dev` with header:
 ```
-Authorization: Bearer $PYLOT_API_TOKEN
+Authorization: Bearer $PYLOT_DISPATCH_TOKEN
 ```
 
 ### Step 1: Fetch mission metadata + anti-recursion guard
@@ -69,8 +67,8 @@ Fetch mission record from the Pylot API. Extract metadata and apply the anti-rec
 
 ```bash
 MISSION=$(curl -sf \
-  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
-  "${PYLOT_GATEWAY_URL}/missions/${job_id}")
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  "https://hooks.fellowship.dev/missions/${job_id}")
 
 if [ $? -ne 0 ] || [ -z "$MISSION" ]; then
   echo "ERROR: Failed to fetch mission $job_id"
@@ -98,9 +96,9 @@ fi
 
 ```bash
 curl -sf \
-  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
   -H "Accept: text/event-stream" \
-  "${PYLOT_GATEWAY_URL}/missions/${job_id}/logs/stream" \
+  "https://hooks.fellowship.dev/missions/${job_id}/logs/stream" \
   > /tmp/distill_logs_${job_id}.txt
 
 echo "Log stream saved."
@@ -599,13 +597,15 @@ PYEOF
 # POST audit to Pylot API
 HTTP_STATUS=$(curl -sf -w "%{http_code}" -o /tmp/distill_audit_response.txt \
   -X POST \
-  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
   -d "$AUDIT_JSON" \
-  "${PYLOT_GATEWAY_URL}/missions/${job_id}/audit")
+  "https://hooks.fellowship.dev/missions/${job_id}/audit")
 
 if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
   echo "Audit posted: $HTTP_STATUS"
+elif [ "$HTTP_STATUS" = "409" ]; then
+  echo "Audit already exists for $job_id — skipping (idempotent)"
 else
   echo "ERROR: Audit POST failed with HTTP $HTTP_STATUS"
   cat /tmp/distill_audit_response.txt
@@ -1020,17 +1020,11 @@ fi
 
 ## Error Handling
 
-**No JSONL found for report** — proceed with report-only audit. Set `"session_found": false`. The audit is still useful for outcome tracking and rule compliance inferred from report content.
-
-**Truncated JSONL (crashed session)** — partial data is valid. Set `"session_complete": false`. Capture what's available; partial sessions surface SF and SG patterns reliably.
-
 **`gh` auth failure in analyze** — check `GH_TOKEN` export. The skill sources it from `claude-buddy/.env`. Provide token explicitly if env differs.
 
 **python3 not available** — all parsing uses stdlib only (json, sys, collections, pathlib). No pip install needed.
 
 **Duplicate analyze issues** — the issue creation step checks for existing titles before creating. Run analyze weekly; do not re-run on the same day unless audit files changed.
-
-**Large JSONL (>2000 lines) with no Agent tool** — use `split + subagents` pattern from Step 4. Never attempt to read a JSONL file >2000 lines in a single Read call.
 
 ---
 
@@ -1061,7 +1055,6 @@ Capture is dispatched by the poller after every mission — not declared in YAML
   "crew": "tooling",
   "task_summary": "Implement distill skill for post-mission auditing",
   "outcome": "done",
-  "session_id": "abc123-...",
   "session_complete": true,
   "duration_minutes": 47,
   "cost_usd": 3.21,
@@ -1091,9 +1084,7 @@ Capture is dispatched by the poller after every mission — not declared in YAML
 
 ## Critical Rules
 
-- **Never overwrite an existing audit** — `{report}-audit.json` present = already captured, skip
-- **Partial sessions are valuable** — crash/timeout JSONL is still signal; set `session_complete: false`
-- **Chunk at 2000 lines** — never read JSONL files larger than 2000 lines in a single pass
+- **Idempotent** — POST /missions/{job_id}/audit returns 409 if already captured; exit 0 on 409
 - **One issue per pattern** — deduplicate by `[distill]` title prefix before creating GitHub issues
 - **`??` codes are growth signals** — track frequency; 3+ `??` in analyze means the taxonomy needs a new code
 - **Labels must exist** before `gh issue create` — the skill creates them if missing

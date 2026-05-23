@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep, Agent
 Post-mission audit and distillation for crew operations. Two modes:
 
 - **capture** — fetches mission metadata and CloudWatch logs via the hooks.fellowship.dev API, classifies incidents using the 8-code taxonomy, and POSTs a structured audit JSON to the API
-- **analyze** — reads all audit JSONs in `reports/`, aggregates trends, produces a findings report and GitHub issues with recommendations
+- **analyze** — fetches audit records from hooks.fellowship.dev, aggregates recurring failure patterns, manages GitHub issues per pattern, promotes exemplars, and reports trend direction
 
 ## When to Use
 
@@ -621,399 +621,283 @@ fi
 
 ```bash
 /distill analyze
-/distill analyze --since today
-/distill analyze --since 2026-03-01
-/distill analyze --repo fellowship-dev/commander --since 2026-04-01
 ```
 
-### Step 1: Find audit JSONs
+### Environment
 
 ```bash
-SINCE_DATE="${SINCE_ARG:-}"
-# Resolve "today" keyword to current date
-if [ "$SINCE_DATE" = "today" ]; then
-  SINCE_DATE=$(date +%Y-%m-%d)
-fi
-REPORTS_DIR="reports"
+# Required
+PYLOT_DISPATCH_TOKEN  # Bearer token for hooks.fellowship.dev
 
-mapfile -t AUDIT_FILES < <(
-  find "$REPORTS_DIR" -name "*-audit.json" 2>/dev/null | sort |
-  while IFS= read -r f; do
-    if [ -n "$SINCE_DATE" ]; then
-      FILE_DATE=$(basename "$f" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
-      [[ "$FILE_DATE" < "$SINCE_DATE" ]] && continue
-    fi
-    echo "$f"
-  done
-)
-
-echo "Found ${#AUDIT_FILES[@]} audit files"
-if [ "${#AUDIT_FILES[@]}" -eq 0 ]; then
-  TODAY=$(date +%Y-%m-%d)
-  STUB_REPORT="reports/${TODAY}-distill-analyze.md"
-  printf "# Distill Analysis — %s\n\nNo missions captured today. No audit files found.\n" "$TODAY" > "$STUB_REPORT"
-  echo "Stub report written: $STUB_REPORT"
-  exit 0
-fi
+# Optional
+ISSUE_REPO            # Target repo for GitHub issues (default: fellowship-dev/commander)
 ```
 
-### Step 2: Aggregate signals
+All API calls include the header:
+```
+Authorization: Bearer $PYLOT_DISPATCH_TOKEN
+```
+
+### Step 1: Fetch audit data
+
+Fetch audit records and aggregated stats from `hooks.fellowship.dev` for the past 7 days, plus the prior 7-day period for trend comparison:
+
+```bash
+AUTH_HEADER="Authorization: Bearer $PYLOT_DISPATCH_TOKEN"
+
+AUDITS=$(curl -sf \
+  -H "$AUTH_HEADER" \
+  "https://hooks.fellowship.dev/audits?days=7")
+
+if [ $? -ne 0 ] || [ -z "$AUDITS" ]; then
+  echo "ERROR: Failed to fetch audits from hooks.fellowship.dev"
+  exit 1
+fi
+
+STATS=$(curl -sf \
+  -H "$AUTH_HEADER" \
+  "https://hooks.fellowship.dev/audits/stats?days=7")
+
+if [ $? -ne 0 ] || [ -z "$STATS" ]; then
+  echo "ERROR: Failed to fetch stats from hooks.fellowship.dev"
+  exit 1
+fi
+
+# Prior period (days 8–14) for trend comparison — fallback to {} if endpoint unsupported
+PRIOR_STATS=$(curl -sf \
+  -H "$AUTH_HEADER" \
+  "https://hooks.fellowship.dev/audits/stats?days=14&offset=7" || echo "{}")
+
+echo "Audit data fetched."
+```
+
+### Step 2: Aggregate and identify recurring patterns
+
+Group records by skill name, team, and incident code. Flag any combination with 3 or more occurrences in the 7-day window as a recurring pattern.
 
 ```bash
 cat > /tmp/distill_aggregate.py << 'PYEOF'
 import json, sys, collections
-from pathlib import Path
 
-audit_paths = sys.argv[1:]
-audits = []
-for path in audit_paths:
-    try:
-        with open(path) as f:
-            audits.append((path, json.load(f)))
-    except Exception as e:
-        print(f"WARN: skipping {path}: {e}", file=sys.stderr)
+audits = json.loads(sys.argv[1])
+stats  = json.loads(sys.argv[2])
 
-if not audits:
-    print(json.dumps({"error": "no audits loaded"}))
-    sys.exit(1)
+if isinstance(audits, dict):
+    audits = audits.get("records") or audits.get("audits") or []
 
-incident_codes = collections.Counter()
-incident_evidence = collections.defaultdict(list)
-rule_compliance = collections.defaultdict(list)
-costs = []
-durations = []
-outcomes = collections.Counter()
-unknown_incidents = []
-skills_across = collections.Counter()
+pattern_counts  = collections.Counter()
+pattern_records = collections.defaultdict(list)
 
-for path, audit in audits:
-    report_base = Path(path).stem.replace("-audit", "")
-
+for audit in audits:
+    skill = audit.get("skill_name") or audit.get("skill") or "unknown"
+    team  = audit.get("team", "unknown")
     for inc in audit.get("incidents", []):
         code = inc.get("code", "??")
-        incident_codes[code] += 1
-        incident_evidence[code].append({
-            "audit": path,
+        key  = (skill, team, code)
+        pattern_counts[key] += 1
+        pattern_records[key].append({
+            "id":          audit.get("job_id") or audit.get("id"),
             "description": inc.get("description", ""),
-            "evidence": inc.get("evidence", "")
+            "evidence":    inc.get("evidence", "")
         })
-        if code == "??":
-            unknown_incidents.append({"audit": path, "description": inc.get("description", "")})
 
-    for rule, val in audit.get("rules_compliance", {}).items():
-        rule_compliance[rule].append(bool(val))
-
-    cost = audit.get("cost_usd")
-    if cost is not None:
-        costs.append(cost)
-
-    dur = audit.get("duration_minutes")
-    if dur is not None:
-        durations.append(dur)
-
-    outcomes[audit.get("outcome", "unknown")] += 1
-
-    for skill in audit.get("skills_loaded", []):
-        skills_across[skill] += 1
-
-# Compliance rates
-compliance_rates = {}
-for rule, values in rule_compliance.items():
-    if values:
-        compliance_rates[rule] = round(sum(values) / len(values) * 100, 1)
-
-# Recommendations: codes appearing >= 2 times
-RECOMMENDATION_MAP = {
-    "SV": {
-        "type": "rule",
-        "title": "Enforce verification gate before mission exit",
-        "fix": "Strengthen R6 in RULES.md — add explicit checklist: curl URL, gh pr view, or test run before exit. No exceptions."
-    },
-    "MB": {
-        "type": "rule",
-        "title": "Rules-read must produce behavioral change",
-        "fix": "Add R4 addendum: after reading RULES.md, lead must log a one-line acknowledgment per rule violated in prior missions. Cognitive activation, not passive reading."
-    },
-    "SF": {
-        "type": "rule",
-        "title": "Error recovery is mandatory, not optional",
-        "fix": "Add R5 error protocol: any is_error=true result triggers a mandatory investigation step before proceeding. Never continue past an error without a documented recovery."
-    },
-    "UA": {
-        "type": "rule",
-        "title": "User-facing deploys require HTTP 200 verification",
-        "fix": "Extend R6 verification table: deploy tasks must include curl production URL with expected 200 response before marking done."
-    },
-    "UB": {
-        "type": "rule",
-        "title": "Uncertainty must be resolved before acting",
-        "fix": "Add uncertainty protocol to RULES.md: when unsure about state, grep/read first. Never assume. Force flags require explicit justification comment in Bash command."
-    },
-    "ID": {
-        "type": "skill",
-        "title": "Task scope guard — restate original task at each phase",
-        "fix": "New skill: task-scope-guard. At each phase, lead restates original task and compares current actions. If drift detected, stop and re-anchor."
-    },
-    "SG": {
-        "type": "skill",
-        "title": "Domain skill gap — build missing capability",
-        "fix": "Identify the specific domain where tool failures occurred and author a new skill covering the operational commands, gotchas, and verification steps."
-    },
-    "CF": {
-        "type": "rule",
-        "title": "Worker selection must be deliberate",
-        "fix": "Add R4 worker selection matrix: lead must consult worker capabilities table before spawning. Retries > 2 = wrong worker, not wrong instructions."
+recurring = [
+    {
+        "skill":   k[0],
+        "team":    k[1],
+        "code":    k[2],
+        "count":   pattern_counts[k],
+        "records": pattern_records[k]
     }
+    for k, cnt in pattern_counts.items()
+    if cnt >= 3
+]
+
+failure_rates = {
+    entry.get("code"): entry.get("rate") or entry.get("failure_rate")
+    for entry in (stats.get("by_code") or stats.get("failure_rates") or [])
 }
 
-recommendations = []
-for code, count in incident_codes.most_common():
-    if code == "??" or count < 2:
-        continue
-    rec = RECOMMENDATION_MAP.get(code, {
-        "type": "skill",
-        "title": f"Address {code} failure pattern",
-        "fix": "Review incidents and define a concrete fix."
-    })
-    recommendations.append({
-        "code": code,
-        "count": count,
-        "pct": round(count / len(audits) * 100, 1),
-        "type": rec["type"],
-        "title": rec["title"],
-        "fix": rec["fix"],
-        "evidence": incident_evidence[code]
-    })
-
-result = {
-    "total_audits": len(audits),
-    "date_range": {
-        "first": min((Path(p).stem[:10] for p, _ in audits), default=""),
-        "last": max((Path(p).stem[:10] for p, _ in audits), default="")
-    },
-    "outcomes": dict(outcomes),
-    "incident_codes": dict(incident_codes),
-    "compliance_rates": compliance_rates,
-    "total_cost_usd": round(sum(costs), 2),
-    "avg_cost_usd": round(sum(costs) / len(costs), 2) if costs else 0,
-    "avg_duration_minutes": round(sum(durations) / len(durations), 1) if durations else 0,
-    "top_skills": dict(skills_across.most_common(10)),
-    "recommendations": recommendations,
-    "unknown_incidents": unknown_incidents
-}
-print(json.dumps(result, indent=2))
+print(json.dumps({
+    "total_audits":       len(audits),
+    "recurring_patterns": recurring,
+    "failure_rates":      failure_rates
+}, indent=2))
 PYEOF
 
-AGGREGATE=$(python3 /tmp/distill_aggregate.py "${AUDIT_FILES[@]}")
+AGGREGATE=$(python3 /tmp/distill_aggregate.py "$AUDITS" "$STATS")
+PATTERN_COUNT=$(python3 -c "import json,sys; print(len(json.load(sys.stdin)['recurring_patterns']))" <<< "$AGGREGATE")
+echo "Aggregation complete. ${PATTERN_COUNT} recurring patterns identified."
 ```
 
-### Step 3: Write findings report
+### Step 3: GitHub issue management
+
+For each recurring pattern, search for an open issue whose title contains the skill name and incident code. Comment with updated counts and exemplar IDs if found; create a new issue if not.
 
 ```bash
-TODAY=$(date +%Y-%m-%d)
-FINDINGS_REPORT="reports/${TODAY}-distill-analyze.md"
+echo "$AGGREGATE" > /tmp/distill_agg.json
+ISSUE_REPO="${ISSUE_REPO:-fellowship-dev/commander}"
+python3 << 'PYEOF'
+import json, os, subprocess
 
-python3 << PYEOF > "$FINDINGS_REPORT"
-import json, sys
+with open("/tmp/distill_agg.json") as _f:
+    agg = json.load(_f)
+issue_repo = os.environ.get("ISSUE_REPO", "fellowship-dev/commander")
 
-agg = json.loads('''$AGGREGATE''')
-today = "$TODAY"
+for pattern in agg.get("recurring_patterns", []):
+    skill   = pattern["skill"]
+    code    = pattern["code"]
+    count   = pattern["count"]
+    team    = pattern["team"]
+    records = pattern["records"]
 
-lines = [
-    f"# Distill Analysis — {today}",
-    "",
-    f"**Audits analyzed**: {agg['total_audits']}  ",
-    f"**Date range**: {agg['date_range']['first']} to {agg['date_range']['last']}  ",
-    f"**Total cost tracked**: \${agg['total_cost_usd']}  ",
-    f"**Avg cost/mission**: \${agg['avg_cost_usd']}  ",
-    f"**Avg duration**: {agg['avg_duration_minutes']} min  ",
-    "",
-    "## Mission Outcomes",
-    "",
-    "| Outcome | Count |",
-    "|---------|-------|",
-]
-for outcome, count in agg["outcomes"].items():
-    lines.append(f"| {outcome} | {count} |")
+    title_prefix = f"[distill] {skill}: recurring {code}"
+    title_full   = f"{title_prefix} ({count} occurrences in 7 days)"
 
-lines += [
-    "",
-    "## Failure Mode Frequency",
-    "",
-    "| Code | Name | Count | % of Missions |",
-    "|------|------|-------|---------------|",
-]
-CODE_NAMES = {
-    "SV": "Speed Over Verification", "MB": "Memory Without Behavioral Change",
-    "SF": "Silent Failure Suppression", "UA": "User Model Absence",
-    "UB": "Uncertainty Blindness", "ID": "Intent Drift",
-    "SG": "Skill Gap", "CF": "Coordination Failure", "??": "Unclassified"
-}
-for code, count in sorted(agg["incident_codes"].items(), key=lambda x: -x[1]):
-    pct = round(count / agg["total_audits"] * 100, 1)
-    name = CODE_NAMES.get(code, code)
-    lines.append(f"| {code} | {name} | {count} | {pct}% |")
-
-lines += [
-    "",
-    "## Rule Compliance Rates",
-    "",
-    "| Rule | Compliance Rate |",
-    "|------|----------------|",
-]
-for rule, rate in sorted(agg["compliance_rates"].items()):
-    flag = "✅" if rate >= 80 else ("⚠️" if rate >= 50 else "❌")
-    lines.append(f"| {rule} | {rate}% {flag} |")
-
-lines += ["", "## Recommendations", ""]
-if not agg["recommendations"]:
-    lines.append("_No patterns recurring ≥ 2 times yet. Keep capturing._")
-else:
-    for i, rec in enumerate(agg["recommendations"], 1):
-        lines += [
-            f"### {i}. [{rec['type'].upper()}] {rec['title']}",
-            "",
-            f"**Failure code**: {rec['code']} — {CODE_NAMES.get(rec['code'], '')}  ",
-            f"**Frequency**: {rec['count']} missions ({rec['pct']}% of audits)  ",
-            f"**Type**: {rec['type']}  ",
-            "",
-            f"**Proposed fix**: {rec['fix']}",
-            "",
-            "**Evidence**:",
-        ]
-        for ev in rec["evidence"][:5]:
-            lines.append(f"- `{ev['audit']}` — {ev['description'][:120]}")
-        lines.append("")
-
-if agg["unknown_incidents"]:
-    lines += [
-        "## Taxonomy Gaps (?? incidents)",
-        "",
-        f"_{len(agg['unknown_incidents'])} unclassified incidents — review to determine if taxonomy needs a new code._",
-        "",
-    ]
-    for inc in agg["unknown_incidents"][:10]:
-        lines.append(f"- `{inc['audit']}`: {inc['description'][:150]}")
-    lines.append("")
-
-lines += [
-    "## Top Skills Loaded",
-    "",
-    "| Skill | Missions |",
-    "|-------|---------|",
-]
-for skill, count in list(agg["top_skills"].items())[:10]:
-    lines.append(f"| {skill} | {count} |")
-
-print("\n".join(lines))
-PYEOF
-
-echo "Findings report written: $FINDINGS_REPORT"
-```
-
-### Step 4: Create GitHub issues for recommendations
-
-```bash
-REPO="${REPO_ARG:-fellowship-dev/commander}"
-GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2 2>/dev/null || echo "$GH_TOKEN")
-export GH_TOKEN
-
-# Ensure labels exist
-for label_name in "skill" "rule"; do
-  gh label list --repo "$REPO" 2>/dev/null | grep -q "^$label_name" || \
-    gh label create "$label_name" \
-      --repo "$REPO" \
-      --color "$([ "$label_name" = "skill" ] && echo "#0075ca" || echo "#e4e669")" \
-      --description "$([ "$label_name" = "skill" ] && echo "Worker capability gap" || echo "Lead behavior rule")" \
-      2>/dev/null || true
-done
-
-# Create one issue per recommendation (deduplicated by code)
-python3 << PYEOF
-import json, subprocess, sys
-
-agg = json.loads('''$AGGREGATE''')
-repo = "$REPO"
-today = "$TODAY"
-
-for rec in agg.get("recommendations", []):
-    title = f"[distill] {rec['title']}"
-
-    # Check if issue already exists (avoid duplicates across analyze runs)
-    result = subprocess.run(
-        ["gh", "issue", "list", "--repo", repo, "--search", f'"{title}"', "--json", "number,title"],
+    search = subprocess.run(
+        ["gh", "issue", "list",
+         "--repo", issue_repo,
+         "--search", f"{title_prefix} in:title is:open",
+         "--json", "number,title", "--limit", "5"],
         capture_output=True, text=True
     )
-    if rec["title"][:30] in result.stdout:
-        print(f"Issue already exists for: {rec['title'][:50]} — skipping")
-        continue
-
-    evidence_lines = "\n".join(
-        f"- [{ev['audit']}]({ev['audit']}) — {ev['description'][:120]}"
-        for ev in rec["evidence"][:5]
+    existing_issues = json.loads(search.stdout or "[]")
+    match = next(
+        (i for i in existing_issues if skill in i["title"] and code in i["title"]),
+        None
     )
 
-    body = f"""## Context
+    mission_ids = [r["id"] for r in records if r.get("id")]
+    ids_str     = ", ".join(str(m) for m in mission_ids[:5])
+    rate        = agg["failure_rates"].get(code)
+    rate_str    = f"{rate}%" if isinstance(rate, (int, float)) else str(rate or "N/A")
 
-Identified by /distill analyze on {today} across {agg['total_audits']} audit reports.
+    if match:
+        comment = (
+            f"**Updated count**: {count} occurrences in the last 7 days\n\n"
+            f"**New exemplar mission IDs**: {ids_str}\n\n"
+            f"**Failure rate (7-day)**: {rate_str}"
+        )
+        result = subprocess.run(
+            ["gh", "issue", "comment", str(match["number"]), "--repo", issue_repo, "--body", comment],
+            capture_output=True, text=True
+        )
+        status = "Commented on" if result.returncode == 0 else "WARN: failed to comment on"
+        print(f"{status} issue #{match['number']}: {title_prefix}")
+    else:
+        evidence_lines = "\n".join(
+            f"- {r['id']}: {r.get('description', '')[:120]}"
+            for r in records[:10]
+            if r.get("id")
+        )
+        body = f"""## Recurring Failure Pattern
 
-## Failure Pattern: {rec['code']}
+**Skill**: \`{skill}\`
+**Incident code**: \`{code}\`
+**Team**: {team}
+**Occurrences**: {count} in the last 7 days
+**Failure rate (7-day)**: {rate_str}
 
-**{rec['code']}** appears in **{rec['count']} missions** ({rec['pct']}% of audits analyzed).
-
-## Evidence
+## Exemplar Mission IDs
 
 {evidence_lines}
-
-## Proposed Fix
-
-{rec['fix']}
-
-## Target
-
-- **Type**: {rec['type']}
-- **Repo**: {repo}
-- **Label**: {rec['type']}
 
 ---
 _Generated by /distill analyze — fellowship-dev/dogfooded-skills_
 """
-
-    result = subprocess.run(
-        ["gh", "issue", "create",
-         "--repo", repo,
-         "--title", title,
-         "--label", rec["type"],
-         "--body", body],
-        capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        print(f"Created issue: {result.stdout.strip()}")
-    else:
-        print(f"WARN: Failed to create issue for {rec['code']}: {result.stderr[:200]}")
+        result = subprocess.run(
+            ["gh", "issue", "create", "--repo", issue_repo, "--title", title_full, "--body", body],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print(f"Created issue: {result.stdout.strip()}")
+        else:
+            print(f"WARN: Failed to create issue for {skill}/{code}: {result.stderr[:200]}")
 PYEOF
 ```
 
-### Step 5: Post findings report to Quest DB
+### Step 4: Promote exemplar
+
+For each recurring pattern, identify the single most instructive failure — the record with the richest evidence field — and promote it via `PATCH /audits/{id}/exemplar`.
 
 ```bash
-QUEST_TOKEN=$(grep '^QUEST_TOKEN=' /home/ubuntu/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2 2>/dev/null || true)
-if [ -n "$QUEST_TOKEN" ]; then
-  curl -s -X POST "http://127.0.0.1:4242/api/event" \
-    -H "Authorization: Bearer $QUEST_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$(python3 -c "
+echo "$AGGREGATE" > /tmp/distill_agg.json
+python3 << 'PYEOF'
+import json, os, urllib.request, urllib.error
+
+token = os.environ.get("PYLOT_DISPATCH_TOKEN", "")
+with open("/tmp/distill_agg.json") as _f:
+    agg = json.load(_f)
+
+for pattern in agg.get("recurring_patterns", []):
+    records = pattern.get("records", [])
+    if not records:
+        continue
+
+    exemplar = max(
+        records,
+        key=lambda r: len(r.get("evidence", "") or r.get("description", ""))
+    )
+    eid = exemplar.get("id")
+    if not eid:
+        print(f"WARN: No ID for exemplar in {pattern['skill']}/{pattern['code']}, skipping")
+        continue
+
+    req = urllib.request.Request(
+        f"https://hooks.fellowship.dev/audits/{eid}/exemplar",
+        method="PATCH",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type":  "application/json"
+        },
+        data=b"{}"
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            print(f"Promoted exemplar {eid} for {pattern['skill']}/{pattern['code']} — HTTP {resp.status}")
+    except urllib.error.HTTPError as e:
+        print(f"WARN: PATCH /audits/{eid}/exemplar → HTTP {e.code}")
+    except Exception as e:
+        print(f"WARN: PATCH /audits/{eid}/exemplar → {e}")
+PYEOF
+```
+
+### Step 5: Trend comparison
+
+Compare incident counts from the current 7-day window against the prior 7-day period. Report `improving` (fewer occurrences), `stable`, or `worsening` (more occurrences) per incident code.
+
+```bash
+echo "$STATS" > /tmp/distill_stats.json
+echo "$PRIOR_STATS" > /tmp/distill_prior_stats.json
+python3 << 'PYEOF'
 import json
-content = open('$FINDINGS_REPORT').read()
-print(json.dumps({
-  'source': 'commander',
-  'type': 'commander.report',
-  'title': 'Distill Analysis $TODAY',
-  'meta': {'content': content, 'report_type': 'distill'}
-}))
-")" 2>/dev/null || true
-  echo "Quest DB notified"
-fi
+
+with open("/tmp/distill_stats.json") as _f:
+    stats = json.load(_f)
+with open("/tmp/distill_prior_stats.json") as _f:
+    prior_stats = json.load(_f)
+
+def extract_counts(s):
+    return {
+        e.get("code"): e.get("count", 0)
+        for e in (s.get("by_code") or s.get("failure_rates") or [])
+    }
+
+current = extract_counts(stats)
+prior   = extract_counts(prior_stats)
+codes   = sorted(set(current) | set(prior))
+
+print("## Trend Report (current 7 days vs prior 7 days)\n")
+print(f"{'Code':<6} {'Current':>9} {'Prior':>9}  Trend")
+print("-" * 38)
+for code in codes:
+    c = current.get(code, 0)
+    p = prior.get(code, 0)
+    if   c < p: trend = "improving"
+    elif c > p: trend = "worsening"
+    else:       trend = "stable"
+    print(f"{code:<6} {c:>9} {p:>9}  {trend}")
+PYEOF
 ```
 
 ---

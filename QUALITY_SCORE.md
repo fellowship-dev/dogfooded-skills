@@ -1,13 +1,13 @@
 # Quality Score — fellowship-dev/dogfooded-skills
 
-Last updated: 2026-05-21
+Last updated: 2026-05-25
 
 ## Domains
 
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
 | meta | B | 2026-05-21 | S3 ✅ (last commit 2026-05-07, 14d); S4 ✅ (3 open: measurement, benchmarking, hyperskills); S6 ❌ (hookshot not configured) |
-| ops | C | 2026-05-21 | S3 ✅ (last commit 2026-05-20, 1d); S4 ⚠️ (4 open: cto-heartbeat, hookshot, pii-check, distill); S6 ❌ (hookshot not configured) |
+| ops | C | 2026-05-21 | S3 ✅ (last commit 2026-05-23, 2d); S4 ⚠️ (4 open: cto-heartbeat, hookshot, pii-check, distill); S6 ❌ (hookshot not configured) |
 | product | B | 2026-05-21 | S3 ✅ (last commit 2026-04-25, 26d); S4 ✅ (0 open); S6 ❌ (hookshot not configured) |
 
 ## Signal Matrix
@@ -15,7 +15,7 @@ Last updated: 2026-05-21
 | Domain | S1 Doc | S2 FlowChad | S3 Stale | S4 Issues | S5 Tests | S6 Hookshot |
 |--------|--------|-------------|----------|-----------|----------|-------------|
 | meta | N/A | N/A | ✅ (14d) | ✅ (3) | N/A | ❌ |
-| ops | N/A | N/A | ✅ (1d) | ⚠️ (4) | N/A | ❌ |
+| ops | N/A | N/A | ✅ (2d) | ⚠️ (4) | N/A | ❌ |
 | product | N/A | N/A | ✅ (26d) | ✅ (0) | N/A | ❌ |
 
 ## Signal Applicability
@@ -65,3 +65,4 @@ Last updated: 2026-05-21
 | 2026-05-19 | daily sweep | 3 domains, 0 regressions, 0 improvements. All signals stable. |
 | 2026-05-20 | daily sweep | 3 domains, 0 regressions, 1 improvement. ops C→B (security-check closed, S4 ⚠️→✅). |
 | 2026-05-21 | daily sweep | 3 domains, 1 regression, 0 improvements. ops B→C (#53 distill P1 triaged, S4 ✅→⚠️). Dispatched #16 (P1, pii-check). |
+| 2026-05-25 | daily sweep | 3 domains, 0 regressions, 0 improvements. WIP=2: #62 dispatched today (spec-kit sync), #53 stale 4d+ (distill PRs #54/#55 merged — verify and close if resolved). ops S3 2d ✅. No new dispatch (WIP cap). |

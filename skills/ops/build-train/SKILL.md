@@ -1,213 +1,151 @@
 ---
 name: build-train
-description: Batch multiple GitHub issues into a single build branch. Dispatches workers per issue, collects PRs, merges into build branch, creates one final PR to main. Saves 4N review missions by running the review pipeline once.
-argument-hint: "org/repo --issues 10,14,15,16 [--branch build/name]"
+description: ICM procedure to batch GitHub issues into one build branch. Stage 02 FANS OUT independent builds as concurrent subagents in waves (parallel within a wave, sequential across dependency edges). Stages 01/03/04 run as subagents; 00 and 05 run inline.
 user-invocable: true
-allowed-tools: Read, Write, Bash, Glob, Grep
+allowed-tools: Read, Bash, Glob, Grep, Task
 ---
 
 # build-train
 
-Batch-execute multiple issues into a single build branch. Each issue gets a worker; each worker creates a PR targeting the build branch. The final PR to main goes through the full review pipeline once.
+Batch-execute multiple issues into a single build branch. Stage 01 plans the dependency order;
+stage 02 launches parallel build subagents in waves — concurrent where builds are independent,
+sequential where one build depends on another's output. Stage 03 merges all PRs into the build
+branch, stage 04 opens one final PR to the default branch (which runs the review pipeline once).
 
-## When to Use
+## Purpose
 
-- 3+ open issues on the same repo that can be worked in parallel (or sequentially)
-- CTO heartbeat detects a batch of related work
-- Manual dispatch: `/build-train Lexgo-cl/lexgo-website --issues 10,14,15,16`
+Convert the monolithic `build-train` skill into an ICM procedure. The monolith dispatched workers
+in a single long-lived session; by the merge phase its context carried every worker prompt and
+log, degrading conflict-resolution judgement. This proc isolates each phase into a focused
+subagent and — critically — replaces the serial "spawn one worker, wait, spawn next" loop with a
+**dependency-graph wave scheduler**: builds with no unmet dependency run as concurrent Task
+subagents; dependent builds wait for their prerequisite's handoff.
 
 ## Arguments
 
-Parse `$ARGUMENTS` for:
+| Param | Required | Default | Notes |
+|-------|----------|---------|-------|
+| `repo` | yes | — | `org/repo`, first positional arg |
+| `--issues` | yes | — | Comma-separated issue numbers, e.g. `10,14,15,16` |
+| `--branch` | no | `build/YYYY-MM-DD` | Build branch name; `-2` suffix appended if it exists |
 
-- **repo**: `org/repo` (required, first positional arg)
-- **--issues**: comma-separated issue numbers (required)
-- **--branch**: build branch name (optional, default: `build/YYYY-MM-DD`)
+Parse from `$ARGUMENTS`.
 
-## Phase 0: Setup
+## What it does
 
-### 0.1 Determine default branch
+6-stage ICM procedure:
 
-```bash
-DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef -q .defaultBranchRef.name)
-```
+| Stage | Mode | Description |
+|-------|------|-------------|
+| 00-setup | inline | Default branch, create build branch + label, read all issues |
+| 01-plan-order | subagent | Read issue bodies, derive dependency graph, emit build waves |
+| 02-build-fanout | subagent (PARALLEL) | Fan out builds wave-by-wave: parallel within a wave, sequential across edges. Each build = one Task worker producing a PR; verify + fix base/label |
+| 03-merge-chain | subagent | Merge each build-train PR into the build branch, resolve conflicts |
+| 04-final-pr | subagent | Open one final PR build branch → default branch (no build-train label) |
+| 05-report | inline | Write report, emit outcome marker |
 
-### 0.2 Create build branch
-
-```bash
-BUILD_BRANCH="${BRANCH_ARG:-build/$(date +%Y-%m-%d)}"
-# Append counter if exists
-git ls-remote --heads origin "$BUILD_BRANCH" | grep -q . && BUILD_BRANCH="${BUILD_BRANCH}-2"
-gh api repos/$REPO/git/refs -X POST \
-  -f ref="refs/heads/$BUILD_BRANCH" \
-  -f sha="$(gh api repos/$REPO/git/ref/heads/$DEFAULT_BRANCH -q .object.sha)"
-```
-
-### 0.3 Create `build-train` label if missing
-
-```bash
-gh label create build-train --repo $REPO --color 1D76DB --description "Part of a build-train batch" 2>/dev/null || true
-```
-
-### 0.4 Read all issues
-
-```bash
-for ISSUE in $ISSUE_NUMBERS; do
-  gh issue view $ISSUE --repo $REPO --json number,title,body,labels,assignees
-done
-```
-
-Build a manifest of issues with titles and key context for worker prompts.
-
-## Phase 1: Dispatch Workers
-
-For each issue, spawn a worker via `claude -p`. The worker boot prompt MUST include:
+## Handoff locations
 
 ```
-You are headless. Never ask clarifying questions. Make assumptions and proceed.
-
-CRITICAL INSTRUCTIONS — READ CAREFULLY:
-1. Create your PR targeting branch "$BUILD_BRANCH" (NOT $DEFAULT_BRANCH, NOT main, NOT master)
-2. Add the label "build-train" to your PR
-3. Work ONLY on issue #$ISSUE_NUMBER — do not fix other issues or expand scope
-
-To create the PR targeting the correct branch:
-  gh pr create --repo $REPO --base $BUILD_BRANCH --head your-feature-branch --title "..." --body "..." --label build-train
-
-TASK:
-Fix/implement issue #$ISSUE_NUMBER on $REPO: $ISSUE_TITLE
-$ISSUE_BODY_SUMMARY
-
-EXPECTED OUTPUT:
-A PR targeting $BUILD_BRANCH with the build-train label.
+.procedure-output/build-train/{stage}/handoff.md
 ```
 
-### Worker spawn
-
-Use the same `claude -p` pattern as crew-runner:
-
-```bash
-WORKER_SESSION=$(uuidgen)
-WORKER_LOG="$WORKER_LOG_DIR/${WORKER_SESSION}.log"
-
-(
-  unset CLAUDECODE CLAUDE_CODE_SSE_PORT CLAUDE_CODE_ENTRYPOINT
-  cd $WORKER_DIR
-  claude -p --verbose --session-id "$WORKER_SESSION" --dangerously-skip-permissions -- "$WORKER_PROMPT" </dev/null >> "$WORKER_LOG" 2>&1
-) &
-WORKER_PID=$!
+Stage 02 additionally writes one sub-handoff per build:
+```
+.procedure-output/build-train/02-build-fanout/builds/{issue}.md
 ```
 
-### Sequential vs parallel
+Stage 00 writes the root context (repo, default branch, build branch, issue manifest). All
+subagent stages receive only the handoffs they need — never the full orchestrator context.
 
-- At `team_max_concurrent=1`: spawn one worker, wait, spawn next
-- At higher concurrency: spawn multiple, wait for all
+## Execution
 
-Use `scripts/wait-for-job.sh` to block until each worker exits.
+### Stage 00 (inline)
 
-## Phase 2: Verify + Fix
+Run yourself. Read CONTEXT.md:
+```
+.claude/skills/build-train/stages/00-setup/CONTEXT.md
+```
+Write handoff to `.procedure-output/build-train/00-setup/handoff.md`.
 
-After each worker finishes, verify the PR:
+### Stage 01 (subagent)
 
-```bash
-# Find the PR the worker created (search by head branch or recent PRs)
-PR_NUMBER=$(gh pr list --repo $REPO --state open --label build-train --json number,headRefName \
-  --jq ".[] | select(.number > $LAST_KNOWN_PR) | .number" | head -1)
+Spawn one Task. Pass the 00-setup handoff path + stage CONTEXT.md path only.
+
+### Stage 02 (subagent — internally PARALLEL, wave scheduler)
+
+Spawn ONE Task for the fan-out stage. That stage's CONTEXT.md drives the wave loop: it reads the
+build order from stage 01, then for each wave launches all of that wave's builds as concurrent
+Task workers in a SINGLE response and does NOT wait between them within the wave; it waits for the
+whole wave before starting the next. Builds joined by a sequential edge land in later waves.
+
+Task prompt template (used for every subagent stage):
+```
+You are running stage {NN}-{name} of the build-train procedure.
+
+Read your stage instructions:
+  .claude/skills/build-train/stages/{NN}-{name}/CONTEXT.md
+
+Your inputs:
+  {only the input handoff paths this stage's CONTEXT.md lists}
+
+Write your output to:
+  .procedure-output/build-train/{NN}-{name}/handoff.md
+
+Execute all steps in CONTEXT.md. Write handoff.md before exiting.
 ```
 
-### Verify checklist
+### Stages 03 → 04 (sequential subagents)
 
-1. **PR exists** — if not, log failure, continue to next issue
-2. **PR targets build branch** — check base ref:
+For each, spawn one Task. Pass only the handoffs that stage's CONTEXT.md lists as inputs. Do not
+start the next stage until the current completes. On stage failure, emit the failure marker and
+stop only if the failure is unrecoverable (see Exit paths).
 
-   ```bash
-   BASE=$(gh pr view $PR_NUMBER --repo $REPO --json baseRefName -q .baseRefName)
-   if [ "$BASE" != "$BUILD_BRANCH" ]; then
-     gh pr edit $PR_NUMBER --repo $REPO --base "$BUILD_BRANCH"
-   fi
-   ```
+### Stage 05 (inline)
 
-3. **Has `build-train` label** — add if missing:
+Run yourself. Read CONTEXT.md and emit the `[pylot] outcome=...` marker from the orchestrator
+(never from a subagent).
 
-   ```bash
-   gh pr edit $PR_NUMBER --repo $REPO --add-label build-train
-   ```
+## Stage handoff chain
 
-### On worker failure
+```
+00 ─► 01 ─► 02 ─► 03 ─► 04 ─► 05 (inline, reads all)
 
-1. Check last 30 lines of worker log
-2. If retries remain (max 2 per issue): adjust prompt, re-dispatch
-3. If exhausted: log as skipped, continue to next issue
-
-## Phase 3: Merge PRs into Build Branch
-
-After all workers complete, merge each PR into the build branch:
-
-```bash
-for PR in $BUILD_TRAIN_PRS; do
-  gh pr merge $PR --repo $REPO --merge --admin
-done
+02 internal wave fan-out:
+   wave 1: [build A] [build B] [build C]   ← concurrent Task subagents
+              │         │         │
+              └────── all join ───┘
+   wave 2: [build D depends on A] [build E depends on B,C]   ← concurrent
+              │                        │
+              └──────── all join ──────┘
+   wave 3: [build F depends on D] ...
 ```
 
-Handle conflicts same as release-train-runner:
+## Exit paths
 
-- Lockfiles: regenerate
-- Adjacent lines: keep both
-- Irreconcilable: skip that PR, log reason
+- **Success**: stage 05 emits `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
+- **Failure**: failing stage emits `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
+- **Blocked**: stage 00 finds an existing `build/*` train in progress → `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`
 
-## Phase 4: Create Final PR
-
-```bash
-gh pr create --repo $REPO \
-  --base $DEFAULT_BRANCH \
-  --head $BUILD_BRANCH \
-  --title "build-train: $BUILD_BRANCH (N issues)" \
-  --body "## Build Train
-
-N issues implemented and merged into this branch:
-
-| Issue | Title | PR | Status |
-|-------|-------|----|--------|
-| #10 | Brand assets | #N | Merged |
-| #14 | Blog pages | #N | Merged |
-
-Individual PRs linked above for per-issue review.
-
----
-Generated by /build-train"
-```
-
-The final PR has NO `build-train` label. It triggers the normal review pipeline.
-
-## Phase 5: Report
-
-Write to `reports/YYYY-MM-DD-build-train-REPO.md`:
-
-```markdown
-# Build Train: $REPO
-**Branch:** $BUILD_BRANCH
-**Final PR:** #N
-**Issues:** N attempted, M completed, K skipped
-
-## Issues
-
-| # | Issue | Worker | PR | Status |
-|---|-------|--------|----|--------|
-| 1 | #10 Brand assets | session-abc | #50 | Merged |
-| 2 | #14 Blog | session-def | #51 | Merged |
-
-## What's left
-- Issue #15: worker failed, needs manual dispatch
-```
-
-Commit and push the report.
+Per-build failures inside stage 02 do NOT fail the train — the failed issue is skipped and the
+train proceeds (skip-rather-than-break). The train only fails if zero builds succeed.
 
 ## Hard Rules
 
-1. **Worker prompts MUST specify `--base $BUILD_BRANCH`** — primary instruction, repeated twice in prompt
-2. **Verify and fix** every PR after worker completes — change base branch and add label if worker got it wrong
-3. **Final PR has NO `build-train` label** — enters normal review pipeline
-4. **Never force push** the build branch
-5. **Skip rather than break** — if a worker or merge fails, skip and continue
-6. **One build-train per repo at a time** — check for existing `build/*` branches before starting
-7. **SCOPE LOCK applies** — work only the listed issues, nothing else
+1. **Stage 02 builds within a wave MUST launch in parallel** — all of a wave's Task calls in one response, no waiting between them.
+2. **Respect sequential edges** — a build whose dependency is unmet is held to a later wave; never launch it before its prerequisite's sub-handoff exists.
+3. **Worker prompts MUST specify `--base $BUILD_BRANCH`** — primary instruction, repeated twice in the prompt.
+4. **Verify and fix** every PR after its build worker completes — change base branch and add the `build-train` label if the worker got it wrong.
+5. **Final PR has NO `build-train` label** — it enters the normal review pipeline.
+6. **Never force push** the build branch.
+7. **Skip rather than break** — a failed build or unmergeable PR is skipped and logged; the train continues.
+8. **One build-train per repo at a time** — stage 00 checks for existing `build/*` branches before starting.
+9. **SCOPE LOCK** — each worker works only its assigned issue, nothing else.
+10. **Stage 00 and 05 run inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator.
+11. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
+12. **Each stage writes handoff.md before the next reads it.** No stage skipped (execute even if action is "nothing to do").
+
+## Reference files
+
+- `CONTEXT.md` — architecture overview
+- `stages/NN-name/CONTEXT.md` — per-stage inputs, task, output contract

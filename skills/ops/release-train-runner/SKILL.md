@@ -1,344 +1,185 @@
 ---
 name: release-train-runner
-description: Merge a sequence of PRs into a single release branch on remote compute. Resolves conflicts, runs full test suite, creates one release PR with a unified test plan.
+description: 8-stage FULLY SEQUENTIAL ICM procedure that merges N reviewed PRs into one release branch on remote compute. Operator skill — spawns a worker devbox and drives it through all stages. No parallel stages. Per-PR validate+integrate runs as an in-order loop inside one stage. Stages 00 and 07 run inline.
 user-invocable: true
-argument-hint: "[org/repo] [pr1] [pr2] [pr3] ... (complementary instructions)"
+allowed-tools: Read, Bash, Glob, Grep, Task
 ---
 
-Merge PRs into a release train for repo `$0`. PR numbers follow as `$1`, `$2`, `$3`, etc.
+## Purpose
 
-Complementary instructions (if any) appear in parentheses at the end of the arguments — treat them as extra context that narrows scope or provides guidance.
+Merge N reviewed PRs into a single release branch on remote compute (Ona or Codespaces),
+one PR at a time, in order. Run the full test suite after each merge. Produce one release PR
+with conflicts documented and a unified manual test plan, plus a local report.
 
-Write the report to `reports/YYYY-MM-DD-release-train-$0.md` (replace `/` with `-` in the repo name).
+**This skill runs in the OPERATOR session** and owns its worker lifecycle. It spawns a repo
+worker devbox via the gateway worker API (see `pylot-workers` skill) and drives stages 01-06
+through the worker. Stage 00 (claim compute) and stage 07 (report + outcome marker) run
+inline in the operator.
 
----
+**This procedure is FULLY SEQUENTIAL.** There is no parallelism anywhere. Each PR generates
+new conflicts for every other PR, so PRs MUST be validated and integrated ONE AT A TIME, in the
+provided order, inside a single loop in stage 03. Do NOT fan out per-PR subagents.
 
-# Release Train Runner
+## Worker Setup
 
-Merge N reviewed PRs into a single release branch on remote compute (Ona or Codespaces). Run the full test suite after each merge. Produce one release PR with conflicts documented and a unified manual test plan.
-
-## When to Use
-
-- 2+ PRs ready to merge on a repo (typically `double-checked` or `ready-to-merge`)
-- Max asks to package PRs for release
-- Moonlighter detects PR backlog and dispatches automatically
-
-## Inputs
-
-- **REPO**: `org/repo` (e.g., `Lexgo-cl/rails-backend`)
-- **PR_NUMBERS**: Space-separated PR numbers in merge order (e.g., `1372 1375 1430`)
-- Merge order = the order provided. Caller decides sequencing (typically oldest first, low-risk before high-risk).
-
-## Phase 0: Claim Compute Environment
-
-**All work happens on remote compute. NEVER merge locally.**
-
-### Option A: Ona (if project has Ona setup)
-
-Look up the repo Ona project ID and env name pattern from the team CLAUDE.md.
+Spawn a worker at stage 00 (after claiming compute) for stages 01-06:
 
 ```bash
-gitpod environment list 2>&1 | grep -i "<repo-name>"
+REPO="${0:-$PYLOT_REPO}"
+SPAWN_RESP=$(curl -s --max-time 90 -X POST \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"repo\": \"$REPO\"}" \
+  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
+WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))' 2>/dev/null)
 ```
 
-- Stopped env → `gitpod environment start <ENV_ID>`
-- No env but project exists → `gitpod environment create --project <PROJECT_ID>`
-- No project → try Codespaces (Option B)
-
-### Option B: Codespaces
+Drive each stage as a separate prompt using the `pylot-workers` drive loop pattern. Poll to
+idle between stages. Stop the worker after stage 06 completes, before the inline stage 07
+writes the report and emits the outcome marker:
 
 ```bash
-export GH_TOKEN=$(grep '^CODESPACE_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
-
-CS_NAME=$(gh cs create \
-  --repo $REPO \
-  --branch $DEFAULT_BRANCH \
-  --machine basicLinux32gb \
-  --idle-timeout 120m \
-  --retention-period 1h \
-  --display-name "release-train-$(date +%m%d)")
+curl -s --max-time 30 -X POST \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop" >/dev/null 2>&1 || true
 ```
 
-**Preference:** Use Ona if the project has it set up (environment is warm, deps installed). Fall back to Codespaces otherwise.
+## Arguments
 
-### Environment abstraction
+| Param | Required | Default | Notes |
+|-------|----------|---------|-------|
+| `repo` | yes | — | `org/repo`, e.g. `Lexgo-cl/rails-backend` (parsed as `$0`) |
+| `pr_numbers` | yes | — | Space-separated PR numbers in merge order, e.g. `1372 1375 1430` (`$1 $2 $3 ...`) |
+| `instructions` | no | — | Complementary guidance in trailing parentheses; narrows scope |
 
-Throughout this document:
-- `REMOTE_EXEC` = `gitpod environment ssh $ENV_ID --` OR `gh cs ssh -c $CS_NAME --`
-- `REPO_DIR` = workspace directory on remote (e.g., `/workspaces/rails-backend`)
+Parse from `$ARGUMENTS`: first token is the repo, remaining bare integers are PR numbers in
+order, trailing `(...)` is optional complementary instructions. Merge order = the order provided.
 
-Substitute the correct command based on which compute you claimed.
+## What it does
 
-## Phase 1: Pre-Flight
+8-stage FULLY SEQUENTIAL ICM procedure:
 
-### 1.1 Determine default branch
+| Stage | Mode | Description |
+|-------|------|-------------|
+| 00-claim-compute | inline | Claim remote env (Ona or Codespaces); set `REMOTE_EXEC` + `REPO_DIR` |
+| 01-preflight | subagent | Default branch, PR manifest, validate PRs, clean the env |
+| 02-release-branch | subagent | Cut `release/YYYY-MM-DD` from default branch |
+| 03-validate-integrate | subagent | **Sequential in-order loop**: per PR → validate → merge → resolve conflicts → test → log; next PR |
+| 04-lockfiles | subagent | Regenerate lockfiles if any merged PR touched deps; re-test |
+| 05-push-release-pr | subagent | Push release branch; open one release PR with unified test plan |
+| 06-release-env | subagent | Write async trigger notification; release/stop remote compute |
+| 07-report | inline | Write local report file; emit outcome marker |
 
-```bash
-DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef -q .defaultBranchRef.name)
+Stage 03 is the isolated critical-judgement stage: PR validation, conflict resolution, and
+merge verdicts all happen there in one clean context, looping over PRs sequentially.
+
+## Handoff locations
+
+All handoffs live in the repo working directory:
+```
+.procedure-output/release-train-runner/{stage}/handoff.md
 ```
 
-Lexgo uses `master`, most others use `main`. Never assume.
+Stage 00 writes the compute-claim context. Each subagent stage receives only the handoffs its
+CONTEXT.md lists as inputs — never the full orchestrator context.
 
-### 1.2 Fetch PR metadata for all PRs
+## Execution
 
-```bash
-for PR in $PR_NUMBERS; do
-  gh pr view $PR --repo $REPO --json number,title,headRefName,author,labels,additions,deletions,changedFiles,url,body
-done
+### Stage 00 (inline)
+
+Run stage 00 yourself (orchestrator context). Read CONTEXT.md:
+```
+.claude/skills/release-train-runner/stages/00-claim-compute/CONTEXT.md
+```
+Claim the remote environment, resolve `REMOTE_EXEC` and `REPO_DIR`, and write handoff to
+`.procedure-output/release-train-runner/00-claim-compute/handoff.md`.
+
+### Stages 01 → 06 (sequential subagents — one at a time)
+
+For each stage in order, spawn exactly ONE Task. Wait for it to finish before launching the
+next. **Never launch two stages in the same response. There are no parallel stages.**
+
+Each Task prompt must be self-contained:
+- Include only the input handoff paths the stage's CONTEXT.md lists
+- Include the path to the stage's CONTEXT.md
+- Do NOT pass orchestrator history or prior reasoning
+
+Task prompt template:
+```
+You are running stage {NN}-{name} of the release-train-runner procedure.
+
+Read your stage instructions:
+  .claude/skills/release-train-runner/stages/{NN}-{name}/CONTEXT.md
+
+Your inputs:
+  .procedure-output/release-train-runner/{prior-stage}/handoff.md
+  (...any other handoffs the CONTEXT.md lists)
+
+Write your output to:
+  .procedure-output/release-train-runner/{NN}-{name}/handoff.md
+
+Execute all steps in CONTEXT.md. Write handoff.md before exiting.
 ```
 
-Collect into a manifest:
+If any stage emits a hard blocker (e.g. no compute in 00, zero valid PRs in 01), emit the
+matching outcome marker and stop. A single skipped PR in stage 03 does NOT stop the chain.
 
-| PR | Title | Author | Branch | LOC | Files | Labels |
-|----|-------|--------|--------|-----|-------|--------|
+### Stage 07 (inline)
 
-### 1.3 Validate PRs
+Run stage 07 yourself (orchestrator context). Read CONTEXT.md:
+```
+.claude/skills/release-train-runner/stages/07-report/CONTEXT.md
+```
+Write the local report file, then emit the `[pylot] outcome=...` marker from the orchestrator
+(never from a subagent).
 
-For each PR, verify:
-- State is `open` (not already merged or closed)
-- Base branch matches `$DEFAULT_BRANCH`
-- Not a draft
+## Stage handoff chain
 
-If any PR fails validation, **report and skip it** — don't abort the whole train.
-
-### 1.4 Ensure environment is clean
-
-```bash
-$REMOTE_EXEC "cd $REPO_DIR && git fetch origin && git checkout $DEFAULT_BRANCH && git reset --hard origin/$DEFAULT_BRANCH && git clean -fd"
+```
+00 ─► 01 ─► 02 ─► 03 ─► 04 ─► 05 ─► 06 ─► 07 (inline, reads all)
+              (per-PR loop:
+               validate → merge → resolve → test,
+               one PR at a time, in order)
 ```
 
-## Phase 2: Create Release Branch
-
-```bash
-RELEASE_DATE=$(date +%Y-%m-%d)
-RELEASE_BRANCH="release/$RELEASE_DATE"
-
-# If branch exists, append counter
-$REMOTE_EXEC "cd $REPO_DIR && git checkout -b $RELEASE_BRANCH origin/$DEFAULT_BRANCH"
-```
-
-If the branch name is taken, try `release/$RELEASE_DATE-2`, `-3`, etc.
-
-## Phase 3: Sequential Merge + Test
-
-For each PR in the provided order:
-
-### 3.1 Merge
-
-```bash
-$REMOTE_EXEC "cd $REPO_DIR && \
-  git fetch origin $PR_BRANCH && \
-  git merge origin/$PR_BRANCH --no-ff -m 'Merge PR #$PR_NUMBER: $PR_TITLE'"
-```
-
-### 3.2 Handle conflicts
-
-If merge conflicts:
-
-1. List conflicting files: `git diff --name-only --diff-filter=U`
-2. Read each conflicting file to understand both sides
-3. Resolve:
-   - **Lockfiles** (Gemfile.lock, yarn.lock, package-lock.json) → re-run the package manager after all merges
-   - **Adjacent line changes** → keep both
-   - **Same function modified differently** → attempt intelligent merge, log decision
-   - **Truly irreconcilable** → skip this PR, log reason, `git merge --abort`, continue with next PR
-4. After resolution: `git add . && git commit --no-edit`
-5. Record every conflict and resolution for the release PR description
-
-### 3.3 Run test suite
-
-Look up the test command from the repo CLAUDE.md:
-
-| Project | Test Command |
-|---------|-------------|
-| Lexgo (Rails) | `RAILS_ENV=test bundle exec rspec --format progress` |
-| Booster Pack / Farmesa / Inbox Angel (Strapi+Next) | `cd backend && npm run build && cd ../frontend && npm run build` |
-| MTG LOTR (Next.js) | `npm run build` |
-
-```bash
-$REMOTE_EXEC "cd $REPO_DIR && <TEST_COMMAND>"
-```
-
-**If tests fail after merging PR #N:**
-
-1. Check if the failure is from the current PR or a conflict with a previously merged PR
-2. If it's a pre-existing test failure (baseline), note it and continue
-3. If the merge introduced the failure:
-   - Attempt a simple fix (missing import, type error, obvious conflict residue)
-   - If fixable: commit as `fix: resolve merge conflict in [file] between PR #X and #Y`
-   - If not fixable: **revert this PR's merge** (`git revert HEAD --no-edit`), log it as skipped, continue with next PR
-4. Re-run tests to confirm green before proceeding
-
-### 3.4 Log result
-
-After each PR, record:
-- Merge status: clean / conflicts resolved / skipped
-- Conflicts: files + resolution strategy
-- Test result: pass / fail (with details)
-
-## Phase 4: Regenerate Lockfiles (if needed)
-
-If any merged PR touched dependencies:
-
-```bash
-# Rails
-$REMOTE_EXEC "cd $REPO_DIR && bundle install"
-
-# Node
-$REMOTE_EXEC "cd $REPO_DIR && npm install"  # or yarn install
-```
-
-Commit: `chore: regenerate lockfile after release train merges`
-
-Run tests once more after lockfile regeneration.
-
-## Phase 5: Push Release Branch
-
-```bash
-$REMOTE_EXEC "cd $REPO_DIR && git push origin $RELEASE_BRANCH"
-```
-
-## Phase 6: Create Release PR
-
-```bash
-gh pr create --repo $REPO \
-  --base $DEFAULT_BRANCH \
-  --head $RELEASE_BRANCH \
-  --title "🚂 Release train — $RELEASE_DATE (N PRs)" \
-  --body "$(cat <<'BODY'
-## Release Train — RELEASE_DATE
-
-N PRs merged sequentially, tests verified after each merge.
-
-### Included PRs (merge order)
-
-| # | PR | Title | Author | LOC | Merge | Tests |
-|---|-----|-------|--------|-----|-------|-------|
-| 1 | [#NNN](url) | Title | @author | +X/-Y | Clean | Pass |
-| 2 | [#NNN](url) | Title | @author | +X/-Y | Conflicts resolved | Pass |
-
-### Conflicts Resolved
-
-- `path/to/file` — PR #X and #Y both modified; resolution: [description]
-(or "No conflicts — clean merges across all PRs")
-
-### Skipped PRs
-
-- PR #Z — [reason: irreconcilable conflict / test failure after merge]
-(or "None — all PRs included")
-
-### Test Results
-
-- Full suite after final merge: **PASS** (N examples, 0 failures)
-- Baseline failures (pre-existing): [list if any]
-
-### Manual Test Plan
-
-Combined test plan covering all included PRs:
-- [ ] [Specific user action from PR #A] — expected: [outcome]
-- [ ] [Specific user action from PR #B] — expected: [outcome]
-- [ ] [Cross-PR interaction check] — expected: [outcome]
-- [ ] [Regression check on adjacent workflows]
-
-### How to Review
-
-```bash
-git fetch origin release/YYYY-MM-DD
-git diff master...release/YYYY-MM-DD --stat
-```
-
-Review the combined diff. Individual PR descriptions are linked above for context.
-
-### On merge
-
-GitHub will auto-close the included PRs (their commits are contained in this branch).
-
----
-🚂 Generated by `/release-train-runner`
-BODY
-)"
-```
-
-## Phase 7: Notify
-
-If running async (moonlighter, Telegram dispatch):
-
-```bash
-QUEUE_DIR="$HOME/.local/share/pylot/queue"
-TRIGGER_FILE="$QUEUE_DIR/release-train_$(date +%s)_$RANDOM.trigger"
-cat > "$TRIGGER_FILE" <<TRIGGER
-header: 🚂 /release-train-runner
-report: inline
----
-🚂 Release train ready for $REPO
-$N PRs merged into $RELEASE_BRANCH. $M conflicts resolved, tests green.
-Review: $PR_URL
-TRIGGER
-```
-
-## Phase 8: Release Environment
-
-```bash
-# Ona
-$REMOTE_EXEC "cd $REPO_DIR && git checkout $DEFAULT_BRANCH"
-gitpod environment stop $ENV_ID
-
-# Codespaces (retention-period handles auto-delete)
-gh cs stop -c "$CS_NAME"
-```
-
-## Report (REQUIRED)
-
-Every release train produces a report at `reports/YYYY-MM-DD-release-train-ORG-REPO.md`.
-
-```markdown
-# Release Train: [org/repo] — YYYY-MM-DD
-
-**Date:** YYYY-MM-DD
-**Repo:** [org/repo]
-**Release PR:** #N — [url]
-**Release Branch:** release/YYYY-MM-DD
-**Compute:** [Ona env ID / Codespace name]
-**Duration:** [X minutes]
-
-## Source PRs
-
-| # | PR | Title | Author | LOC | Merge | Tests | Status |
-|---|-----|-------|--------|-----|-------|-------|--------|
-| 1 | [#N](url) | Title | @author | +X/-Y | Clean | Pass | Included |
-| 2 | [#N](url) | Title | @author | +X/-Y | 2 conflicts | Pass | Included |
-| 3 | [#N](url) | Title | @author | +X/-Y | — | Fail | Skipped |
-
-## Conflict Log
-
-### PR #X + PR #Y — `path/to/file`
-- Conflict type: [adjacent lines / same function / lockfile]
-- Resolution: [description of what was kept/changed]
-
-## Test Results
-
-- After PR #1: PASS
-- After PR #2: PASS (2 conflicts resolved)
-- After PR #3: FAIL — reverted, skipped
-- Final suite: PASS (N examples, M baseline failures)
-
-## Manual Test Plan
-
-[Combined from all included PRs — deduplicated, ordered by workflow area]
-
-## Verdict
-
-Release branch is ready for Max to review and merge.
-```
-
-## Key Rules
-
-- **Never force push** the release branch
-- **Never delete** source PR branches — GitHub auto-deletes on merge
-- **Always --no-ff** merge to preserve PR commit boundaries
-- **Always run tests** after each merge — don't batch merges then test
-- **Never merge the release PR** — Max reviews and merges manually
-- **Log every conflict** resolution for transparency
-- **Skip rather than break** — if a PR causes test failures, skip it rather than shipping broken code
-- **Merge order matters** — follow the order provided by the caller
-- **Lockfile conflicts are mechanical** — regenerate, don't manually resolve
+## Exit paths
+
+- **Success**: stage 07 emits
+  `[pylot] outcome="release train ready: N PRs merged into release/YYYY-MM-DD" status=success`
+- **Failure**: failing stage emits
+  `[pylot] outcome="release-train failed at stage NN: {reason}" status=failed`
+- **Blocked**: no compute claimable (00) or no valid PRs to merge (01) →
+  `[pylot] outcome="release-train blocked: {reason}" status=blocked`
+
+The outcome marker is always emitted by the orchestrator (inline), never by a subagent.
+
+## Hard Rules
+
+1. **FULLY SEQUENTIAL — no parallelism.** Never launch two Task calls in one response. There
+   are no parallel stages.
+2. **Per-PR validate+integrate is sequential and in-order.** Stage 03 loops over PRs one at a
+   time in the provided order. NEVER fan out per-PR subagents — each merge changes the conflict
+   surface for every later PR.
+3. **A PR is reviewed in cohesion** — the whole diff, all dimensions together. Never split a PR
+   review across files or dimensions.
+4. **Stage 00 runs inline** — compute is claimed in orchestrator context so `REMOTE_EXEC` /
+   `REPO_DIR` are stable for downstream stages.
+5. **Stage 07 runs inline** — `[pylot] outcome=...` marker MUST come from the orchestrator.
+6. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
+7. **Each stage writes handoff.md before the next stage reads it.**
+8. **Do not skip stages** — every stage executes even if its action is "nothing to do"
+   (e.g. stage 04 with no dependency changes still runs and records "no lockfile changes").
+9. **Skip rather than break.** A PR that fails validation, conflicts irreconcilably, or breaks
+   tests is skipped/reverted and logged — it does NOT abort the train.
+10. **Never merge the release PR, never force-push, always `--no-ff`, always test after each
+    merge.** Max reviews and merges the release PR manually.
+11. **NO QUEST.** Reporting is the local report file only (stage 07) plus the async trigger
+    notification (stage 06). No Quest POST, no Quest token, no Quest URL anywhere.
+
+## Reference files
+
+- `CONTEXT.md` — architecture overview
+- `shared/release-pr-template.md` — release PR body template (used by stage 05)
+- `shared/report-template.md` — local report template (used by stage 07)
+- `shared/test-commands.md` — per-project test command lookup (used by stages 03 and 04)
+- `stages/NN-name/CONTEXT.md` — per-stage inputs, task, output contract

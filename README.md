@@ -60,6 +60,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
 | [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
 | [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
+| [`ops/weekly-plan`](skills/ops/weekly-plan/) | Weekly roadmap deep-dive — deep-triages the backlog, re-ranks by owner leverage, batches open-questions into one decision digest, proposes goal edits. Shapes the queue the hourly auto-pylot executes |
 
 ## Namespace Convention
 

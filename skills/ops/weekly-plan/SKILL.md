@@ -1,6 +1,6 @@
 ---
 name: weekly-plan
-description: Weekly roadmap deep-dive for a Pylot team. Deep-triages the full backlog (closes ghosts, re-scopes partials with cited evidence), re-ranks by OWNER LEVERAGE, surfaces open-questions as one batched decision digest, and proposes goal edits. Shapes the queue and the goals that the hourly auto-pylot then executes — it is the thinking counterpart to the hourly's execution.
+description: Interactive weekly roadmap session for a Pylot team (run in a Claude Code or pylot chat session — NOT headless). Pulls goals + backlog, ranks candidates by metrics + momentum + leverage, asks the owner for their perceived priorities and reconciles, deep-triages to kill ghosts, decomposes epics into hourly-sized testable+deployable slices, writes the reconciled goals, and activates/tunes the hourly auto-pylot. It is the thinking session that shapes what the hourly then executes.
 argument-hint: "org/repo [team]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -8,183 +8,108 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 # weekly-plan
 
-The hourly `auto-pylot` is a tight executor: it triages cheaply and dispatches the top 1–3 issues by impact. It cannot afford a deep roadmap dive every hour. `weekly-plan` is the slow, deliberate counterpart that runs once a week: it reads the *whole* backlog and the code behind it, kills stale work, re-ranks the roadmap by what actually unblocks the owner, batches every open question into one decision digest, and proposes goal edits. The hourly then executes the shaped backlog.
+The hourly `auto-pylot` is a tight executor: it triages cheaply and dispatches the top 1–3 issues. It can't afford a deep roadmap dive every hour, and it has no human to ask. `weekly-plan` is the **interactive** counterpart you run **with a person in the loop** — in a Claude Code session or a pylot chat session — to set direction for the week. It shapes the backlog and the goals; the hourly executes them.
 
-**Division of labor:** weekly-plan *shapes* (close, re-scope, re-rank, ask, propose goals). The hourly *executes* (dispatch). weekly-plan does **not** mass-dispatch missions — at most it dispatches the single top item if the queue is empty. One clean kill beats five grazing shots.
+**This is not a cron.** It asks the owner questions and waits for answers, so it only runs where a human can respond. There is **no Telegram, no push** — every question and the final digest are presented **in-session**.
+
+**Division of labor:** weekly-plan *shapes* (rank, ask, reconcile, triage, decompose, write goals, activate the hourly). The hourly *executes* (dispatch). One clean kill beats five grazing shots.
 
 ## When to Use
-
-- A weekly cron fires it (operator `infra.cto`, `task: /weekly-plan fellowship-dev/pylot infra`).
-- The owner runs `/weekly-plan` to think through roadmap priorities before a sprint.
-- The backlog feels stale, mislabeled, or full of half-done work and needs a reset.
+- The owner opens a CC or pylot-chat session to plan the week / set direction before turning the hourly loose.
+- The backlog feels stale, mislabeled, or unfocused and the goals need a reset.
+- After a big merge wave, to re-aim the hourly.
 
 ## Invocation
-
 ```
-/weekly-plan org/repo [team]
-```
-
-**Examples:**
-```
-/weekly-plan fellowship-dev/pylot infra
-/weekly-plan fellowship-dev/pylot            # team defaults to infra
+/weekly-plan org/repo [team]      # e.g. /weekly-plan fellowship-dev/pylot infra  (team defaults to infra)
 ```
 
-## Token & Environment
-
-In an operator container these are already in the environment (provided at boot). For a local run, source the ops env first.
-
+## Environment
+In a session these are already set (operator/chat boot); for a local run, source the ops env.
 ```bash
-export REPO="${1:?usage: /weekly-plan org/repo [team]}"
-export TEAM="${2:-infra}"
-# Local runs only — in the operator these are already set:
-# set -a; source "$HOME/Projects/fellowship-dev/claude-buddy/.env"; set +a
-: "${GH_TOKEN:?missing}"; : "${PYLOT_DISPATCH_TOKEN:?missing}"; : "${PYLOT_API_URL:?missing}"
-GH(){ gh "$@"; }
+export REPO="${1:?usage: /weekly-plan org/repo [team]}"; export TEAM="${2:-infra}"
+: "${GH_TOKEN:?}"; : "${PYLOT_DISPATCH_TOKEN:?}"; : "${PYLOT_API_URL:?}"
 GW(){ curl -sS -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" "$@"; }
 ```
 
 ---
 
 ## PRIME DIRECTIVE — research before you promote
+Before you rank, promote, or decompose ANY issue, research it **and its linked/sibling issues**: read the code, git history, linked PRs, and the thread. Most of a long-lived backlog is stale, partially done, or superseded. **Don't chase ghosts.** The default triage outcome is CLOSE or RE-SCOPE with cited evidence — promotion to the hourly's queue is *earned*.
 
-Before you close, re-scope, rank, or propose dispatching ANY issue, research it **and its
-linked/sibling issues**: read the code, the git history, the linked PRs, and the issue thread.
-Most of a long-lived backlog is stale, partially done, or superseded. **Do not chase ghosts.**
-The default outcome of triage is to CLOSE or RE-SCOPE with cited evidence — promotion to the
-dispatch queue is *earned* only when the work is real, unstarted, and goal-aligned. This is the
-same directive the team GOALS carry; weekly-plan applies it at roadmap scale.
+## Step 1 — Orient (load the ground truth)
+Never plan from titles. Load, for `$TEAM`:
+```bash
+GW "$PYLOT_API_URL/admin/goals/$TEAM"                 # current goals you're validating against
+GW "$PYLOT_API_URL/missions?status=running"           # in-flight — never re-rank these as unstarted
+GW "$PYLOT_API_URL/crew" | jq '.crews[]|select(.name=="'"$TEAM"'")|{cron,repos}'  # hourly state + scope
+```
+Read `docs/principles.md` if present — goals serve the invariants.
+
+## Step 2 — Compute the signals (metrics + momentum + leverage)
+Pull real numbers; don't hand-wave "leverage".
+```bash
+SINCE=$(date -u -v-10d +%Y-%m-%d 2>/dev/null || date -u -d '10 days ago' +%Y-%m-%d)
+# VELOCITY: how fast is the team closing? (throughput is often NOT the constraint — direction is)
+gh issue list --repo "$REPO" --state closed  --limit 200 --json closedAt  --jq "[.[]|select(.closedAt>\"$SINCE\")]|length"
+# MOMENTUM: what's actively moving right now?
+gh issue list --repo "$REPO" --state open --limit 300 --json number,title,updatedAt,labels \
+  --jq "sort_by(.updatedAt)|reverse|.[:25]|.[]|\"\(.number) \(.updatedAt[0:10]) [\(.labels|map(.name)|join(\",\"))] \(.title)\""
+# METRICS: age, priority label, ready-to-work vs blocked/open-questions, install/usage where it applies.
+```
+For each candidate score three axes: **leverage** (does it unblock the owner / a daily-use surface?), **momentum** (recently active, already in-flight?), **metrics** (ready vs blocked, age, impact ÷ effort). Flag **mislabeled priority** — a daily-use blocker sitting at P2 is a P0 in disguise.
+
+## Step 3 — Propose a ranking (in-session)
+Present, in the session, a short ranked shortlist with the three signals cited per item, plus: what's **ready** vs **needs re-triage**, and what's already **in-flight**. This is a proposal, not a verdict — it sets up Step 4.
+
+## Step 4 — Ask the owner for their perceived priorities
+Interactively reconcile your data-ranking with the owner's gut. In Claude Code use `AskUserQuestion`; in pylot chat, ask directly and wait. Surface where the data disagrees with the owner's read ("you ranked chat #1, but it's not dispatch-ready — devbox is the cleaner first fuel"). **The owner's call wins**; record the why.
+
+## Step 5 — Deep-triage the shortlist (anti-ghost)
+For each promoted candidate, do the research the PRIME DIRECTIVE demands (shallow-clone, read code + history + linked issues). Close done/dup and re-scope partials with a cited comment on the issue. Never close P0/P1.
+
+## Step 6 — Decompose epics into HOURLY-sized slices
+A big epic isn't dispatchable. Break each promoted epic into the smallest slices where every slice is:
+1. **independently deliverable** (one PR, no cross-slice barrier),
+2. **testable in staging** on its own, and
+3. **deployable** through develop→staging→prod within roughly **one hourly auto-pylot cycle**.
+File/relabel these `ready-to-work` so the hourly can pick one up, test it, and ship it each hour. Note what was sliced and what's deferred.
+
+## Step 7 — Write the reconciled goals
+Update `/goals` to match the decision, including a dated **"This week's focus"** block pointing the hourly at the ready, highest-ROI first targets. Show the diff; apply on confirmation.
+```bash
+# after confirmation:
+GW -X PUT "$PYLOT_API_URL/admin/goals/$TEAM" -H "Content-Type: text/plain" --data-binary @goals.new.md
+```
+
+## Step 8 — Activate / tune the hourly
+Bring the auto-pylot cron in line with the plan and, **with the owner's go**, enable it.
+```bash
+# enable (or adjust schedule) — send the FULL cron array back with auto-pylot enabled:true
+GW -X PATCH "$PYLOT_API_URL/admin/crew/$TEAM" -H "Content-Type: application/json" -d "$(jq -c ...)"
+GW "$PYLOT_API_URL/crew" | jq '.crews[]|select(.name=="'"$TEAM"'").cron'   # verify
+```
+
+## Step 9 — Session summary (in-session, no push)
+Present in the session: the ranking + the three signals, what was triaged (closed/re-scoped, with refs), the **hourly-ready queue** (top first), the epic slices created, the decisions captured, the goals diff, and the final auto-pylot state (enabled? schedule? first focus?).
 
 ---
 
-## Step 1: Orient
-
-Load the ground truth you will plan against. Never plan from issue titles alone.
-
-```bash
-# Current goals (the leverage order you are validating against)
-GW "$PYLOT_API_URL/admin/goals/$TEAM" | tee /tmp/wp-goals.md
-# Work already in flight — never re-dispatch or re-rank these as if unstarted
-GH issue list --repo "$REPO" --state open --label in-progress --label dispatched \
-   --json number,title,labels --jq '.[] | "\(.number)\t\(.title)"'
-```
-
-Also read `docs/principles.md` in the target repo if present — goals must serve the invariants.
-
-## Step 2: Pull the full backlog
-
-```bash
-GH issue list --repo "$REPO" --state open --limit 500 \
-  --json number,title,labels,createdAt,updatedAt,comments \
-  --jq 'sort_by(.updatedAt) | reverse | .[]
-        | "\(.number)\t\(.updatedAt[0:10])\t[\(.labels|map(.name)|join(","))]\t\(.title)"'
-```
-
-Group into themes (cluster by label + title): the owner-facing surfaces (chat, devbox, UI),
-platform health (reliability, secrets, migrations), epics, and pure polish.
-
-## Step 3: Deep-triage (anti-ghost) — close or re-scope with evidence
-
-For each candidate, do the research the PRIME DIRECTIVE demands. Shallow-clone the repo once and
-read the actual code + history rather than guessing from the thread.
-
-```bash
-git clone --depth 50 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" /tmp/wp-src 2>/dev/null
-cd /tmp/wp-src   # use absolute paths; never cd before dispatching workers
-git log --oneline -30 -- <paths the issue touches>
-GH issue view <n> --repo "$REPO" --json body,comments  # read the thread + linked refs
-```
-
-Decide, with a one-line cited reason on the issue:
-
-| Finding | Action |
-|---|---|
-| Already implemented / merged | **Close** — cite the commit/PR. Never close P0/P1 (leave for human); `premature-close-checker` is the backstop. |
-| Superseded by a newer issue/PR | **Close as duplicate** — link the survivor. |
-| Partially done / scope crept | **Re-scope** — edit the body to the remaining vertical slice; relabel. |
-| Mislabeled priority | **Re-triage** — fix the `P*` label (see Step 4). |
-| Real, unstarted, goal-aligned | **Keep** — promote to the ranked queue (Step 4). |
-
-## Step 4: Re-rank by OWNER LEVERAGE
-
-This is the heart of the skill. Rank not by raw priority label but by **what unblocks the owner**.
-
-1. **Daily-use surfaces the owner cannot use come first.** A bug that blocks the owner from using
-   chat or a devbox outranks any backend nicety — even if it is labeled P2. Hunt for this
-   mislabeling explicitly: a `chat-ux`/`devbox` "can't use it" bug tagged P2 is a P0 in disguise.
-   Fix the label and cite why.
-2. **Then platform-health by impact ÷ effort** (reliability, observability, secrets, migrations).
-3. **Decompose epics into vertical slices.** A big epic (multi-tenant, GitHub-App) is not
-   dispatchable as one mission — break out the smallest independently-deliverable slice and rank
-   *that*. (Mirror the `to-issues` / `issue-to-prd` skills.)
-4. Produce a ranked **dispatch-ready queue** (issues that survived Step 3 and are fully specified).
-
-## Step 5: Surface open-questions as ONE decision digest
-
-For every `open-questions` (or otherwise under-specified) issue, do the research, then post a
-recommendation comment on the issue so the thread carries your reasoning:
-
-```bash
-GH issue comment <n> --repo "$REPO" --body "weekly-plan: recommend <option> because <evidence>. Open decision: <the question for the owner>."
-```
-
-Then compile **a single batched digest** of every decision the owner must make this week — do not
-ping per-issue. Never dispatch an under-specified issue blind: prep it (recommendation + the one
-question), then ask. Send the digest to the owner via Telegram (the executor resolves
-`TELEGRAM_CHAT_ID`/`TELEGRAM_BOT_TOKEN`):
-
-```bash
-GW -X POST "$PYLOT_API_URL/admin/notify" -H "Content-Type: application/json" \
-   -d "$(jq -nc --arg t "$DIGEST" '{text:$t}')" || echo "(notify endpoint optional; digest also in the report)"
-```
-
-## Step 6: Propose goal edits — never silently overwrite
-
-Diff the current goals against the re-ranked reality. If the leverage order has shifted (e.g. a
-surface the owner now needs has risen, or a finished goal should retire), draft the new GOALS.md
-and present the diff for approval. Apply only on explicit owner approval or when invoked with an
-`--apply` argument — autonomous goal rewrites are how an operator starts chasing the wrong work.
-
-```bash
-# Draft only — write the proposal, show the diff, DO NOT PUT without approval:
-diff <(cat /tmp/wp-goals.md) /tmp/wp-goals.proposed.md || true
-# On approval:
-# GW -X PUT "$PYLOT_API_URL/admin/goals/$TEAM" -H "Content-Type: text/plain" --data-binary @/tmp/wp-goals.proposed.md
-```
-
-## Step 7: Produce the weekly plan report
-
-Write a mission report (and post the digest to the owner). Sections:
-
-1. **Leverage summary** — the top 3 themes this week, in owner-leverage order, one line each.
-2. **Triaged** — counts: closed-as-done, closed-as-dup, re-scoped, re-triaged (with issue refs).
-3. **Dispatch-ready queue** — the ranked, fully-specified issues the hourly should execute, top first.
-4. **Decisions needed** — the batched open-questions digest (issue ref + recommendation + the question).
-5. **Proposed goal changes** — the GOALS diff, or "no change".
-
----
-
-## Boundaries — hand off to the hourly
-
-- **Do NOT mass-dispatch.** Respect max-3-concurrent and the in-flight set from Step 1. At most,
-  dispatch the single top queue item if nothing is running and it is fully specified.
-- **Do NOT close P0/P1** — surface them for a human.
-- **Do NOT rewrite goals** without owner approval / `--apply`.
-- The deliverable is a *shaped backlog + a decision digest + a goals proposal*, not a pile of branches.
+## Boundaries
+- **Interactive only** — needs a human to answer; never run headless/cron.
+- **Shapes, doesn't mass-dispatch** — respects max-3-concurrent; at most dispatches the single top ready item.
+- **Never** closes P0/P1, rewrites goals, or flips the cron without explicit owner confirmation.
 
 ## Anti-patterns
-
-- Ranking by the `P*` label instead of by owner leverage — the whole point is to catch mislabeling.
-- Triaging from issue titles without reading code/history — that is exactly the ghost-chasing the
-  PRIME DIRECTIVE forbids.
-- Per-issue owner pings — batch every decision into one digest; the owner's time is sacred.
-- Dispatching an under-specified issue "to make progress" — prep it and ask instead.
-- Auto-applying goal edits — propose, show the diff, wait.
+- Ranking by the `P*` label instead of the three signals — the point is to catch mislabeling.
+- Hand-waving "leverage" without pulling velocity/momentum numbers.
+- Decomposing an epic into slices too big to test+ship in one hourly cycle.
+- Pushing questions to Telegram/email — this skill is in-session; ask the person in front of you.
+- Flipping the cron or rewriting goals without showing the diff and getting a yes.
 
 ## Verification
-
-- Every closed issue has a comment citing the commit/PR/duplicate that justifies it.
-- Every item in the dispatch-ready queue is fully specified (a worker could start with no questions).
-- The decision digest contains every `open-questions` issue, each with a recommendation.
-- If goals changed, the report shows the diff and an approval reference; otherwise it says "no change".
-- The in-flight set from Step 1 appears nowhere in the dispatch-ready queue.
+- Every promoted item carries the three signals and a one-line justification.
+- Every epic slice is independently deliverable, staging-testable, and deployable in ~one hourly cycle.
+- Goals reflect the reconciled decision; the "This week's focus" names ready first targets.
+- The auto-pylot cron state matches what the owner approved (verified via `GET /crew`).
+- The in-flight set from Step 1 appears nowhere in the hourly-ready queue.

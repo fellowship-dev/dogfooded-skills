@@ -19,7 +19,7 @@ CLAUDE.md first.
 
 ## Default branch reminder
 
-Lexgo uses `master`, most others use `main`. Never assume:
+Lexgo's rails-backend uses `develop` (gitflow — `master` deploys production on push, never target it), most others use `main`. Never assume:
 
 ```bash
 DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef -q .defaultBranchRef.name)

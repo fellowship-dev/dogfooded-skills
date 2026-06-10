@@ -60,7 +60,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
 | [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
 | [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
-| [`ops/weekly-plan`](skills/ops/weekly-plan/) | Interactive weekly roadmap session (CC / pylot chat) — ranks by metrics+momentum+leverage, asks the owner's perceived priorities, deep-triages, slices epics into hourly-sized chunks, writes goals, and activates/tunes the hourly auto-pylot |
+| [`ops/weekly-plan`](skills/ops/weekly-plan/) | Interactive weekly planning session for ONE team (CC / pylot chat) — plan-vs-actual scorecard, batched recommendation-first questionnaire, anti-ghost triage, agent-ready epic slices, goals with done-conditions + expiring focus block, budget + hourly auto-pylot tuning. Run once per team, sequentially |
 
 ## Namespace Convention
 

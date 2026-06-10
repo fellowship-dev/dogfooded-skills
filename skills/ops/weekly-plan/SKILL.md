@@ -12,7 +12,7 @@ The hourly `auto-pylot` is a tight executor: it triages cheaply and dispatches t
 
 **This is not a cron.** It asks the owner questions and waits for answers, so it only runs where a human can respond. There is **no push channel** — every question and the final digest are presented **in-session**.
 
-**One team per session.** Run it once per team, sequentially (product teams first, the platform team last, so the platform plan can absorb what the product sessions surfaced). Each session mutates ONLY its own team; cross-team data is read-only context.
+**One team per session.** Run it once per team, sequentially. Each session reads and mutates ONLY its own team — no other team's metrics, costs, or config appear anywhere in the session.
 
 **Division of labor:** weekly-plan *shapes* (score, rank, ask, reconcile, triage, decompose, write goals, set budget, activate the hourly). The hourly *executes* (dispatch). One clean kill beats five grazing shots.
 
@@ -52,7 +52,7 @@ Before you rank, promote, or decompose ANY issue, research it **and its linked/s
 Open the session with how the previous plan actually went. Pull, don't recall:
 ```bash
 GW "$PYLOT_API/admin/goals/$TEAM"            # previous "This week's focus" = what was planned
-GW "$PYLOT_API/costs/summary?days=7"         # ALL teams, read-only — portfolio view for budget context
+GW "$PYLOT_API/costs?team=$TEAM&days=7"      # THIS team only — sum cost_usd client-side; never pull or present other teams' numbers
 GW "$PYLOT_API/missions?limit=200"           # filter client-side to agents starting "$TEAM." (no team/date param exists)
 gh pr list --repo "$R" --state merged --limit 50 --json number,title,mergedAt,labels   # per team repo
 ```
@@ -94,7 +94,7 @@ Present one written, scannable document — full markdown, **every issue/PR as a
 2. **In-flight now** — running missions and open agent PRs, where each stands in the review pipeline.
 3. **Half-done epics & long-running threads** — multi-week work that's partially landed; what remains per epic. These rot silently if no one names them.
 4. **The ready queue** — ranked shortlist with the three signals cited per item; what's ready vs needs re-triage vs blocked on the owner.
-5. **Budget view** — this team vs the portfolio (Step 0's cost data); a budget proposal (concentrate spend on what's converting — don't peanut-butter).
+5. **Budget view** — this team ONLY, four numbers: daily spend vs cap, cost per merged PR, waste % (spend on failed missions), trend vs prior week; then a budget-cap proposal. No portfolio or cross-team comparison — this is team planning.
 6. **What the data can't see** — an explicit prompt for the inputs only the owner has: news from the CEO/co-founders, marketing, customers, money, hiring, anything that re-prioritizes the week. This is the first interview question, not a footnote.
 
 ## Step 4 — The interview (one question at a time, owner wins)
@@ -174,7 +174,7 @@ GW -X POST "$PYLOT_API/dispatch" -H "Content-Type: application/json" \
 
 ## Boundaries
 - **Interactive only** — needs a human to answer; never run headless/cron.
-- **One team per session** — mutates only `$TEAM`'s goals/budget/cron; other teams' data is read-only context.
+- **One team per session** — reads and mutates only `$TEAM`'s data (goals, budget, cron, costs); other teams never appear in the session.
 - **Shapes, doesn't mass-dispatch** — respects the hourly's concurrency cap; at most dispatches the single top ready item (Step 9, explicit `/skill` task).
 - **Never** closes P0/P1, rewrites goals, sets budgets, or flips the cron without explicit owner confirmation.
 

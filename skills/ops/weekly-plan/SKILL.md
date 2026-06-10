@@ -133,7 +133,7 @@ Show the diff against the current goals; **apply only on confirmation**, then re
 ```bash
 GW -X PUT "$PYLOT_API/admin/goals/$TEAM" -H "Content-Type: text/plain" --data-binary @goals.new.md
 GW -X POST "$PYLOT_API/admin/crew/$TEAM/ledger" -H "Content-Type: application/json" \
-  -d '{"type":"weekly-plan-update","actor":"weekly-plan","summary":"weekly plan written","metadata":{"expires":"YYYY-MM-DD","focus_items":N}}'
+  -d '{"type":"event","actor":"weekly-plan","summary":"weekly plan written","metadata":{"action":"weekly-plan-update","expires":"YYYY-MM-DD","focus_items":N}}'
 rm -f goals.new.md
 ```
 The ledger entry is what next week's Step 0 scores against.
@@ -186,7 +186,7 @@ GW -X POST "$PYLOT_API/dispatch" -H "Content-Type: application/json" \
 - The session opened with the four plan-vs-actual numbers, trend-arrowed.
 - Every promoted item carries the three signals and a one-line justification.
 - Every `ready-to-work` issue satisfies the agent-ready contract; the weekly queue skews toward verifiable task types.
-- Goals carry done-conditions, guardrails (playbook hazards included), and a dated, expiring focus block; a `weekly-plan-update` ledger entry exists.
+- Goals carry done-conditions, guardrails (playbook hazards included), and a dated, expiring focus block; a weekly-plan ledger entry exists (type `event`, action `weekly-plan-update`).
 - Budget and cron state match what the owner approved (verified via `GET /crew`).
 - The in-flight set from Step 1 appears nowhere in the hourly-ready queue.
 - Total owner attention spent: ≤30 minutes, ≤10 decisions, one batch.

@@ -1,6 +1,6 @@
 ---
 name: weekly-plan
-description: Interactive weekly planning session for ONE Pylot team (run in a Claude Code or pylot chat session — NOT headless). Opens with a plan-vs-actual scorecard, ranks candidates by metrics + momentum + leverage, asks the owner everything as one batched recommendation-first questionnaire, deep-triages to kill ghosts, decomposes epics into agent-ready hourly-sized slices, writes goals with binary done-conditions and a dated focus block, sets the team's budget, and activates/tunes the hourly auto-pylot. Run once per team, sequentially. It is the thinking session that shapes what the hourly then executes.
+description: Interactive weekly planning session for ONE Pylot team (run in a Claude Code or pylot chat session — NOT headless). Opens with a plan-vs-actual scorecard, presents a full written briefing (last week's outcomes, in-flight work, half-done epics, other devs' activity, ready queue — everything linked), then interviews the owner spec-plan style: one question at a time, each with inline context and a recommended answer, letting answers open new branches. Deep-triages to kill ghosts, decomposes epics into agent-ready hourly-sized slices, writes goals with binary done-conditions and a dated focus block, sets the team's budget, and activates/tunes the hourly auto-pylot. Run once per team, sequentially. It is the thinking session that shapes what the hourly then executes.
 argument-hint: "team [org/repo]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -35,11 +35,13 @@ GW(){ curl -sS -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" "$@"; }
 ```
 **GitHub auth — never require a static `GH_TOKEN`.** In an operator or pylot-chat session, auth is already wired via the platform's GitHub App installation tokens (`git-credential-pylot`; `gh` works for every org the App installation covers). In a local Claude Code session, use the identity `gh auth status` already has, routed per target org. If `gh` can't read a team repo, stop and say which org needs access — don't ask for a PAT.
 
-## SESSION BUDGET — the owner's time is the scarcest resource
-- Target **≤30 minutes of owner attention**. ALL research happens BEFORE the first question.
-- Ask everything as **ONE batched questionnaire, ≤10 decisions, recommendation-first**: each item is "Recommendation: X, because Y. Alternatives: Z. Pick 1/2/3." The owner taps numbers; they may bulk-accept ("go with your picks").
-- Any topic needing more than 2 exchanges → tag it `[NEEDS CLARIFICATION]` on the issue, park it, and ship the plan without it.
-- Individually confirm only destructive or irreversible calls: issue closes, budget cuts, cron flips.
+## SESSION SHAPE — briefing first, then a real interview
+This is a **planning conversation, not a form**. Target **15–30 minutes** of engaged owner time — depth is the point; a 1-minute session means the owner decided blind.
+- **ALL research happens BEFORE the first question**, and the owner gets the full written **briefing** (Step 3) before being asked anything. Decisions come from context on screen, never from memory.
+- **Interview one question at a time, spec-plan style** (credit: Matt Pocock's "grill me"). Each question carries its own inline context — full markdown links to the issues/PRs it concerns, what's known, the trade-off — plus **your recommended answer with reasoning**. Wait for the response. Answers open new branches; follow them. Ten or more turns is a healthy session, not a failure.
+- **Never use multiple-choice questionnaire widgets** (e.g. `AskUserQuestion`): option descriptions truncate to a few words, links are stripped, and the owner ends up picking between labels they can't evaluate. Ask in plain conversation, full markdown.
+- **Resolve dependencies first** — when one decision blocks others, ask the blocker before the dependents. Never re-ask what the briefing or an earlier answer already settled; if the codebase has the answer, explore instead of asking.
+- Confirm individually anything destructive or irreversible: issue closes, budget cuts, cron flips.
 
 ---
 
@@ -86,11 +88,17 @@ For each candidate score three axes: **leverage** (does it unblock the owner / a
 
 **Weight by task type.** Verifiable chores, fixes, tests, and docs merge at far higher autonomous rates than features and perf work. Fill most of the hourly's weekly queue with verifiable work; treat features/perf as the scarce items that earn the owner's richest specs in Step 4.
 
-## Step 3 — Propose the plan (in-session)
-Present a short ranked shortlist with the three signals cited per item, plus: what's **ready** vs **needs re-triage**, what's already **in-flight**, and a **budget proposal** for the week (Step 0's portfolio view: concentrate spend on what's converting — a team whose cost-per-merged-PR doubled loses budget to one that's converting; don't peanut-butter). This is a proposal, not a verdict — it sets up Step 4.
+## Step 3 — The briefing (the owner reads BEFORE deciding anything)
+Present one written, scannable document — full markdown, **every issue/PR as a real link** (`[org/repo#N](url)`) with a sentence of genuine context, never a bare number. Sections:
+1. **Last week** — the Step 0 scorecard, plus what merged and **who did it** (agent missions vs other humans on the team — the owner needs to see colleagues' work, not just the fleet's).
+2. **In-flight now** — running missions and open agent PRs, where each stands in the review pipeline.
+3. **Half-done epics & long-running threads** — multi-week work that's partially landed; what remains per epic. These rot silently if no one names them.
+4. **The ready queue** — ranked shortlist with the three signals cited per item; what's ready vs needs re-triage vs blocked on the owner.
+5. **Budget view** — this team vs the portfolio (Step 0's cost data); a budget proposal (concentrate spend on what's converting — don't peanut-butter).
+6. **What the data can't see** — an explicit prompt for the inputs only the owner has: news from the CEO/co-founders, marketing, customers, money, hiring, anything that re-prioritizes the week. This is the first interview question, not a footnote.
 
-## Step 4 — The questionnaire (one batch, owner wins)
-Reconcile your data-ranking with the owner's gut in **one batched, recommendation-first questionnaire** (SESSION BUDGET rules). In Claude Code use `AskUserQuestion`; in pylot chat, ask directly and wait. Surface where the data disagrees with the owner's read ("you ranked chat #1, but it's not dispatch-ready — devbox is the cleaner first fuel"). **The owner's call wins**; record the why next to each decision.
+## Step 4 — The interview (one question at a time, owner wins)
+Reconcile your data-ranking with the owner's gut as a **conversation**: one question per turn, each with inline context + your recommended answer, then wait. Let each answer reshape what you ask next — new priorities from Step 3.6 typically reorder everything. Surface where the data disagrees with the owner's read ("you ranked chat #1, but it's not dispatch-ready — devbox is the cleaner first fuel"). Walk every branch that affects the week: focus, epics to advance vs park, blocked-on-owner items, budget, the hourly's posture. **The owner's call wins**; record the why next to each decision.
 
 ## Step 5 — Deep-triage the shortlist (anti-ghost)
 For each promoted candidate, do the research the PRIME DIRECTIVE demands (shallow-clone, read code + history + linked issues). Close done/dup and re-scope partials with a cited comment on the issue. Never close P0/P1.
@@ -177,7 +185,9 @@ GW -X POST "$PYLOT_API/dispatch" -H "Content-Type: application/json" \
 - Goals without binary done-conditions, or a focus block without an expiry date.
 - Filing `ready-to-work` issues missing the agent-ready contract (done-condition, context, out-of-scope, type label).
 - Decomposing an epic into slices too big to test+ship in one hourly cycle.
-- Open-ended question dribble — batch once, recommend first, park `[NEEDS CLARIFICATION]` topics.
+- Multiple-choice questionnaire widgets (`AskUserQuestion` and kin) — truncated options strip the context the decision needs.
+- Asking anything before the briefing is on screen, or questions with bare issue numbers instead of links + context.
+- Asking without recommending — every question proposes an answer and the reasoning behind it.
 - Requiring a static `GH_TOKEN` — auth comes from App installation tokens (sessions) or the runner's own `gh` identity (local).
 - One mega-session across teams, or touching another team's config from this one.
 - Flipping the cron, setting budgets, or rewriting goals without showing the diff and getting a yes.
@@ -189,4 +199,5 @@ GW -X POST "$PYLOT_API/dispatch" -H "Content-Type: application/json" \
 - Goals carry done-conditions, guardrails (playbook hazards included), and a dated, expiring focus block; a weekly-plan ledger entry exists (type `event`, action `weekly-plan-update`).
 - Budget and cron state match what the owner approved (verified via `GET /crew`).
 - The in-flight set from Step 1 appears nowhere in the hourly-ready queue.
-- Total owner attention spent: ≤30 minutes, ≤10 decisions, one batch.
+- The owner saw the full briefing (incl. colleagues' work, half-done epics, and the "what the data can't see" prompt) before the first question; every question carried links, context, and a recommendation.
+- Session depth: 15–30 minutes of real conversation — one question per turn, branches followed to resolution.

@@ -1,6 +1,6 @@
 ---
 name: daily-report
-description: Standard format for daily/rollcall team reports. Defines 5 sections, quality rules, and a minimal card for idle teams. Loaded by all crew teams via crew.yml — replaces the inline format that was previously in fry.lead's dispatch call.
+description: Use when writing the daily/rollcall team report — defines 5 sections, quality rules, and a minimal idle card.
 user-invocable: false
 allowed-tools: Bash, Read, Grep
 ---

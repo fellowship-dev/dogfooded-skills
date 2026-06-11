@@ -1,6 +1,6 @@
 ---
 name: fly-io
-description: Deploy applications to Fly.io platform including flyctl CLI setup, fly.toml configuration, Fly.io database setup, fly secrets management, Fly.io-specific GitHub Actions workflows, fly logs monitoring, and Fly.io troubleshooting. Activates on "fly.io", "flyctl", "fly.toml", "fly secrets", "fly logs", "fly app", "fly postgres" (Fly.io-specific PostgreSQL). Requires flyctl CLI and Fly.io account.
+description: Use when deploying to Fly.io or configuring flyctl, fly.toml, Fly.io secrets, databases, or GitHub Actions.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 

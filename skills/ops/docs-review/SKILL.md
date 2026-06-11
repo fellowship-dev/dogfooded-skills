@@ -1,6 +1,6 @@
 ---
 name: docs-review
-description: Detect drift between docs/ and source code — scans docs/ files, cross-references claims against actual source, reports discrepancies with file:line evidence.
+description: Use when checking for drift between docs/ and source code — reports discrepancies with file:line evidence.
 allowed-tools: Read, Bash, Glob, Grep
 ---
 

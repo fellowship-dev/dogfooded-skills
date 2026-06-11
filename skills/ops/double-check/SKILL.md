@@ -1,6 +1,6 @@
 ---
 name: double-check
-description: 4-stage SEQUENTIAL ICM procedure for standalone PR double-check. Setup → cohesive review (clean context) → fix → post. No parallel fan-out. Stage 04 runs inline.
+description: Use when performing a standalone PR double-check in a clean context — review, fix, and post.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---

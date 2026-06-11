@@ -1,6 +1,6 @@
 ---
 name: trash-truck
-description: Code slop cleanup agent — scans for duplicate patterns, dead code, misplaced files, accidentally committed files, and pattern drift; opens targeted, reviewable refactoring PRs
+description: Use when scanning for and cleaning up code slop — duplicate patterns, dead code, misplaced files, and accidentally committed files.
 allowed-tools: Read, Write, Bash, Glob, Grep
 user-invocable: true
 argument-hint: "[org/repo] (focus: dead-code|duplicates|drift|misplaced|committed-by-error|unused-functions)"

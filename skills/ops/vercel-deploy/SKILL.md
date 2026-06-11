@@ -1,6 +1,6 @@
 ---
 name: vercel-deploy
-description: Deploy an existing Vercel project to production. 6-stage ICM procedure — non-interactive, prevents hanging CLIs, verifies before and after.
+description: Use when deploying an existing Vercel project to production non-interactively.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep
 ---

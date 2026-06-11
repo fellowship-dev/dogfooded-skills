@@ -1,6 +1,6 @@
 ---
 name: write-report
-description: Write a mission report to reports/ — resolves repo-root path, generates timestamped filename per CONVENTIONS.md, posts to Quest DB, and writes fan-out manifests. Use this in every mission to write reports correctly.
+description: Use when writing a mission report to the gateway DB from any operator mission.
 user-invocable: true
 allowed-tools: Bash, Write, Read
 ---

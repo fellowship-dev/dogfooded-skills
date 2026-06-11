@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: 3-stage sequential ICM procedure for strategic CTO-level PR review. Setup + cohesive review run as isolated subagents; synthesis/act runs inline. No parallelism. PR review only (no heartbeat). Includes staging evidence gate for infra/backend PRs.
+description: Use when performing a CTO-level PR review — includes staging evidence gate for infra/backend PRs.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---

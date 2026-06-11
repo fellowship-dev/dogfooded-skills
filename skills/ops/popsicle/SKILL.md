@@ -1,6 +1,6 @@
 ---
 name: popsicle
-description: Agent-native onboarding doc generator — builds coverage maps, health baselines, generated docs, and agent adapters so any AI tool can autonomously navigate your repo.
+description: Use when generating agent-native onboarding docs, coverage maps, health baselines, and agent adapters for a repo.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---

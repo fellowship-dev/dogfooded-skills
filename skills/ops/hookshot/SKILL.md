@@ -1,6 +1,6 @@
 ---
 name: hookshot
-description: Read a repo's docs/ structure and generate Claude Code enforcement hooks — pre-edit reminders, skill-drift warnings, and markdown lint. Warning and guidance only; never auto-edits files.
+description: Use when generating Claude Code enforcement hooks from a repo's docs/ structure.
 argument-hint: "[--drift-warn] [--md-lint]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

@@ -1,6 +1,6 @@
 ---
 name: create-compelling-prs
-description: PR quality framework — body templates (bugfix/feature/refactor/deps), S3 visual evidence upload, self-audit checklist, and lead self-assessment loop. Run before pushing a PR for review.
+description: Use when preparing a PR for review — applies body templates, uploads visual evidence to S3, and runs the self-audit checklist.
 user-invocable: true
 trigger-hint: "When creating a PR or preparing to push a branch for review"
 allowed-tools: Read, Write, Bash, Glob, Grep

@@ -1,6 +1,6 @@
 ---
 name: security-runner
-description: Execution procedure — fetches open Dependabot/Snyk alerts for a repo, classifies each using the security-check decision matrix, opens fix PRs for safe patches, creates issues for breaking changes, dismisses false positives, and emits a summary report.
+description: Use when running the automated security alert fix pipeline — opens fix PRs, creates issues for breaking changes, dismisses false positives.
 argument-hint: "org/repo"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

@@ -1,6 +1,6 @@
 ---
 name: post-deploy
-description: Post-deploy file-match actions — reads PR diff, matches changed files against rules (Dockerfile→ECR rebuild, crew.yml→config verify, scripts/→executor verify), runs actions, posts summary comment. Stage 3 of the post-merge pipeline.
+description: Use when running post-deploy file-match actions after a merge (stage 3 of the post-merge pipeline).
 argument-hint: "pr-number org/repo"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

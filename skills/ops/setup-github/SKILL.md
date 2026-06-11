@@ -1,6 +1,6 @@
 ---
 name: setup-github
-description: Set up GitHub project board, labels, and Actions workflows for a repository. Creates standard workflow/type labels (including reviewed, double-checked, approved, needs-work), installs the claude-code-review workflow, and explains the full double-check → cto-review pipeline.
+description: Use when setting up a GitHub project board, labels, and Actions workflows for a new or existing repo.
 user-invocable: false
 allowed-tools: Read, Write, Bash, Glob, Grep, AskUserQuestion
 ---

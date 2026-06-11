@@ -1,6 +1,6 @@
 ---
 name: setup-speckit
-description: Install Spec-Kit (Specification-Driven Development) into any repository. Copies slash commands, templates, scripts, and optionally creates a project constitution. Use when setting up speckit, initializing SDD, adding spec-driven workflow, or bootstrapping a new repo for speckit.
+description: Use when setting up speckit (Specification-Driven Development) in a repo — copies slash commands, templates, and optionally creates a project constitution.
 user-invocable: true
 allowed-tools: Bash, Glob, Grep, Read, Write
 ---

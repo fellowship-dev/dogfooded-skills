@@ -1,6 +1,6 @@
 ---
 name: deps-runner
-description: 6-stage SEQUENTIAL ICM procedure for the deps-runner pipeline. Operator skill — spawns a repo worker devbox and drives it through scan → preflight → risk-eval → build-test → merge-decision → report. No parallelism. Resume-from-stage supported. No Quest.
+description: Use when running the full dependency update pipeline for a repo — scan, risk-eval, build-test, and merge-decision.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---

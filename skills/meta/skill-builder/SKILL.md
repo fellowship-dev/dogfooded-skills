@@ -1,6 +1,6 @@
 ---
 name: skill-builder
-description: Write a high-quality agent skill — covers frontmatter spec, section structure, quality criteria, and common antipatterns.
+description: Use when writing a new agent skill for the dogfooded-skills library — covers frontmatter spec, section structure, quality criteria, and antipatterns.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
@@ -167,6 +167,20 @@ Bullet list of absolute must-follow rules. Use when violations cause data loss, 
 - **Never skip decontamination** — a stopped pod resumes with stale git state
 - **One agent process per env** — two agents share a git working directory and corrupt each other
 ```
+
+## Description Rule
+
+The `description:` field is the routing signal — it determines when an operator reaches for this skill. It MUST start with an actionable trigger.
+
+| Good | Bad |
+|------|-----|
+| "Use when running the deps pipeline for a repo." | "6-stage SEQUENTIAL ICM procedure for deps-runner." |
+| "Use to deploy to Fly.io or configure flyctl." | "Deploy applications to Fly.io platform." |
+| "Use when triaging Dependabot/Snyk alerts." | "Security alert triage framework." |
+
+**Self-check:** Does your description answer "when should I pick this skill?" If it describes _how_ the skill works instead of _when_ to use it, rewrite it.
+
+Accepted trigger forms: "Use when ...", "Use to ...", "Use as ..." (for import-only skills). Mechanics notes (stage count, parallelism) belong in the skill body, not the description.
 
 ## Quality Checklist
 

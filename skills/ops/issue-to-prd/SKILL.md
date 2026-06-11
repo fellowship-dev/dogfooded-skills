@@ -1,6 +1,6 @@
 ---
 name: issue-to-prd
-description: ICM procedure — convert a new GitHub issue into a structured PRD, or post clarifying questions when the issue is underspecified. Triggered by the challenge-new-issue event rule.
+description: Use when converting a new GitHub issue into a structured PRD, or posting clarifying questions when the issue is underspecified.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep, Task
 ---

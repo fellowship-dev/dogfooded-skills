@@ -1,6 +1,6 @@
 ---
 name: release-train-runner
-description: 8-stage FULLY SEQUENTIAL ICM procedure that merges N reviewed PRs into one release branch on remote compute. Operator skill — spawns a worker devbox and drives it through all stages. No parallel stages. Per-PR validate+integrate runs as an in-order loop inside one stage. Stages 00 and 07 run inline.
+description: Use when merging multiple reviewed PRs into one release branch on remote compute.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---

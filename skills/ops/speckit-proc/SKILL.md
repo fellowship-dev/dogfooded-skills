@@ -1,6 +1,6 @@
 ---
 name: speckit-proc
-description: Issue-to-PR pipeline as an ICM procedure -- 7 stages from pre-flight through delivery. Operator drives a persistent worker session through speckit phases. Replaces speckit-runner.
+description: Use when running the full issue-to-PR pipeline as an ICM procedure with an operator driving a persistent worker session.
 argument-hint: "[issue-number] [org/repo]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

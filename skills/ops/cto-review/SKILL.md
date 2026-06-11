@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: 3-stage sequential ICM procedure for strategic CTO-level PR review. Setup + cohesive review run as isolated subagents; synthesis/act runs inline. No parallelism. PR review only (no heartbeat).
+description: 3-stage sequential ICM procedure for strategic CTO-level PR review. Setup + cohesive review run as isolated subagents; synthesis/act runs inline. No parallelism. PR review only (no heartbeat). Includes staging evidence gate for infra/backend PRs.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---
@@ -33,7 +33,7 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, and merge state. Short-circuit if CLOSED-not-merged. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state. Short-circuit if CLOSED-not-merged or if infra/backend PR lacks staging evidence. |
 | 02-review | subagent | ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items. |
 | 03-synthesize-act | inline | Post GH comment, apply label, merge-or-label honoring merge state, write report file, emit outcome marker. |
 
@@ -72,8 +72,28 @@ Write your output to:
 Execute all steps in CONTEXT.md. Write handoff.md before exiting.
 ```
 
-If stage 01 reports `short_circuit: closed-no-merge`, skip stage 02 and go straight to stage 03
-(which will post nothing and emit the blocked/closed outcome).
+After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md` and check
+`short_circuit`:
+
+- If `short_circuit: closed-no-merge` → skip stage 02, go straight to stage 03 (which posts
+  nothing and emits the blocked/closed outcome).
+- If `short_circuit: missing-staging-evidence` → **DO NOT run stage 02 or 03**. Instead, run
+  these steps inline:
+  1. Apply `needs-work` label:
+     ```bash
+     gh pr edit {PR} --repo {org/repo} --add-label "needs-work"
+     ```
+  2. Post rejection comment:
+     ```bash
+     gh pr comment {PR} --repo {org/repo} \
+       --body "Missing staging evidence. Deploy to staging with \`/test-in-staging\` and include the output before requesting re-review."
+     ```
+  3. Emit outcome:
+     ```
+     [pylot] outcome="cto-review blocked: missing staging evidence on PR #{PR}" status=blocked
+     ```
+  Then stop — no further stages.
+- Otherwise → continue to stage 02.
 
 ### Stage 02 (subagent)
 
@@ -111,15 +131,17 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 
 ```
 01-setup ──► 02-review ──► 03-synthesize-act (inline, reads 01 + 02)
-   │                              ▲
-   └── short_circuit: closed-no-merge ──┘  (skip 02)
+   │               ▲
+   ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
+   └── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
 ```
 
 ## Exit paths
 
 - **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- **Blocked**: PR CLOSED-not-merged short-circuit → `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- **Blocked (evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked`
 
 ## Hard Rules
 
@@ -133,6 +155,7 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 8. **Honor merge state** — never merge a CLOSED PR; for an already-merged PR, post the review as a post-merge note and never attempt merge.
 9. **Never merge if CI is red** — even on an LGTM verdict.
 10. **No Quest** — reporting is the local report file only.
+11. **Staging evidence gate fires first** — if `short_circuit: missing-staging-evidence`, skip everything else and post the rejection inline. This gate cannot be bypassed.
 
 ## Reference files
 

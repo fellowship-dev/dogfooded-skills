@@ -6,7 +6,7 @@
 ## Task
 Build everything the review stage needs in one place: repo architectural context, PR metadata, the
 FULL diff, and the authoritative merge state. Detect the CLOSED-not-merged case and short-circuit so
-the review stage is skipped.
+the review stage is skipped. Also gate on staging evidence for infra/backend PRs.
 
 ## Steps
 
@@ -36,6 +36,13 @@ gh pr view $PR --repo $REPO --json state,mergedAt,mergeCommit,isDraft \
   gathering so stage 02 can produce a post-merge review note; stage 03 will NOT attempt a merge.
 - Otherwise (`state == "OPEN"`) → set `merge_state: open`. Continue normally.
 
+After resolving merge state, export `MERGE_STATE` for use in later steps (e.g., the evidence gate):
+```bash
+# Set MERGE_STATE based on the above logic
+# e.g.: MERGE_STATE=open | MERGE_STATE=merged | MERGE_STATE=closed-no-merge
+export MERGE_STATE
+```
+
 4. Gather repo architectural context:
 ```bash
 # Read repo CLAUDE.md for architectural direction
@@ -58,6 +65,58 @@ gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
 # Changed file list
 gh pr diff $PR --repo $REPO --name-only
 ```
+
+5.5. **Staging evidence gate** — check BEFORE proceeding to the expensive diff/full-review path.
+Only fires for open PRs; merged/closed PRs skip this gate entirely.
+
+Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3):
+
+```bash
+# Gate only fires for open PRs — merged/closed PRs skip evidence check
+if [ "${MERGE_STATE:-open}" = "open" ]; then
+  # Collect changed filenames
+  CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
+
+  # Detect if this PR touches infra/backend paths that require staging evidence
+  NEEDS_EVIDENCE=false
+  while IFS= read -r f; do
+    case "$f" in
+      infra/*|gateway/*|crew.mjs) NEEDS_EVIDENCE=true; break ;;
+      */migrations/*.sql) NEEDS_EVIDENCE=true; break ;;
+    esac
+  done <<< "$CHANGED_FILES"
+
+  if [ "$NEEDS_EVIDENCE" = "true" ]; then
+    # Fetch PR body to check for evidence section
+    PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
+    if echo "$PR_BODY" | grep -qF '## Staging Evidence'; then
+      echo "[cto-review] staging evidence gate: PASSED"
+    else
+      echo "[cto-review] staging evidence gate: BLOCKED — ## Staging Evidence missing"
+      # Write a minimal handoff for the orchestrator to act on
+      mkdir -p .procedure-output/cto-review/01-setup
+      cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+# Stage 01: Setup
+
+## PR Identity
+- PR: #${PR}
+- Repo: ${REPO}
+
+## Merge State
+- merge_state: open
+- short_circuit: missing-staging-evidence
+
+## Changed Files
+${CHANGED_FILES}
+EOF
+      exit 0
+    fi
+  fi
+fi
+```
+
+If `short_circuit: missing-staging-evidence` is set, the orchestrator will post the rejection
+comment, apply `needs-work`, and emit the blocked outcome without running stage 02 or 03.
 
 6. Fetch the FULL diff (the review reads this whole, in cohesion):
 ```bash
@@ -114,7 +173,7 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 - merge_state: {open | merged | closed-no-merge}
 - mergedAt: {timestamp or null}
 - mergeCommit: {oid or null}
-- short_circuit: {none | closed-no-merge}
+- short_circuit: {none | closed-no-merge | missing-staging-evidence}
 - ci_status: {passing | failing | pending | unavailable}
 - merge_strategy: {auto | label-only}
 
@@ -140,8 +199,9 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 
 ## Success criteria
 - Merge state resolved and recorded BEFORE gathering (gates the short-circuit).
+- Staging evidence gate evaluated before the expensive full-diff fetch.
 - For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.
-- For `closed-no-merge`: `short_circuit: closed-no-merge` set; remaining gathering skipped.
+- For `closed-no-merge` or `missing-staging-evidence`: short_circuit set; remaining gathering skipped.
 
 ## Failure
 - PR does not exist or `gh auth` fails → write handoff with `status: error` and the reason; the

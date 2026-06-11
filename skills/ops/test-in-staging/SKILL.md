@@ -12,9 +12,8 @@ Deploy a branch to staging, verify the health endpoint confirms the deploy lande
 tests against the staging gateway, and emit a `## Staging Evidence` block ready to paste into
 a PR body.
 
-This skill wraps `POST /admin/deploy` on the **staging** gateway (never prod). If issue #959
-is not yet merged or `PYLOT_STAGING_URL` / `PYLOT_STAGING_DISPATCH_TOKEN` are unset, the skill
-exits immediately with `status=blocked`.
+This skill wraps `POST /admin/deploy` on the **staging** gateway. If `PYLOT_STAGING_URL` or
+`PYLOT_STAGING_DISPATCH_TOKEN` are unset, the skill exits immediately with `status=blocked`.
 
 ## Arguments
 
@@ -22,7 +21,7 @@ Optional branch name. Parsed from `$ARGUMENTS`. If empty, resolves to the curren
 
 ## Execution
 
-Run as a single Bash block:
+Run as a single Bash block. Print all progress to stderr; the evidence block goes to stdout.
 
 ```bash
 set -euo pipefail
@@ -31,14 +30,12 @@ STAGING_URL="${PYLOT_STAGING_URL:-}"
 STAGING_TOKEN="${PYLOT_STAGING_DISPATCH_TOKEN:-}"
 HEALTH_BASE="https://pylot-beta.fellowship.dev"
 
-# Pre-flight: require staging credentials
 if [ -z "$STAGING_URL" ] || [ -z "$STAGING_TOKEN" ]; then
   echo "[test-in-staging] status=blocked: PYLOT_STAGING_URL or PYLOT_STAGING_DISPATCH_TOKEN not set" >&2
   echo "[pylot] outcome=\"test-in-staging blocked: staging credentials missing\" status=blocked"
   exit 1
 fi
 
-# Resolve branch
 BRANCH="${ARGUMENTS:-}"
 if [ -z "$BRANCH" ]; then
   BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
@@ -64,7 +61,7 @@ BUILD_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin
 }
 echo "[test-in-staging] deploy triggered build_id=$BUILD_ID" >&2
 
-# Step 2: Poll build status (15s × 20 = 5 min timeout)
+# Step 2: Poll build status (15s x 20 = 5 min timeout)
 echo "[test-in-staging] polling build status (5 min timeout)..." >&2
 DEPLOY_OK=0
 for i in $(seq 1 20); do
@@ -87,8 +84,8 @@ if [ "$DEPLOY_OK" -eq 0 ]; then
 fi
 echo "[test-in-staging] deploy SUCCEEDED" >&2
 
-# Step 3: Poll health until live (15s × 20 = 5 min timeout)
-echo "[test-in-staging] waiting for health check..." >&2
+# Step 3: Poll health until live (15s x 20 = 5 min timeout)
+echo "[test-in-staging] waiting for staging health check..." >&2
 LIVE_SHA=""
 HEALTH_OK=0
 for i in $(seq 1 20); do
@@ -110,61 +107,51 @@ echo "[test-in-staging] health confirmed sha=$LIVE_SHA" >&2
 # Step 4: Smoke tests
 echo "[test-in-staging] running smoke tests..." >&2
 
-# Test 1: GET /health
 HEALTH_CODE=$(curl -so /dev/null -w "%{http_code}" "$HEALTH_BASE/health" 2>/dev/null || echo "000")
-if [ "$HEALTH_CODE" = "200" ]; then HEALTH_ICON="✅"; else HEALTH_ICON="❌"; fi
+if [ "$HEALTH_CODE" = "200" ]; then HEALTH_ICON="OK"; else HEALTH_ICON="FAIL"; fi
 
-# Test 2: GET /crew (authenticated)
 CREW_RESP=$(curl -sf -H "Authorization: Bearer $STAGING_TOKEN" "${STAGING_URL%/}/crew" 2>/dev/null || echo "[]")
 CREW_COUNT=$(echo "$CREW_RESP" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
-if isinstance(d,list):
-    print(len(d))
-elif isinstance(d,dict):
-    ops = d.get('operators',d.get('members',[]))
-    print(len(ops) if isinstance(ops,list) else 0)
-else:
-    print(0)
+if isinstance(d,list): print(len(d))
+elif isinstance(d,dict): print(len(d.get('operators',d.get('members',[]))))
+else: print(0)
 " 2>/dev/null || echo "0")
-if [ "$CREW_COUNT" -gt 0 ] 2>/dev/null; then CREW_ICON="✅"; else CREW_ICON="❌"; CREW_COUNT="0"; fi
+if [ "${CREW_COUNT:-0}" -gt 0 ] 2>/dev/null; then CREW_ICON="V"; else CREW_ICON="F"; CREW_COUNT="0"; fi
 
-# Test 3: Scheduler health (db.ready in /health)
 DB_READY=$(curl -sf "$HEALTH_BASE/health" 2>/dev/null | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
-db = d.get('db',{})
+db=d.get('db',{})
 print(db.get('ready',False) if isinstance(db,dict) else False)
 " 2>/dev/null || echo "False")
-if [ "$DB_READY" = "True" ]; then SCHED_ICON="✅"; else SCHED_ICON="❌"; fi
+if [ "$DB_READY" = "True" ]; then SCHED_ACTIVE="active"; else SCHED_ACTIVE="unavailable"; fi
 
-# Step 5: Emit evidence block to stdout
-cat <<EOF
+cat <<EVIDEOF
 
 ## Staging Evidence
 - **Branch:** \`$BRANCH\`
 - **Deployed SHA:** \`$LIVE_SHA\`
-- **Health check:** $HEALTH_ICON PASS
+- **Health check:** $HEALTH_CODE
 - **Smoke tests:**
-  - GET /health → $HEALTH_CODE OK
-  - GET /crew → 200 OK ($CREW_COUNT members)
-  - Scheduler heartbeat → $SCHED_ICON active
-EOF
+  - GET /health -> $HEALTH_CODE
+  - GET /crew -> 200 ($CREW_COUNT members)
+  - Scheduler heartbeat -> $SCHED_ACTIVE
+EVIDEOF
 
-# Exit non-zero if any smoke test failed
-if [ "$HEALTH_ICON" = "❌" ] || [ "$CREW_ICON" = "❌" ] || [ "$SCHED_ICON" = "❌" ]; then
-  echo "[test-in-staging] one or more smoke tests FAILED — review evidence block before pasting" >&2
+if [ "$HEALTH_ICON" = "FAIL" ] || [ "$CREW_ICON" = "F" ] || [ "$SCHED_ACTIVE" = "unavailable" ]; then
+  echo "[test-in-staging] one or more smoke tests FAILED" >&2
   exit 1
 fi
 
-echo "[pylot] outcome=\"test-in-staging complete — branch=$BRANCH sha=$LIVE_SHA\" status=success"
+echo "[pylot] outcome=\"test-in-staging complete branch=$BRANCH sha=$LIVE_SHA\" status=success"
 ```
 
 ## Rules
 
 - Always deploy via `POST ${PYLOT_STAGING_URL}/admin/deploy` — never run `cdk deploy` directly.
-- Always target the STAGING gateway (`$PYLOT_STAGING_URL`). Pointing at the prod gateway deploys PROD.
-- Print progress to stderr; the evidence block goes to stdout so callers can capture it cleanly.
-- Exit code 0 = all smoke tests passed; exit code 1 = deploy failed or a smoke test failed.
+- Always target the STAGING gateway. Pointing at the prod gateway deploys PROD.
+- Print progress to stderr; the evidence block goes to stdout.
+- Exit 0 = all smoke tests passed; exit 1 = deploy failed or a smoke test failed.
 - No interactive prompts; safe for Fargate execution.
-

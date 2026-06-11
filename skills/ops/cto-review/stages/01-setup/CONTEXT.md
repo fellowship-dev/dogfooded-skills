@@ -36,6 +36,13 @@ gh pr view $PR --repo $REPO --json state,mergedAt,mergeCommit,isDraft \
   gathering so stage 02 can produce a post-merge review note; stage 03 will NOT attempt a merge.
 - Otherwise (`state == "OPEN"`) → set `merge_state: open`. Continue normally.
 
+After resolving merge state, export `MERGE_STATE` for use in later steps (e.g., the evidence gate):
+```bash
+# Set MERGE_STATE based on the above logic
+# e.g.: MERGE_STATE=open | MERGE_STATE=merged | MERGE_STATE=closed-no-merge
+export MERGE_STATE
+```
+
 4. Gather repo architectural context:
 ```bash
 # Read repo CLAUDE.md for architectural direction
@@ -60,32 +67,35 @@ gh pr diff $PR --repo $REPO --name-only
 ```
 
 5.5. **Staging evidence gate** — check BEFORE proceeding to the expensive diff/full-review path.
+Only fires for open PRs; merged/closed PRs skip this gate entirely.
 
-Run this bash block immediately after step 5:
+Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3):
 
 ```bash
-# Collect changed filenames
-CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
+# Gate only fires for open PRs — merged/closed PRs skip evidence check
+if [ "${MERGE_STATE:-open}" = "open" ]; then
+  # Collect changed filenames
+  CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
 
-# Detect if this PR touches infra/backend paths that require staging evidence
-NEEDS_EVIDENCE=false
-while IFS= read -r f; do
-  case "$f" in
-    infra/*|gateway/*|crew.mjs) NEEDS_EVIDENCE=true; break ;;
-    */migrations/*.sql) NEEDS_EVIDENCE=true; break ;;
-  esac
-done <<< "$CHANGED_FILES"
+  # Detect if this PR touches infra/backend paths that require staging evidence
+  NEEDS_EVIDENCE=false
+  while IFS= read -r f; do
+    case "$f" in
+      infra/*|gateway/*|crew.mjs) NEEDS_EVIDENCE=true; break ;;
+      */migrations/*.sql) NEEDS_EVIDENCE=true; break ;;
+    esac
+  done <<< "$CHANGED_FILES"
 
-if [ "$NEEDS_EVIDENCE" = "true" ]; then
-  # Fetch PR body to check for evidence section
-  PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
-  if echo "$PR_BODY" | grep -qF '## Staging Evidence'; then
-    echo "[cto-review] staging evidence gate: PASSED"
-  else
-    echo "[cto-review] staging evidence gate: BLOCKED — ## Staging Evidence missing"
-    # Write a minimal handoff for the orchestrator to act on
-    mkdir -p .procedure-output/cto-review/01-setup
-    cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+  if [ "$NEEDS_EVIDENCE" = "true" ]; then
+    # Fetch PR body to check for evidence section
+    PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
+    if echo "$PR_BODY" | grep -qF '## Staging Evidence'; then
+      echo "[cto-review] staging evidence gate: PASSED"
+    else
+      echo "[cto-review] staging evidence gate: BLOCKED — ## Staging Evidence missing"
+      # Write a minimal handoff for the orchestrator to act on
+      mkdir -p .procedure-output/cto-review/01-setup
+      cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
 # Stage 01: Setup
 
 ## PR Identity
@@ -99,7 +109,8 @@ if [ "$NEEDS_EVIDENCE" = "true" ]; then
 ## Changed Files
 ${CHANGED_FILES}
 EOF
-    exit 0
+      exit 0
+    fi
   fi
 fi
 ```

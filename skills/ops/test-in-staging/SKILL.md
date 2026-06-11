@@ -33,7 +33,7 @@ HEALTH_BASE="https://pylot-beta.fellowship.dev"
 if [ -z "$STAGING_URL" ] || [ -z "$STAGING_TOKEN" ]; then
   echo "[test-in-staging] status=blocked: PYLOT_STAGING_URL or PYLOT_STAGING_DISPATCH_TOKEN not set" >&2
   echo "[pylot] outcome=\"test-in-staging blocked: staging credentials missing\" status=blocked"
-  exit 1
+  exit 0
 fi
 
 BRANCH="${ARGUMENTS:-}"
@@ -42,7 +42,8 @@ if [ -z "$BRANCH" ]; then
 fi
 if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ]; then
   echo "[test-in-staging] status=blocked: cannot resolve branch name" >&2
-  exit 1
+  echo "[pylot] outcome=\"test-in-staging blocked: cannot resolve branch name\" status=blocked"
+  exit 0
 fi
 echo "[test-in-staging] branch=$BRANCH" >&2
 
@@ -53,10 +54,12 @@ RESP=$(curl -sf -X POST "${STAGING_URL%/}/admin/deploy" \
   -H "Content-Type: application/json" \
   -d "{\"source_version\": \"$BRANCH\"}" 2>/dev/null) || {
   echo "[test-in-staging] failed to trigger deploy — check PYLOT_STAGING_URL and token" >&2
+  echo "[pylot] outcome=\"test-in-staging failed: deploy trigger failed\" status=failed"
   exit 1
 }
 BUILD_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['build_id'])" 2>/dev/null) || {
   echo "[test-in-staging] unexpected deploy response: $RESP" >&2
+  echo "[pylot] outcome=\"test-in-staging failed: unexpected deploy response\" status=failed"
   exit 1
 }
 echo "[test-in-staging] deploy triggered build_id=$BUILD_ID" >&2
@@ -74,12 +77,14 @@ for i in $(seq 1 20); do
     SUCCEEDED) DEPLOY_OK=1; break ;;
     FAILED|STOPPED)
       echo "[test-in-staging] deploy $STATUS — aborting" >&2
+      echo "[pylot] outcome=\"test-in-staging failed: build $STATUS\" status=failed"
       exit 1
       ;;
   esac
 done
 if [ "$DEPLOY_OK" -eq 0 ]; then
   echo "[test-in-staging] TIMEOUT: build $BUILD_ID did not finish within 5 min" >&2
+  echo "[pylot] outcome=\"test-in-staging failed: build timed out\" status=failed"
   exit 1
 fi
 echo "[test-in-staging] deploy SUCCEEDED" >&2
@@ -101,6 +106,7 @@ done
 
 if [ "$HEALTH_OK" -eq 0 ]; then
   LIVE_SHA="unknown (health check timed out)"
+  echo "[test-in-staging] WARNING: health timed out — smoke tests may target old version" >&2
 fi
 echo "[test-in-staging] health confirmed sha=$LIVE_SHA" >&2
 
@@ -110,7 +116,8 @@ echo "[test-in-staging] running smoke tests..." >&2
 HEALTH_CODE=$(curl -so /dev/null -w "%{http_code}" "$HEALTH_BASE/health" 2>/dev/null || echo "000")
 if [ "$HEALTH_CODE" = "200" ]; then HEALTH_ICON="OK"; else HEALTH_ICON="FAIL"; fi
 
-CREW_RESP=$(curl -sf -H "Authorization: Bearer $STAGING_TOKEN" "${STAGING_URL%/}/crew" 2>/dev/null || echo "[]")
+CREW_CODE=$(curl -so /tmp/crew_resp.json -w "%{http_code}" -H "Authorization: Bearer $STAGING_TOKEN" "${STAGING_URL%/}/crew" 2>/dev/null || echo "000")
+CREW_RESP=$(cat /tmp/crew_resp.json 2>/dev/null || echo "[]")
 CREW_COUNT=$(echo "$CREW_RESP" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
@@ -136,12 +143,13 @@ cat <<EVIDEOF
 - **Health check:** $HEALTH_CODE
 - **Smoke tests:**
   - GET /health -> $HEALTH_CODE
-  - GET /crew -> 200 ($CREW_COUNT members)
+  - GET /crew -> $CREW_CODE ($CREW_COUNT members)
   - Scheduler heartbeat -> $SCHED_ACTIVE
 EVIDEOF
 
 if [ "$HEALTH_ICON" = "FAIL" ] || [ "$CREW_ICON" = "F" ] || [ "$SCHED_ACTIVE" = "unavailable" ]; then
   echo "[test-in-staging] one or more smoke tests FAILED" >&2
+  echo "[pylot] outcome=\"test-in-staging failed: smoke tests failed\" status=failed"
   exit 1
 fi
 

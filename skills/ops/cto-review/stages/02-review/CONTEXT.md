@@ -20,7 +20,33 @@ should not have been invoked — write a no-op handoff and exit.
 Code quality was already covered by the `reviewed` and `double-checked` phases. Focus on: docs gaps,
 ops holes, downstream risk, security, and merge strategy — reading the WHOLE diff in one pass.
 
+**Skip tooling-enforced findings**: Do not surface lint errors, formatting violations, or type errors
+that the project's CI/CD pipeline already catches. Reserve judgement for logic bugs, design issues,
+missing requirements, and scope problems that static analysis cannot detect.
+
 ## Dimensions to weigh (all against the same full diff)
+
+### 0. Spec Conformance
+Read the `## Spec` section of the setup handoff.
+
+**If `spec_source: none`**: write "No spec available — skipping conformance check" under this
+dimension and proceed to dimension 1.
+
+For each requirement discernible in the spec body, evaluate the diff:
+
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| {req summary} | ✅ satisfied / ⚠️ partial / ❌ missing | {detail} |
+
+Also check:
+- **Scope creep** — behaviour added to the diff that the spec did not ask for
+- **Wrong** — requirement appears implemented but is incorrect (inverted condition,
+  wrong field, mismatched contract, wrong HTTP method)
+
+Finding types: **Missing** · **Partial** · **Scope creep** · **Wrong**
+
+A Spec finding does NOT automatically override the overall verdict unless a requirement is entirely
+missing or clearly wrong; use your CTO judgement to decide if it rises to REWORK.
 
 ### 1. Documentation
 For each doc file that SHOULD be updated given the changes, mark status:
@@ -95,6 +121,19 @@ Path: `.procedure-output/cto-review/02-review/handoff.md`
 - merge_decision: {merge | hold | sendback}
 - post_merge_note: {true if merge_state was merged, else false}
 
+## Spec
+- spec_ref: {copied from setup handoff — #NNN | org/repo#NNN | none}
+- spec_source: {copied from setup handoff — issue | none}
+
+{If spec_source is none: "No spec available — skipping conformance check"}
+
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| {req summary} | {✅ satisfied / ⚠️ partial / ❌ missing} | {detail} |
+
+Scope creep: {none | list of unrequested additions found in diff}
+Wrong-but-plausible: {none | list of findings}
+
 ## Documentation
 | Check | Status |
 |-------|--------|
@@ -134,3 +173,5 @@ Path: `.procedure-output/cto-review/02-review/handoff.md`
 ## Failure
 - Setup handoff missing or unreadable → write handoff with `verdict: BLOCKED` and reason "setup
   handoff unavailable".
+
+<!-- Spec dimension and "skip tooling-enforced findings" guidance adapted from mattpocock/skills:review -->

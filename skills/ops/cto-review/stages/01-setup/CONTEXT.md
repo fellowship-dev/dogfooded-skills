@@ -66,6 +66,41 @@ gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
 gh pr diff $PR --repo $REPO --name-only
 ```
 
+5.1. **Resolve linked spec** — fetch the originating issue or PRD body so stage 02 can check
+spec conformance. Run immediately after step 5 (PR metadata is already in hand).
+
+```bash
+# Extract PR body and branch name (already fetched in step 5)
+PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
+BRANCH_REF=$(gh pr view $PR --repo $REPO --json headRefName --jq '.headRefName' 2>/dev/null || echo "")
+
+# Try repo-qualified ref first: org/repo#NNN
+SPEC_QUALIFIED=$(echo "$PR_BODY" | grep -oE '[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+#[0-9]+' | head -1 || echo "")
+
+if [ -n "$SPEC_QUALIFIED" ]; then
+  SPEC_REPO=$(echo "$SPEC_QUALIFIED" | cut -d'#' -f1)
+  SPEC_NUM=$(echo "$SPEC_QUALIFIED" | cut -d'#' -f2)
+  SPEC_REF="$SPEC_QUALIFIED"
+  SPEC_BODY=$(gh issue view $SPEC_NUM --repo $SPEC_REPO --json body --jq '.body' 2>/dev/null || echo "")
+  SPEC_SOURCE="issue"
+else
+  # Fall back to bare #NNN ref in PR body or branch name
+  SPEC_NUM=$(echo "$PR_BODY $BRANCH_REF" | grep -oE '(?<=#)[0-9]+' | head -1 || echo "")
+  if [ -n "$SPEC_NUM" ]; then
+    SPEC_REF="#$SPEC_NUM"
+    SPEC_BODY=$(gh issue view $SPEC_NUM --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
+    SPEC_SOURCE="issue"
+  else
+    SPEC_REF="none"
+    SPEC_BODY="No spec available — skipping conformance check"
+    SPEC_SOURCE="none"
+  fi
+fi
+
+# Guard: treat fetch failures as no-spec
+[ -z "$SPEC_BODY" ] && { SPEC_BODY="No spec available — skipping conformance check"; SPEC_SOURCE="none"; SPEC_REF="none"; }
+```
+
 5.5. **Staging evidence gate** — check BEFORE proceeding to the expensive diff/full-review path.
 Only fires for open PRs; merged/closed PRs skip this gate entirely.
 
@@ -184,6 +219,12 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 
 ## PR Description / Linked Issue
 {PR body; linked issue number+title if extractable from body or branch}
+
+## Spec
+- spec_ref: {SPEC_REF — e.g. #42 | fellowship-dev/pylot#42 | none}
+- spec_source: {issue | none}
+
+{SPEC_BODY verbatim — the full issue/PRD text, or "No spec available — skipping conformance check"}
 
 ## Changed Files
 {file list}

@@ -40,7 +40,7 @@ For each requirement discernible in the spec body, evaluate the diff:
 
 Also check:
 - **Scope creep** — behaviour added to the diff that the spec did not ask for
-- **Wrong-but-plausible** — requirement appears implemented but is incorrect (inverted condition,
+- **Wrong** — requirement appears implemented but is incorrect (inverted condition,
   wrong field, mismatched contract, wrong HTTP method)
 
 Finding types: **Missing** · **Partial** · **Scope creep** · **Wrong**

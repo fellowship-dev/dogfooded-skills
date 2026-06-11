@@ -85,7 +85,7 @@ if [ -n "$SPEC_QUALIFIED" ]; then
   SPEC_SOURCE="issue"
 else
   # Fall back to bare #NNN ref in PR body or branch name
-  SPEC_NUM=$(echo "$PR_BODY $BRANCH_REF" | grep -oE '(?<=#)[0-9]+' | head -1 || echo "")
+  SPEC_NUM=$(echo "$PR_BODY $BRANCH_REF" | grep -oE '#[0-9]+' | head -1 | tr -d '#' || echo "")
   if [ -n "$SPEC_NUM" ]; then
     SPEC_REF="#$SPEC_NUM"
     SPEC_BODY=$(gh issue view $SPEC_NUM --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")

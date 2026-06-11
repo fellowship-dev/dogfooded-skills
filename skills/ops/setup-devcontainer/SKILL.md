@@ -1,6 +1,6 @@
 ---
 name: setup-devcontainer
-description: Generate devcontainer config and optionally create a Gitpod/Ona project for any repo. Detects framework (Rails, Next.js, Strapi, Django, Laravel, etc), generates Dockerfile + devcontainer.json + automations. Triggers on "setup devcontainer", "setup ona", "devcontainer config", "gitpod setup".
+description: Use when generating devcontainer config or creating a Gitpod/Ona project for any repo.
 user-invocable: true
 allowed-tools: Read, Write, Glob, Grep, Bash
 ---

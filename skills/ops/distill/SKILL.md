@@ -1,6 +1,6 @@
 ---
 name: distill
-description: Post-mission audit and distillation — capture mode classifies a completed mission using an 8-code failure taxonomy and writes an audit JSON; analyze mode aggregates audit JSONs into a findings report and creates GitHub issues with recommendations.
+description: Use when capturing post-mission audit data or analyzing audit records into a findings report with GitHub issue recommendations.
 allowed-tools: Read, Write, Bash, Glob, Grep, Agent
 ---
 

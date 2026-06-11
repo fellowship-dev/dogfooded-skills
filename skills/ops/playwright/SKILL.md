@@ -1,6 +1,6 @@
 ---
 name: playwright
-description: Browser automation using Playwright CLI over CDP. Navigate, screenshot, fill forms, extract data, test web apps. Activates on "browser", "screenshot", "navigate to", "playwright", "web automation", "UI testing". Uses playwright-core ESM + Chromium CDP — no MCP required.
+description: Use when automating a browser with Playwright CLI over CDP — navigate, screenshot, fill forms, or extract data.
 allowed-tools: Bash, Read, Write, Glob, Grep
 ---
 

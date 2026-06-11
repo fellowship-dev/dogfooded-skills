@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: 3-stage SEQUENTIAL ICM procedure for read-only first-pass PR review. Whole-diff cohesive review in one isolated-context subagent (no per-file fan-out, no parallelism). Stages 00 and 02 run inline.
+description: Use when performing a first-pass, read-only PR review in a clean isolated context.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---

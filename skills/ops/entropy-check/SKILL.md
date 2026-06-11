@@ -1,6 +1,6 @@
 ---
 name: entropy-check
-description: Sensor — checks doc freshness and computes domain quality grades. Never fixes. Detects staleness, missing coverage, and FlowChad gaps. Updates QUALITY_SCORE.md. Skips inapplicable signals per repo.
+description: Use when checking doc freshness and computing domain quality grades without making fixes.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---

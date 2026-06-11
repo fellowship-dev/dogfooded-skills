@@ -1,6 +1,6 @@
 ---
 name: build-train
-description: ICM procedure to batch GitHub issues into one build branch. Stage 02 FANS OUT independent builds as concurrent subagents in waves (parallel within a wave, sequential across dependency edges). Stages 01/03/04 run as subagents; 00 and 05 run inline.
+description: Use when batching multiple GitHub issues into one build branch with concurrent subagent builds.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---

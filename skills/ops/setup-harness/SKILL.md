@@ -1,6 +1,6 @@
 ---
 name: setup-harness
-description: Scaffold the knowledge layer for a repo — ARCHITECTURE.md, QUALITY_SCORE.md, enhanced docs/code-structure.md, docs/code-guidelines.md, and FlowChad flow stubs. Gives agents a map, not a 1,000-page manual.
+description: Use when scaffolding the agent knowledge layer (ARCHITECTURE.md, QUALITY_SCORE.md, docs/) for a repo.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep, AskUserQuestion
 ---

@@ -1,6 +1,6 @@
 ---
 name: pylot-workers
-description: Worker API reference for operator skills that drive repo devbox workers. Documents spawn → prompt → poll → stop lifecycle. Not a runnable skill — imported as a baseline into every operator so worker-driving skills can reference it.
+description: Use as a baseline import in operator skills that drive repo devbox workers — documents spawn, prompt, poll, and stop lifecycle.
 user-invocable: false
 ---
 

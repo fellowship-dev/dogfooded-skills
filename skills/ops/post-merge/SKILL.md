@@ -1,6 +1,6 @@
 ---
 name: post-merge
-description: Post-merge deployment trigger — reads PR diff, determines deploy method (auto vs manual), dispatches deployment-checker job. Stage 1 of the post-merge → deployment-checker → post-deploy pipeline.
+description: Use when triggering a post-merge deployment after a PR is merged (stage 1 of the post-merge pipeline).
 argument-hint: "pr-number org/repo"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

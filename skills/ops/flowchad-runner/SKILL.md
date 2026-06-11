@@ -1,6 +1,6 @@
 ---
 name: flowchad-runner
-description: 5-stage ICM procedure for FlowChad flow automation. All stages run sequentially (NO parallel fan-out — flows share browser/session/persona state and would collide). Stage 03 walks flows one-at-a-time in a sequential loop. Stage 05 (report) runs inline.
+description: Use when running FlowChad flow automation — all flows run sequentially to avoid browser/session collisions.
 user-invocable: true
 argument-hint: "[flow-name|all] [org/repo] (pr-number) (trigger)"
 allowed-tools: Read, Bash, Glob, Grep, Task

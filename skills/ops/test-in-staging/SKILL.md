@@ -1,6 +1,6 @@
 ---
 name: test-in-staging
-description: Deploy the current branch to staging, run smoke tests, and print a ready-to-paste `## Staging Evidence` block. Required before opening an infra/backend PR targeting fellowship-dev/pylot.
+description: Use when deploying a branch to staging and running smoke tests before opening an infra/backend PR.
 user-invocable: true
 allowed-tools: Bash
 argument_hint: "[<branch>]"

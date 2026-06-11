@@ -1,6 +1,6 @@
 ---
 name: maintenance
-description: Infra-only health audit — LaunchAgent health, cron log errors, system health, secrets scan, label sync, stale branches, dependabot, booster-pack sync, memory consolidation, open issues. Never fixes autonomously.
+description: Use when running an infra-only health audit across Pylot systems — LaunchAgent, cron, secrets, labels, branches, and issues.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep, AskUserQuestion
 ---

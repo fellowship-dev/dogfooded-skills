@@ -1,6 +1,6 @@
 ---
 name: procedure-builder
-description: Scaffold a multi-stage ICM procedure from a structured spec -- six-stage pipeline that bootstraps `_core/` if needed, then produces the workflow map, stage contracts, folder scaffold, onboarding questionnaire, and validation report.
+description: Use when building a new multi-stage ICM procedure or converting a monolithic runner skill into a staged workflow.
 argument-hint: "[spec-file-path]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -370,6 +370,20 @@ Fix any failures in the scaffolded procedure, then re-run the failed checks.
 **Circular dependency found** -- report the cycle. The spec must be restructured.
 
 **Validation check fails after fix attempt** -- report the failure. Do not ship with known failures.
+
+## Description Rule
+
+ICM procedure descriptions are especially prone to mechanics descriptions. Stage counts, parallelism notes, and "SEQUENTIAL" flags belong in the procedure body -- never in the `description:` frontmatter.
+
+| Good | Bad |
+|------|-----|
+| "Use when merging reviewed PRs into a release branch." | "8-stage FULLY SEQUENTIAL ICM procedure that merges N reviewed PRs..." |
+| "Use when running the full issue-to-PR pipeline." | "Issue-to-PR pipeline as an ICM procedure -- 7 stages from pre-flight..." |
+| "Use when running the CTO flow-optimization loop." | "Flow optimizer operating loop -- WIP scan, active epic focus, triage..." |
+
+**Self-check before writing SKILL.md:** Strip the description of all stage counts and parallelism notes. What remains must still answer "when do I reach for this procedure?" If not, rewrite it.
+
+Accepted trigger forms: "Use when ...", "Use to ...". Stage counts and "SEQUENTIAL / PARALLEL" notes live in the body (## Procedure, ## Stages, or ## When to Use sections).
 
 ## Critical Rules
 

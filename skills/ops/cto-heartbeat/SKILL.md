@@ -1,6 +1,6 @@
 ---
 name: cto-heartbeat
-description: Flow optimizer operating loop — WIP scan, active epic focus, triage unlabeled issues, dispatch one task, report. Implements "stop starting, start finishing" via persistent label-driven state.
+description: Use when running the CTO flow-optimization loop — WIP scan, epic focus, triage unlabeled issues, and dispatch.
 argument-hint: "org/repo [goal-context]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

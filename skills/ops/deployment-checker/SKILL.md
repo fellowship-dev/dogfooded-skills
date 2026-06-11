@@ -1,6 +1,6 @@
 ---
 name: deployment-checker
-description: Deployment health poller — runs a team bash script to poll health endpoint until deployed sha matches, exits with structured result, applies deployed or deploy-failed label. Stage 2 of the post-merge pipeline. Zero token burn during polling.
+description: Use when polling deployment health after a merge to verify the deployed SHA matches and apply a status label.
 argument-hint: "pr-number org/repo"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

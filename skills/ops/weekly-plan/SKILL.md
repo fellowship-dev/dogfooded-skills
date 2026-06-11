@@ -1,6 +1,6 @@
 ---
 name: weekly-plan
-description: Interactive weekly planning session for ONE Pylot team (run in a Claude Code or pylot chat session — NOT headless). Opens with a plan-vs-actual scorecard, presents a full written briefing (last week's outcomes, in-flight work, half-done epics, other devs' activity, ready queue — everything linked), then interviews the owner spec-plan style: one question at a time, each with inline context and a recommended answer, letting answers open new branches. Deep-triages to kill ghosts, decomposes epics into agent-ready hourly-sized slices, writes goals with binary done-conditions and a dated focus block, sets the team's budget, and activates/tunes the hourly auto-pylot. Run once per team, sequentially. It is the thinking session that shapes what the hourly then executes.
+description: Use when running the interactive weekly planning session for a Pylot team (interactive session only — not headless).
 argument-hint: "team [org/repo]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep

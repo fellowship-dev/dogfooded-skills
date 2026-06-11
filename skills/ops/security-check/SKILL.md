@@ -1,6 +1,6 @@
 ---
 name: security-check
-description: Security alert triage framework — classifies Dependabot/Snyk alerts by severity × exploitability, outputs a prioritized action list. Never auto-merges on restricted repos. Use before security-runner to calibrate triage decisions.
+description: Use when triaging Dependabot/Snyk security alerts by severity and exploitability before running security-runner.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep
 ---

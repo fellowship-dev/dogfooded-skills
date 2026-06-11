@@ -1,6 +1,6 @@
 ---
 name: premature-close-checker
-description: Check if a closed issue has unchecked acceptance criteria; post a comment and add needs-triage label if so. Zero LLM overhead — pure bash.
+description: Use when checking whether a closed issue has unchecked acceptance criteria.
 argument-hint: "issue-number org/repo"
 user-invocable: true
 allowed-tools: Bash

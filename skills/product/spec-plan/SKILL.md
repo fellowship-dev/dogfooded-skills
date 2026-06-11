@@ -1,6 +1,6 @@
 ---
 name: spec-plan
-description: Interview the user relentlessly about a plan or design until reaching shared understanding — walk each branch of the decision tree, resolve dependencies one by one. Use when stress-testing a plan, getting grilled on a design, or before writing a PRD.
+description: Use when stress-testing a plan, getting grilled on a design, or before writing a PRD.
 allowed-tools: Read, Bash, Grep, Glob
 ---
 

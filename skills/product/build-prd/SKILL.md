@@ -1,6 +1,6 @@
 ---
 name: build-prd
-description: Guide collaborative PRD creation from feature requests — 7-step workflow with structured discussion, GitHub integration, and quality gates. Use when creating PRDs, writing requirements, or transforming feature requests into implementation-ready issues.
+description: Use when creating a PRD, writing requirements, or transforming a feature request into an implementation-ready GitHub issue.
 allowed-tools: Read, Bash, Grep, Glob
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: speckit-runner
-description: End-to-end issue-to-PR pipeline. Operator skill — spawns a repo worker devbox and drives it through speckit phases (preflight → specify → plan → tasks → implement → PR). Use when implementing a GitHub issue. MANDATORY for all dev tasks on code issues.
+description: Use when implementing a GitHub issue end-to-end — MANDATORY for all dev tasks; spawns a repo worker devbox through speckit phases.
 user-invocable: true
 argument-hint: "[issue-number] [org/repo]"
 allowed-tools: Read, Bash

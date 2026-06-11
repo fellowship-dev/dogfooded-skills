@@ -1,6 +1,6 @@
 ---
 name: migrate-skill
-description: Move a skill from claude-toolkit plugin (or local .claude/skills) into the dogfooded-skills library, then import it back. Use when consolidating skills into the shared repo.
+description: Use when consolidating a skill from a claude-toolkit plugin or local .claude/skills into the dogfooded-skills library.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 

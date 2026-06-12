@@ -10,8 +10,9 @@ state on the default branch — ready for the release branch to be cut.
 
 ## Steps
 
-1. Confirm the default branch (already in stage 00 handoff; re-verify if unset). Lexgo uses
-   `master`, most others use `main` — never assume:
+1. Confirm the default branch (already in stage 00 handoff; re-verify if unset). Lexgo's
+   rails-backend uses `develop` (gitflow: `develop`→staging, `master`→prod — never target
+   `master`, pushing it deploys production), most others use `main` — never assume:
 ```bash
 DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef -q .defaultBranchRef.name)
 ```

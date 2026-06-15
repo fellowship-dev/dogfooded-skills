@@ -61,6 +61,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
 | [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
 | [`ops/weekly-plan`](skills/ops/weekly-plan/) | Interactive weekly planning session for ONE team (CC / pylot chat) — plan-vs-actual scorecard, full linked briefing (last week, in-flight, half-done epics, colleagues' work), then a spec-plan-style interview (one question per turn, recommendation-first), anti-ghost triage, agent-ready epic slices, goals with done-conditions + expiring focus block, budget + hourly auto-pylot tuning. Run once per team, sequentially |
+| [`ops/refactor-codebase`](skills/ops/refactor-codebase/) | Autonomously refactor a codebase across many behavior-preserving cycles — decompose fat files by domain, deepen shallow modules, pay down architectural debt — driven by a persistent masterplan and verification gates. Complements `improve-codebase-architecture` (which only finds and reports opportunities) by actually doing the refactor, safely, over many sessions |
 
 ## Namespace Convention
 

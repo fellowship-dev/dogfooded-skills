@@ -14,7 +14,7 @@ through the speckit phases via the gateway worker API.
 Gateway: `$PYLOT_API` (or `$PYLOT_GATEWAY_URL`). Token: `$PYLOT_DISPATCH_TOKEN`.
 Mission: `$PYLOT_JOB_ID`. Repo: `$1` (or `$PYLOT_REPO`).
 
-> **Drive the worker in the foreground by polling the worker API.** After queueing each phase prompt, immediately run the Poll-to-idle snippet (Step P) using the Bash tool and wait for it to complete inline. Do **not** spawn background tasks, use ScheduleWakeup, or "wait for a notification" — in a headless `claude -p` runner there is no background-completion wake-up. Backgrounding deadlocks the session: it hangs until timeout and emits a bogus outcome marker. The poll loop is synchronous shell — run it yourself with the Bash tool, do not delegate it.
+> **Drive the worker in the foreground by polling the worker API — in bounded chunks.** After queueing each phase prompt, run the Poll-to-idle snippet (Step P) with the Bash tool. Step P polls for **at most ~7 min per call** (under the harness's 10-min foreground Bash cap) and then **returns**: if it prints `POLL_RESULT=running` the worker is healthy and still working — **run Step P again immediately**, and repeat until it prints `POLL_RESULT=done`. Never let a single poll call run past ~8 min: the harness auto-backgrounds longer Bash commands, and in a headless `claude -p` runner there is **no background-completion wake-up**, so a backgrounded poll deadlocks the session and emits a bogus `"poll timeout"` while the worker is still healthily running. Do **not** spawn background tasks, use ScheduleWakeup, or "wait for a notification." Each Step P call is synchronous shell you run yourself.
 
 ---
 
@@ -53,14 +53,25 @@ echo "[speckit-runner] worker spawned: $WID"
 
 ---
 
-## Step P: Poll-to-idle snippet
+## Step P: Poll-to-idle snippet (chunked, foreground-safe)
 
-Run this with the Bash tool immediately after queueing any phase prompt. Wait for it to complete inline — do not background it.
+Run this with the Bash tool after queueing a phase prompt. It polls for **at most one chunk (~7 min)** then **returns** with a `POLL_RESULT`:
+
+- `POLL_RESULT=done` → the worker finished this turn; proceed to the next phase.
+- `POLL_RESULT=running` → the worker is **healthy and still working** — **run this exact block again** (it resumes the cumulative timer; it does not restart it).
+- `POLL_RESULT=timeout` → the overall budget is exhausted; the worker was stopped and a failed outcome emitted.
+
+Each call stays under the 10-min foreground Bash cap, so it never gets backgrounded. The operator must set `WID` and `TURN_SEQ` (from the queue step) at the top of the call — shell state does not persist between Bash calls, so re-inline them.
 
 ```bash
-WORKER_EXIT=""; POLL_EL=0; POLL_MAX="${PYLOT_WORKER_POLL_MAX:-2400}"
-while [ "$POLL_EL" -lt "$POLL_MAX" ]; do
-  sleep 15; POLL_EL=$((POLL_EL + 15))
+# WID and TURN_SEQ must already be set in this call (re-inline them).
+CHUNK="${PYLOT_WORKER_POLL_CHUNK:-420}"      # per-call budget (s) — keep < 540 (10-min Bash cap)
+POLL_MAX="${PYLOT_WORKER_POLL_MAX:-3600}"    # overall budget (s) across all chunks for this turn
+STATE="/tmp/speckit_poll_${PYLOT_JOB_ID}_${WID}_${TURN_SEQ}.el"
+TOTAL=$(cat "$STATE" 2>/dev/null || echo 0); [ -z "$TOTAL" ] && TOTAL=0
+CHUNK_EL=0; WORKER_EXIT=""; W_STATE=""; W_SEQ=""; ST=""
+while [ "$CHUNK_EL" -lt "$CHUNK" ] && [ "$TOTAL" -lt "$POLL_MAX" ]; do
+  sleep 15; CHUNK_EL=$((CHUNK_EL + 15)); TOTAL=$((TOTAL + 15))
   ST=$(curl -s --max-time 20 \
     -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
     "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}")
@@ -73,15 +84,28 @@ print("%s|%s|%s" % (d.get("turn_state",""), d.get("turn_seq",""), "" if ec is No
 ' 2>/dev/null)
   W_STATE="${ST_LINE%%|*}"; W_REST="${ST_LINE#*|}"; W_SEQ="${W_REST%%|*}"; W_EC="${W_REST##*|}"
   if [ "$W_STATE" = "idle" ] && [ "$W_SEQ" = "$TURN_SEQ" ]; then WORKER_EXIT="$W_EC"; break; fi
+  if [ $((CHUNK_EL % 120)) -eq 0 ]; then   # heartbeat + recent worker output, so progress is visible
+    echo "[poll +${CHUNK_EL}s | total ${TOTAL}s] state=$W_STATE seq=$W_SEQ"
+    echo "$ST" | python3 -c 'import sys,json; print((json.load(sys.stdin).get("last_output","") or "")[-500:])' 2>/dev/null
+  fi
 done
-if [ "$POLL_EL" -ge "$POLL_MAX" ]; then
-  echo "[speckit-runner] poll timed out after ${POLL_MAX}s"
+echo "$TOTAL" > "$STATE"
+if [ "$W_STATE" = "idle" ] && [ "$W_SEQ" = "$TURN_SEQ" ]; then
+  rm -f "$STATE"
+  WORKER_OUT=$(echo "$ST" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("last_output",""))' 2>/dev/null)
+  echo "[speckit-runner] phase done (exit=$WORKER_EXIT)"; echo "$WORKER_OUT" | tail -12
+  echo "POLL_RESULT=done"
+elif [ "$TOTAL" -ge "$POLL_MAX" ]; then
+  rm -f "$STATE"
+  echo "[speckit-runner] poll exceeded overall budget ${POLL_MAX}s"
   curl -s --max-time 30 -X POST -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
     "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop" >/dev/null 2>&1 || true
-  echo "[pylot] outcome=\"poll timeout waiting for worker\" status=failed"; exit 1
+  echo "[pylot] outcome=\"poll timeout waiting for worker\" status=failed"
+  echo "POLL_RESULT=timeout"
+else
+  echo "[speckit-runner] worker still running (total ${TOTAL}s) — RUN STEP P AGAIN"
+  echo "POLL_RESULT=running"
 fi
-WORKER_OUT=$(echo "$ST" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("last_output",""))' 2>/dev/null)
-echo "[speckit-runner] phase done (exit=$WORKER_EXIT)"; echo "$WORKER_OUT" | tail -5
 ```
 
 ---
@@ -101,7 +125,7 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] preflight prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. After it completes, check `WORKER_OUT` for `phase=preflight status=done`. If absent or `status=failed`, stop the worker and emit a failed outcome.
+Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. **While it prints `POLL_RESULT=running`, run Step P again** (re-inline `WID` and `TURN_SEQ`). When it prints `POLL_RESULT=done`, read the printed worker output for `phase=preflight status=done`. If absent or `status=failed`, stop the worker and emit a failed outcome.
 
 ---
 
@@ -120,7 +144,7 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] plan prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. Check `WORKER_OUT` for `phase=plan status=done`. If blocked or failed, stop the worker and emit a blocked/failed outcome.
+Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. **While it prints `POLL_RESULT=running`, run Step P again.** When it prints `POLL_RESULT=done`, check the printed worker output for `phase=plan status=done`. If blocked or failed, stop the worker and emit a blocked/failed outcome.
 
 ---
 
@@ -139,13 +163,16 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] implement prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Run the **Poll-to-idle snippet (Step P)** with the Bash tool now.
+Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. **This is the longest phase — expect several `POLL_RESULT=running` chunks; run Step P again after each one** until it prints `POLL_RESULT=done`. Do not abandon the worker between chunks and do not wait for a background notification. When done, the printed output carries `phase=implement status=done pr=<PR_URL>`.
 
 ---
 
 ## Step 5: Identify PR + Stop Worker
 
 ```bash
+# Re-fetch fresh — $ST from Step P does not survive into this separate Bash call.
+ST=$(curl -s --max-time 20 -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}")
 WORKER_OUT=$(echo "$ST" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("last_output",""))' 2>/dev/null)
 PR_NUM=$(echo "$WORKER_OUT" | python3 -c '
 import sys, re, collections
@@ -181,7 +208,7 @@ fi
 ## Hard Rules
 
 - **Pre-flight is mandatory** — the worker must gather real data before speckit phases
-- **Poll in the foreground** — run the Poll-to-idle snippet (Step P) with the Bash tool after every phase; never background it or wait for a notification
+- **Poll in the foreground, in chunks** — run Step P after every phase; it returns every ~7 min, so re-run it while it prints `POLL_RESULT=running`. Never let one poll call exceed the 10-min Bash cap (it gets auto-backgrounded → headless deadlock → bogus `"poll timeout"` on a healthy worker). Never background it; never wait for a notification.
 - **Stop the worker** — always call /stop when done, even on failure
 - **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting
 - **"already complete" only at the dedup gate** — only emit this when the issue is genuinely CLOSED (Step 0); never for timeouts or missing notifications

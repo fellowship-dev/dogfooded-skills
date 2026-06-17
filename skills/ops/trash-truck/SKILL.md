@@ -43,6 +43,8 @@ Finds and removes code slop without changing behavior. Opens small, reviewable P
 
 ### Pre-scan (Step 2)
 
+> **Run the pre-scan yourself, in the foreground.** Invoke `pre-scan.sh` directly with the Bash tool and wait for its JSON output inline. Do **not** dispatch a worker, background the scan (`&`/`nohup`), or hand it off and "wait for a notification" — it is a fast, bounded local scan (seconds). In a headless/operator runner there is no background-completion wake-up, so backgrounding deadlocks the session and the mission fails with no outcome marker. This is hands-on work: do it yourself, do not delegate it.
+
 The `pre-scan.sh` script in this skill's directory uses `rg` + Python `ast` to find candidates cheaply before Claude reviews them. This cuts token cost by 5-10x compared to having Claude grep the entire codebase.
 
 ```bash

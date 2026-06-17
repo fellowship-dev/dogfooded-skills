@@ -53,66 +53,80 @@ fi
 echo "[speckit-runner] worker spawned: $WID"
 ```
 
----
-
-## Step P: Poll-to-idle snippet (chunked, foreground-safe)
-
-Run this with the Bash tool after queueing a phase prompt, **with the default Bash timeout**. Each call polls for **< 2 minutes** (wall-clock bounded) then **returns** a `POLL_RESULT`:
-
-- `POLL_RESULT=done` → the worker finished this turn; proceed to the next phase.
-- `POLL_RESULT=running` → the worker is **healthy and still working** — **immediately run this exact block again** (it resumes the cumulative timer; it does not restart it).
-- `POLL_RESULT=timeout` → the overall budget is exhausted; the worker was stopped and a failed outcome emitted.
-
-Each call is wall-clock bounded to ~85 s — under the default ~120 s Bash timeout — so it never gets backgrounded. Re-inline `WID` and `TURN_SEQ` at the top of the call; shell state does not persist between Bash calls.
+Now write the **poll script** once (you will call it after every phase). This is the ONLY way you poll a worker — never hand-roll a poll loop inline, never wait for a notification:
 
 ```bash
-# WID and TURN_SEQ must already be set in this call (re-inline them). Use the DEFAULT Bash timeout.
-CHUNK="${PYLOT_WORKER_POLL_CHUNK:-85}"       # WALL seconds per call — keep < 120 (default Bash timeout)
-POLL_MAX="${PYLOT_WORKER_POLL_MAX:-3600}"    # overall budget (s) across all chunks for this turn
+cat > /tmp/speckit-poll.sh <<'POLLEOF'
+#!/usr/bin/env bash
+# speckit-poll.sh <WID> <TURN_SEQ> — ONE bounded poll chunk (~85s wall, under the
+# default 120s Bash timeout, so it can never be auto-backgrounded). Re-run while RUNNING.
+#   exit 0  -> POLL_RESULT=done     (worker idle on this turn; last_output printed)
+#   exit 10 -> POLL_RESULT=running  (worker healthy, still working — RUN AGAIN)
+#   exit 1  -> POLL_RESULT=timeout  (overall budget hit; worker stopped)
+set -u
+WID="${1:?usage: speckit-poll.sh <WID> <TURN_SEQ>}"
+TURN_SEQ="${2:?usage: speckit-poll.sh <WID> <TURN_SEQ>}"
+: "${PYLOT_API:?}"; : "${PYLOT_JOB_ID:?}"; : "${PYLOT_DISPATCH_TOKEN:?}"
+CHUNK="${PYLOT_WORKER_POLL_CHUNK:-85}"; POLL_MAX="${PYLOT_WORKER_POLL_MAX:-3600}"
 STATE="/tmp/speckit_poll_${PYLOT_JOB_ID}_${WID}_${TURN_SEQ}.el"
 TOTAL=$(cat "$STATE" 2>/dev/null || echo 0); [ -z "$TOTAL" ] && TOTAL=0
-SECONDS=0; WORKER_EXIT=""; W_STATE=""; W_SEQ=""; ST=""
+SECONDS=0; W_STATE="-"; W_SEQ="-"; W_EC="-"; ST=""
 while [ "$SECONDS" -lt "$CHUNK" ] && [ "$((TOTAL + SECONDS))" -lt "$POLL_MAX" ]; do
   sleep 8
-  ST=$(curl -s --max-time 12 \
-    -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  ST=$(curl -s --max-time 12 -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
     "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}")
-  ST_LINE=$(echo "$ST" | python3 -c '
+  LINE=$(printf '%s' "$ST" | python3 -c '
 import sys, json
 try: d = json.load(sys.stdin)
-except: d = {}
+except Exception: d = {}
 ec = d.get("last_exit_code")
-print("%s|%s|%s" % (d.get("turn_state",""), d.get("turn_seq",""), "" if ec is None else ec))
+print("%s %s %s" % (d.get("turn_state","-"), d.get("turn_seq","-"), "-" if ec is None else ec))
 ' 2>/dev/null)
-  W_STATE="${ST_LINE%%|*}"; W_REST="${ST_LINE#*|}"; W_SEQ="${W_REST%%|*}"; W_EC="${W_REST##*|}"
-  if [ "$W_STATE" = "idle" ] && [ "$W_SEQ" = "$TURN_SEQ" ]; then WORKER_EXIT="$W_EC"; break; fi
+  W_STATE="${LINE%% *}"; REST="${LINE#* }"; W_SEQ="${REST%% *}"; W_EC="${REST##* }"
+  [ "$W_STATE" = "idle" ] && [ "$W_SEQ" = "$TURN_SEQ" ] && break
 done
 TOTAL=$((TOTAL + SECONDS)); echo "$TOTAL" > "$STATE"
-echo "[poll +${SECONDS}s | total ${TOTAL}s] state=$W_STATE seq=$W_SEQ"   # progress, printed every call
-echo "$ST" | python3 -c 'import sys,json; print((json.load(sys.stdin).get("last_output","") or "")[-400:])' 2>/dev/null
+echo "[poll +${SECONDS}s | total ${TOTAL}s] state=$W_STATE seq=$W_SEQ"
+printf '%s' "$ST" | python3 -c 'import sys,json
+try: print((json.load(sys.stdin).get("last_output","") or "")[-400:])
+except Exception: pass' 2>/dev/null
 if [ "$W_STATE" = "idle" ] && [ "$W_SEQ" = "$TURN_SEQ" ]; then
-  rm -f "$STATE"
-  WORKER_OUT=$(echo "$ST" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("last_output",""))' 2>/dev/null)
-  echo "[speckit-runner] phase done (exit=$WORKER_EXIT)"; echo "$WORKER_OUT" | tail -12
-  echo "POLL_RESULT=done"
+  rm -f "$STATE"; echo "POLL_RESULT=done worker_exit=$W_EC"; exit 0
 elif [ "$TOTAL" -ge "$POLL_MAX" ]; then
   rm -f "$STATE"
-  echo "[speckit-runner] poll exceeded overall budget ${POLL_MAX}s"
-  curl -s --max-time 30 -X POST -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  curl -s --max-time 20 -X POST -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
     "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop" >/dev/null 2>&1 || true
-  echo "[pylot] outcome=\"poll timeout waiting for worker\" status=failed"
-  echo "POLL_RESULT=timeout"
+  echo "POLL_RESULT=timeout"; exit 1
 else
-  echo "[speckit-runner] worker still running (total ${TOTAL}s) — RUN STEP P AGAIN"
-  echo "POLL_RESULT=running"
+  echo "POLL_RESULT=running"; exit 10
 fi
+POLLEOF
+chmod +x /tmp/speckit-poll.sh
+echo "[speckit-runner] poll script ready"
 ```
+
+---
+
+## Step P: Poll-to-idle (run the script, loop while RUNNING)
+
+After queueing a phase prompt, poll **only** by running the bundled script with the Bash tool (**default timeout — do not pass a long one**):
+
+```bash
+bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"
+```
+
+Read its last line:
+- `POLL_RESULT=done` (exit 0) → worker finished this turn; the printed output carries the phase marker. Proceed.
+- `POLL_RESULT=running` (exit 10) → worker is **healthy and still working** — **run the exact same command again** (re-inline `WID`/`TURN_SEQ`; the script resumes its cumulative timer via a state file). The implement phase needs many of these — keep going.
+- `POLL_RESULT=timeout` (exit 1) → budget hit; worker already stopped. Emit a failed outcome.
+
+Each call returns in <2 min by design, so it never gets backgrounded. **Never** hand-roll a poll loop, set a long Bash `timeout`, background the call, wait for a notification, or end your turn while a worker turn is in flight — any of those abandons a healthy worker and fails the mission.
 
 ---
 
 ## Step 2: speckit.preflight — Pre-flight + Specify
 
-Queue the prompt, then run the **Poll-to-idle snippet (Step P)** with the Bash tool.
+Queue the prompt, then poll per **Step P**: run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"`, re-running it while `POLL_RESULT=running`.
 
 ```bash
 PROMPT=$(python3 -c "import json,sys; print(json.dumps('You are a worker running inside repo $REPO. Issue: #$0.\n\nPre-Flight (MANDATORY — do this FIRST):\n1. Fetch issue: gh issue view $0 --repo $REPO --json title,body,labels,comments\n2. Check if closed: if CLOSED, emit [pylot] outcome=\"already complete\" status=success and exit.\n3. Verify required labels exist (create '\''in-progress'\'' if missing).\n4. Gather real data: read issue comments, fetch referenced URLs, read existing code patterns.\n\nSpeckit Specify:\n5. Ensure you'\''re on the default branch: git checkout \$(gh repo view $REPO --json defaultBranchRef -q .defaultBranchRef.name) && git pull\n6. Bootstrap speckit scaffolding if absent: if [ ! -f \".specify/scripts/bash/create-new-feature.sh\" ]; then /setup-speckit; fi\n7. Run: /speckit-specify $0\n8. Read specs/ output. If there are open questions, answer them from pre-flight data, then run /speckit-clarify.\n9. Detect the feature branch created by specify: BRANCH=\$(git branch --show-current)\n\nWhen done: emit [pylot] phase=preflight status=done branch=\$BRANCH'))")
@@ -125,13 +139,13 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] preflight prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. **While it prints `POLL_RESULT=running`, run Step P again** (re-inline `WID` and `TURN_SEQ`). When it prints `POLL_RESULT=done`, read the printed worker output for `phase=preflight status=done`. If absent or `status=failed`, stop the worker and emit a failed outcome.
+Poll per **Step P** now — run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"` and **re-run it while `POLL_RESULT=running`**. When it prints `POLL_RESULT=done`, read the printed worker output for `phase=preflight status=done`. If absent or `status=failed`, stop the worker and emit a failed outcome.
 
 ---
 
 ## Step 3: speckit.plan — Plan + Tasks
 
-Queue the prompt, then run the **Poll-to-idle snippet (Step P)** with the Bash tool.
+Queue the prompt, then poll per **Step P**: run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"`, re-running it while `POLL_RESULT=running`.
 
 ```bash
 PROMPT=$(python3 -c "import json; print(json.dumps('Continue on the feature branch from the previous phase.\nRun: /speckit-plan $0\nRead specs/{issue-slug}/plan.md and verify the approach.\nRun: /speckit-tasks $0\nRead specs/{issue-slug}/tasks.md and verify tasks are concrete.\nWhen done: emit [pylot] phase=plan status=done'))")
@@ -144,13 +158,13 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] plan prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. **While it prints `POLL_RESULT=running`, run Step P again.** When it prints `POLL_RESULT=done`, check the printed worker output for `phase=plan status=done`. If blocked or failed, stop the worker and emit a blocked/failed outcome.
+Poll per **Step P** now — run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"` and **re-run it while `POLL_RESULT=running`**. When it prints `POLL_RESULT=done`, check the printed worker output for `phase=plan status=done`. If blocked or failed, stop the worker and emit a blocked/failed outcome.
 
 ---
 
 ## Step 4: speckit.implement — Implement + PR
 
-Queue the prompt, then run the **Poll-to-idle snippet (Step P)** with the Bash tool.
+Queue the prompt, then poll per **Step P**: run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"`, re-running it while `POLL_RESULT=running`.
 
 ```bash
 PROMPT=$(python3 -c "import json; print(json.dumps('Continue on the feature branch. Run: /speckit-implement $0\nAfter implementation:\n- Run the project test suite (fix failures before proceeding).\n- If dev server available: verify affected pages/APIs.\n- Commit spec files: git add specs/ && git diff --cached --quiet || git commit -m '\''docs: add speckit specs for issue #$0'\''\n- Push: git push origin \$(git branch --show-current)\n- Create PR: gh pr create --repo $REPO --head \$(git branch --show-current) --base \$(gh repo view $REPO --json defaultBranchRef -q .defaultBranchRef.name) --title '\''fix/feat: <description> (#$0)'\'' --body '\''[PR body from /create-compelling-prs template]'\''\n- Run: /speckit-analyze $0 && /speckit-checklist $0\nWhen done: emit [pylot] phase=implement status=done pr=<PR_URL>'))")
@@ -163,7 +177,7 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] implement prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Run the **Poll-to-idle snippet (Step P)** with the Bash tool now. **This is the longest phase — expect several `POLL_RESULT=running` chunks; run Step P again after each one** until it prints `POLL_RESULT=done`. Do not abandon the worker between chunks and do not wait for a background notification. When done, the printed output carries `phase=implement status=done pr=<PR_URL>`.
+Poll per **Step P** now — run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"`. **This is the longest phase — expect many `POLL_RESULT=running` returns; just run the same command again after each** until `POLL_RESULT=done`. Do not abandon the worker between calls, do not wait for a notification, do not end your turn. When done, the printed output carries `phase=implement status=done pr=<PR_URL>`.
 
 ---
 
@@ -208,7 +222,7 @@ fi
 ## Hard Rules
 
 - **Pre-flight is mandatory** — the worker must gather real data before speckit phases
-- **Poll in the foreground, in short chunks** — run Step P (default Bash timeout) after every phase; it returns in <2 min, so re-run it while it prints `POLL_RESULT=running`. Never pass a long Bash `timeout`, never let it get backgrounded, never wait for a notification, never end your turn while a worker turn is in flight (the session exits → bogus `"poll timeout"` on a healthy worker).
+- **Poll only via the script** — after every phase run `bash /tmp/speckit-poll.sh "$WID" "$TURN_SEQ"` (default Bash timeout); it returns in <2 min, so just run it again while it prints `POLL_RESULT=running`. Never hand-roll a poll loop, never pass a long Bash `timeout`, never let it get backgrounded, never wait for a notification, never end your turn while a worker turn is in flight (the session exits → bogus `"poll timeout"` on a healthy worker).
 - **Stop the worker** — always call /stop when done, even on failure
 - **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting
 - **"already complete" only at the dedup gate** — only emit this when the issue is genuinely CLOSED (Step 0); never for timeouts or missing notifications

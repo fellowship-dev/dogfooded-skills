@@ -86,7 +86,6 @@ Run stage 05 yourself in the orchestrator. Read CONTEXT.md:
 .claude/skills/flowchad-runner/stages/05-report/CONTEXT.md
 ```
 Aggregate the prior handoffs, post the PR comment / create failure issues, write the local
-report file, and emit the `[pylot] outcome=...` marker from the orchestrator (never a subagent).
 
 ## Stage handoff chain
 
@@ -99,11 +98,8 @@ report file, and emit the `[pylot] outcome=...` marker from the orchestrator (ne
 
 ## Exit paths
 
-- **Success**: stage 05 emits `[pylot] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
-- **Failure**: stage 05 emits `[pylot] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
   (failure issues already created in stage 05)
 - **Blocked**: stage 01 (no URL / deploy failed) or stage 02 (flow missing) emits
-  `[pylot] outcome="flowchad blocked: {reason}" status=blocked` and the chain stops.
 
 ## Hard Rules
 
@@ -111,7 +107,6 @@ report file, and emit the `[pylot] outcome=...` marker from the orchestrator (ne
    There is NO parallel fan-out anywhere in this procedure.
 2. **Flows are walked ONE AT A TIME inside stage 03** — never one subagent per flow. Flows
    share browser/session/persona state and would collide if run concurrently.
-3. **Stage 05 runs inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator,
    never a subagent.
 4. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
 5. **Each stage writes handoff.md before the next stage reads it.**

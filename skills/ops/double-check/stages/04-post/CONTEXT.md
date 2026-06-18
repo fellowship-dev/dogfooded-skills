@@ -1,6 +1,5 @@
 # Stage 04: Post (inline)
 
-Runs inline in the orchestrator — do NOT spawn a Task. The `[pylot] outcome=...` marker MUST be
 emitted from here.
 
 ## Inputs
@@ -105,7 +104,6 @@ do NOT read `QUEST_TOKEN`. The local report file is the only report sink.
 Emit from the orchestrator (never a subagent):
 
 ```
-[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}, {N} findings curated, {N} fixes pushed" status=success
 ```
 
 If the comment or label step failed, emit `status=failed` with the reason instead.
@@ -115,7 +113,6 @@ If the comment or label step failed, emit `status=failed` with the reason instea
 - `double-checked` label applied (after the comment)
 - Report file written to `reports/`
 - NO Quest POST anywhere
-- `[pylot] outcome=...` marker emitted from the orchestrator
 
 ## Failure
 - Comment post fails → emit `status=failed`, do NOT apply the label

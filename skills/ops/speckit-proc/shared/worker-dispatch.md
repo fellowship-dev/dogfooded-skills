@@ -37,7 +37,6 @@ On exit 2:
 1. Read last 30 lines of worker log
 2. Adjust prompt to address where the worker stalled
 3. Resume same session with adjusted prompt
-4. After 3 failed attempts: emit `[pylot] outcome="stalled" status=failed`
 
 ## Worker Log
 

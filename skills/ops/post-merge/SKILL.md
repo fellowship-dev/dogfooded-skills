@@ -114,10 +114,6 @@ For other deploy methods (`github-actions`, `manual`), dispatch a new job:
 if [ "$DEPLOY_METHOD" != "auto-pull" ]; then
   PYLOT_DIR="${PYLOT_DIR:-$HOME/projects/fellowship-dev/pylot}"
   curl -sS -X POST \
-    -H "Authorization: Bearer $(grep '^PYLOT_DISPATCH_TOKEN=' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)" \
-    -H "Content-Type: application/json" \
-    -d "$(python3 -c "import json; print(json.dumps({'agent':'${TEAM}.intern','task':'Check deployment for $REPO#$PR — $PR_TITLE','repo':'$REPO','context':'SHA: $PR_SHA. Health URL: $HEALTH_URL. Timeout: ${TIMEOUT_MINUTES:-5} minutes. Checker script: ${CHECKER_SCRIPT}. Run /deployment-checker $PR $REPO.'}))")" \
-    "http://127.0.0.1:3000/dispatch"
 else
   echo "[post-merge] Skipping deploy-check dispatch — auto-pull deploys are checked by auto-deploy.sh"
 fi

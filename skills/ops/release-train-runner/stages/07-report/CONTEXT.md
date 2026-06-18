@@ -13,7 +13,6 @@
 
 ## Task
 Write the durable local report file, then emit the outcome marker. This stage runs inline in the
-orchestrator — do NOT spawn a Task — and the `[pylot] outcome=...` marker MUST come from here,
 never from a subagent. **NO QUEST** — the local report file is the only reporting sink.
 
 ## Steps
@@ -31,7 +30,6 @@ reports/YYYY-MM-DD-release-train-ORG-REPO.md
    Replace `/` with `-` in the repo name (e.g. `Lexgo-cl/rails-backend` → `Lexgo-cl-rails-backend`).
 
 4. Emit the outcome marker from the orchestrator (inline):
-   - Success: `[pylot] outcome="release train ready: N PRs merged into release/YYYY-MM-DD" status=success`
    - If the chain reached here only because of a non-fatal teardown issue, still success — note the
      dangling env in the report.
 
@@ -55,7 +53,6 @@ reports/{YYYY-MM-DD}-release-train-{ORG-REPO}.md
 - Final tests: {PASS (N examples, M baseline)}
 
 ## Outcome Marker Emitted
-[pylot] outcome="release train ready: N PRs merged into release/YYYY-MM-DD" status=success
 ```
 
 ## Success criteria

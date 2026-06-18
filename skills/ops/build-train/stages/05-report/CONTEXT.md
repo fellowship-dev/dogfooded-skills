@@ -9,7 +9,6 @@
 
 ## Task
 Write the build-train report and emit the outcome marker. This stage runs INLINE in the
-orchestrator — the `[pylot] outcome=...` marker MUST come from here, never a subagent.
 
 ## Steps
 
@@ -40,9 +39,6 @@ orchestrator — the `[pylot] outcome=...` marker MUST come from here, never a s
 ```
 
 3. Emit the outcome marker (orchestrator only):
-   - Success (final PR opened): `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
-   - Failure (nothing shipped): `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
-   - Blocked (set at stage 00): `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`
 
 ## Output: handoff.md
 
@@ -58,7 +54,6 @@ outcome_marker: {the exact marker emitted}
 
 ## Success criteria
 - Report written with wave plan + per-issue table + what's-left section
-- Exactly one `[pylot] outcome=...` marker emitted, from the orchestrator
 
 ## Failure
 - Report write fails → still emit the outcome marker (the marker is the source of truth)

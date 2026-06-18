@@ -10,7 +10,6 @@
 ## Task
 Aggregate all flow results, post results to GitHub, create issues on failure, write the local
 report file, and emit the outcome marker. **This stage runs INLINE in the orchestrator — do
-NOT spawn a Task.** The `[pylot] outcome=...` marker MUST come from here.
 
 > NO Quest. There is no Quest POST, no `127.0.0.1:4242`, no `quest.fellowship.dev`, no
 > `QUEST_TOKEN`. Reporting is the GitHub surfaces + the local report file ONLY. Operators
@@ -86,17 +85,14 @@ GIF: [link if uploaded]
 ### 5. Emit outcome marker (from the orchestrator, never a subagent)
 ```
 # all passed
-[pylot] outcome="flowchad ${FLOW_NAME} on ${REPO}: all flows passed" status=success
 
 # one or more failed (issues already created in step 3)
-[pylot] outcome="flowchad ${FLOW_NAME} on ${REPO}: {N} flow(s) failed" status=failed
 ```
 
 ## Success criteria
 - Local report file written at `report_path`.
 - If `pr_number` set, PR comment posted.
 - On any flow failure, a `ready-to-work` issue created and `status=failed` emitted.
-- `[pylot] outcome=...` marker emitted in the orchestrator session.
 
 ## Failure
 - GitHub comment/issue API errors → log and continue; the report file + outcome marker are

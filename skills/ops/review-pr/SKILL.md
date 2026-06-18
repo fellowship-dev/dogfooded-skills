@@ -103,7 +103,6 @@ Run stage 02 yourself (orchestrator context). Read CONTEXT.md:
 skills/review-pr/stages/02-post/CONTEXT.md
 ```
 Post the comment, apply the `reviewed` label, write the local report file, and emit the
-`[pylot] outcome=...` marker from the orchestrator (never from a subagent).
 
 ## Stage handoff chain
 
@@ -117,17 +116,12 @@ Post the comment, apply the `reviewed` label, write the local report file, and e
 
 ## Exit paths
 
-- **Already complete**: stage 00 dedup gate hits → `[pylot] outcome="already complete — reviewed label already applied" status=success` (orchestrator, inline)
-- **Success**: stage 02 emits `[pylot] outcome="review-pr complete — reviewed label applied" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`
-
 ## Hard Rules
 
 1. **SEQUENTIAL ONLY** — stages run one after another. NO parallel Task launches.
 2. **Exactly one subagent stage (01)** — the whole-diff cohesive review. NO per-file fan-out, NO
    per-dimension split. The review must see the entire diff together for cross-file cohesion.
 3. **Stage 00 runs inline** — dedup gate + context gathering happen in the orchestrator.
-4. **Stage 02 runs inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator.
 5. **Never pass full orchestrator context** into the subagent — input handoff path only.
 6. **Each stage writes handoff.md before the next stage reads it.**
 7. **Read-only** — no `git clone`, no `git checkout`, no file modifications to the repo under

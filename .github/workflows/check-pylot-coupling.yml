@@ -1,0 +1,44 @@
+name: Check Pylot Coupling
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check-pylot-coupling:
+    name: No pylot internals in public skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail on pylot coupling in skills/ops
+        run: |
+          # Check for pylot internal markers in the coupled skills.
+          # write-report is excluded from the /missions/ check: it has a pre-existing
+          # local filesystem path reference (~/.local/share/pylot/missions/) that is
+          # not API coupling. All other patterns are checked across all of skills/ops/.
+          PATTERNS=(
+            'PYLOT_JOB_ID'
+            'PYLOT_DISPATCH_TOKEN'
+            '\[pylot\] outcome='
+            'pylot-workers'
+          )
+          found=0
+          for p in "${PATTERNS[@]}"; do
+            if grep -r "$p" skills/ops/ 2>/dev/null; then
+              echo "ERROR: Pylot coupling pattern found: $p"
+              found=1
+            fi
+          done
+          # /missions/ checked separately to exclude write-report's local-path false positive
+          if grep -r '/missions/' skills/ops/ --exclude-dir=write-report 2>/dev/null; then
+            echo "ERROR: Pylot coupling pattern found: /missions/"
+            found=1
+          fi
+          if [ "$found" -eq 1 ]; then
+            echo ""
+            echo "FAILED: Pylot internal markers found in public skills/ops/."
+            echo "Strip markers from the public skill and move wiring to fellowship-dev/pylot-skills."
+            exit 1
+          fi
+          echo "OK: No pylot coupling found in skills/ops/"

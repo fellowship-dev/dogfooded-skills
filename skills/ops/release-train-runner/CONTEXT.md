@@ -37,7 +37,6 @@ with isolated context. No stage ever runs concurrently with another.
 - Stage 04: regenerate lockfiles only if a merged PR touched deps; re-test. Always runs.
 - Stage 05: push the release branch (never force) and open one release PR (never auto-merge it).
 - Stage 06: write async trigger notification; release/stop the remote compute.
-- Stage 07: inline. Write the local report file, then emit `[pylot] outcome=...` from the
   orchestrator. **No Quest.**
 
 ## Folder map
@@ -59,6 +58,3 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="release train ready: N PRs merged into release/YYYY-MM-DD" status=success`
-- Failure: `[pylot] outcome="release-train failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="release-train blocked: {reason}" status=blocked`

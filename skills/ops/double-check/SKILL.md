@@ -92,7 +92,6 @@ Run stage 04 yourself in the orchestrator context — do NOT spawn a Task. Read 
 ```
 skills/double-check/stages/04-post/CONTEXT.md
 ```
-Post the comment, apply the label, write the report file, and emit the `[pylot] outcome=...`
 marker from the orchestrator (never from a subagent).
 
 ## Stage handoff chain
@@ -105,10 +104,7 @@ marker from the orchestrator (never from a subagent).
 
 ## Exit paths
 
-- **Success**: stage 04 emits `[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
 - **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR) →
-  `[pylot] outcome="double-check blocked: {reason}" status=blocked`
 
 ## Hard Rules
 
@@ -118,7 +114,6 @@ marker from the orchestrator (never from a subagent).
    single verdict.
 3. **Stage 02 gets a clean context** — only the setup handoff (PR + first review + diff). Never
    pass orchestrator history into it.
-4. **Stage 04 runs inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator.
 5. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
 6. **Each stage writes handoff.md before the next stage reads it.**
 7. **Do not skip stages** except stage 03 when `fixes_needed: false` (an explicit, allowed skip).

@@ -90,7 +90,6 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
      ```
   3. Emit outcome:
      ```
-     [pylot] outcome="cto-review blocked: missing staging evidence on PR #{PR}" status=blocked
      ```
   Then stop — no further stages.
 - Otherwise → continue to stage 02.
@@ -125,7 +124,6 @@ Run stage 03 yourself (orchestrator context). Read CONTEXT.md:
 skills/cto-review/stages/03-synthesize-act/CONTEXT.md
 ```
 Post the comment, apply the label, merge-or-label, write the report file, and emit the
-`[pylot] outcome=...` marker from the orchestrator (not from a subagent).
 
 ## Stage handoff chain
 
@@ -138,18 +136,12 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 
 ## Exit paths
 
-- **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- **Blocked (evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked`
-
 ## Hard Rules
 
 1. **Sequential only** — one subagent at a time, never parallel Task launches.
 2. **Stage 02 is the isolated judgement step** — it receives ONLY the setup handoff + its CONTEXT.md.
 3. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
 4. **The whole diff is reviewed in ONE cohesive stage** — never split per-file or per-dimension.
-5. **Stage 03 runs inline** — GH side effects and the `[pylot] outcome=...` marker MUST come from the orchestrator.
 6. **Each stage writes handoff.md before the next stage reads it.**
 7. **Do not skip stages** — every stage executes, except stage 02 is skipped only on the CLOSED-no-merge short-circuit.
 8. **Honor merge state** — never merge a CLOSED PR; for an already-merged PR, post the review as a post-merge note and never attempt merge.

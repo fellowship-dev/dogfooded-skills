@@ -74,7 +74,6 @@ Stage handoffs are written to:
 4. **Emit outcome marker:**
 
    ```
-   [pylot] outcome="speckit-proc complete: <summary>" status=success
    ```
 
 ## Resume

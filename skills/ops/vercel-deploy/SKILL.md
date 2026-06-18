@@ -240,11 +240,9 @@ echo "[vercel-deploy] $VERIFY_URL → HTTP $HTTP_STATUS"
 case "$HTTP_STATUS" in
   200|301|302)
     echo "[vercel-deploy] Stage 05 complete — production domain verified"
-    echo "[pylot] outcome=\"vercel-deploy succeeded\" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done"
     ;;
   *)
     echo "[vercel-deploy] Stage 05 failed: $VERIFY_URL returned HTTP $HTTP_STATUS"
-    echo "[pylot] outcome=\"vercel-deploy failed at stage 05: $PROD_DOMAIN returned HTTP $HTTP_STATUS\" status=failed"
     exit 1
     ;;
 esac
@@ -269,12 +267,10 @@ esac
 If any stage fails:
 1. Print which stage failed and the exact error
 2. Include the Vercel API response body if available
-3. Emit: `[pylot] outcome="vercel-deploy failed at stage <NN>: <reason>" status=failed`
 4. Do NOT retry automatically
 
 ## Outcome
 
 On success, emit:
 ```
-[pylot] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done
 ```

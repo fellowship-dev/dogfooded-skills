@@ -30,7 +30,6 @@ over here.
 
 - Stages 01 and 02 are read-only — no GH comments, no labels, no merge.
 - Stage 02 is the ONLY judgement point and runs in isolated context — setup handoff in, verdict out.
-- Stage 03 is the ONLY side-effecting stage and runs inline so the `[pylot] outcome=...` marker
   comes from the orchestrator, never a subagent.
 - Merge state is authoritative: a CLOSED-not-merged PR short-circuits (skip 02); an already-merged
   PR gets a post-merge review note and is never re-merged.
@@ -56,6 +55,3 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
-- Failure: `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`

@@ -30,5 +30,3 @@ stages/03/references/  — gap-checklist.md
 ```
 
 ## Emit on completion
-- Questions path: `[pylot] outcome="questions posted" status=success`
-- PRD path: `[pylot] outcome="PRD published" status=success`

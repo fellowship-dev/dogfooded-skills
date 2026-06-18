@@ -30,7 +30,6 @@ Stage 05 (report) runs inline in the orchestrator so it can emit the outcome mar
   Flows never overlap.
 - Stage 04: best-effort evidence upload. Failure here never blocks; it degrades to "no URLs".
 - Stage 05: inline. Aggregates, posts PR comment, creates failure issues, writes the local
-  report file, emits `[pylot] outcome=...` from the orchestrator. NO Quest, no dashboards.
 
 ## Folder map
 
@@ -52,6 +51,3 @@ Per-flow evidence (screenshots, video, GIF, results.json) lands under
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
-- Failure: `[pylot] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
-- Blocked: `[pylot] outcome="flowchad blocked: {reason}" status=blocked`

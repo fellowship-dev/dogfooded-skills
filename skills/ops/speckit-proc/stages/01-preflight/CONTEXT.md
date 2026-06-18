@@ -16,7 +16,6 @@ Gather all context needed before touching code. Operator-only -- no worker neede
    ```bash
    ISSUE_STATE=$(gh issue view $0 --repo $1 --json state --jq '.state')
    ```
-   If CLOSED: emit `[pylot] outcome="already complete -- issue is CLOSED" status=success` and stop.
 
 2. Fetch issue details:
    ```bash

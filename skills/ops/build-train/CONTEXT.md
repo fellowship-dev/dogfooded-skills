@@ -53,7 +53,6 @@ are skipped too (cannot consume missing output).
 - Stage 02: the only stage that spawns build workers; parallel within waves, sequential across edges.
 - Stage 03: merges PRs into the build branch; resolves conflicts.
 - Stage 04: opens the single final PR (no build-train label) → enters review pipeline.
-- Stage 05: inline. MUST emit `[pylot] outcome=...` from the orchestrator, never a subagent.
 
 ## Folder map
 
@@ -74,6 +73,3 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
-- Failure: `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`

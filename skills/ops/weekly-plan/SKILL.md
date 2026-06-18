@@ -29,9 +29,7 @@ The hourly `auto-pylot` is a tight executor: it triages cheaply and dispatches t
 ## Environment
 ```bash
 export TEAM="${1:?usage: /weekly-plan team [org/repo]}"; export REPO_FILTER="${2:-}"
-: "${PYLOT_DISPATCH_TOKEN:?}"
 PYLOT_API="${PYLOT_API:-${PYLOT_API_URL:-${PYLOT_GATEWAY_URL:?set PYLOT_API or PYLOT_GATEWAY_URL}}}"
-GW(){ curl -sS -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" "$@"; }
 ```
 **GitHub auth — never require a static `GH_TOKEN`.** In an operator or pylot-chat session, auth is already wired via the platform's GitHub App installation tokens (`git-credential-pylot`; `gh` works for every org the App installation covers). In a local Claude Code session, use the identity `gh auth status` already has, routed per target org. If `gh` can't read a team repo, stop and say which org needs access — don't ask for a PAT.
 

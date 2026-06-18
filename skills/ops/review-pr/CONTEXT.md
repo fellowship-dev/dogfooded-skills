@@ -38,7 +38,6 @@ multiplies cost and loses the holistic verdict. The whole diff is reviewed toget
 - Stage 01: pure analysis, no side effects. Sees the whole diff. Confidence threshold 80. Verdict
   is always "proceed to double-check" — never blocks.
 - Stage 02: inline, the only side-effecting stage (comment + label + report file). MUST emit
-  `[pylot] outcome=...` from the orchestrator, never a subagent.
 - Read-only throughout: no checkout, no fixes, no pushes. Diff comes from `gh pr diff`.
 - NO QUEST anywhere: reporting is the local report file only.
 
@@ -62,6 +61,3 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Already complete: `[pylot] outcome="already complete — reviewed label already applied" status=success`
-- Success: `[pylot] outcome="review-pr complete — reviewed label applied" status=success`
-- Failure: `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`

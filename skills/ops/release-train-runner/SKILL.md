@@ -12,7 +12,6 @@ one PR at a time, in order. Run the full test suite after each merge. Produce on
 with conflicts documented and a unified manual test plan, plus a local report.
 
 **This skill runs in the OPERATOR session** and owns its worker lifecycle. It spawns a repo
-worker devbox via the gateway worker API (see `pylot-workers` skill) and drives stages 01-06
 through the worker. Stage 00 (claim compute) and stage 07 (report + outcome marker) run
 inline in the operator.
 
@@ -27,21 +26,14 @@ Spawn a worker at stage 00 (after claiming compute) for stages 01-06:
 ```bash
 REPO="${0:-$PYLOT_REPO}"
 SPAWN_RESP=$(curl -s --max-time 90 -X POST \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"repo\": \"$REPO\"}" \
-  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
 WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))' 2>/dev/null)
 ```
 
-Drive each stage as a separate prompt using the `pylot-workers` drive loop pattern. Poll to
 idle between stages. Stop the worker after stage 06 completes, before the inline stage 07
 writes the report and emits the outcome marker:
 
 ```bash
 curl -s --max-time 30 -X POST \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop" >/dev/null 2>&1 || true
 ```
 
 ## Arguments
@@ -130,7 +122,6 @@ Run stage 07 yourself (orchestrator context). Read CONTEXT.md:
 ```
 .claude/skills/release-train-runner/stages/07-report/CONTEXT.md
 ```
-Write the local report file, then emit the `[pylot] outcome=...` marker from the orchestrator
 (never from a subagent).
 
 ## Stage handoff chain
@@ -145,11 +136,8 @@ Write the local report file, then emit the `[pylot] outcome=...` marker from the
 ## Exit paths
 
 - **Success**: stage 07 emits
-  `[pylot] outcome="release train ready: N PRs merged into release/YYYY-MM-DD" status=success`
 - **Failure**: failing stage emits
-  `[pylot] outcome="release-train failed at stage NN: {reason}" status=failed`
 - **Blocked**: no compute claimable (00) or no valid PRs to merge (01) →
-  `[pylot] outcome="release-train blocked: {reason}" status=blocked`
 
 The outcome marker is always emitted by the orchestrator (inline), never by a subagent.
 
@@ -164,7 +152,6 @@ The outcome marker is always emitted by the orchestrator (inline), never by a su
    review across files or dimensions.
 4. **Stage 00 runs inline** — compute is claimed in orchestrator context so `REMOTE_EXEC` /
    `REPO_DIR` are stable for downstream stages.
-5. **Stage 07 runs inline** — `[pylot] outcome=...` marker MUST come from the orchestrator.
 6. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
 7. **Each stage writes handoff.md before the next stage reads it.**
 8. **Do not skip stages** — every stage executes even if its action is "nothing to do"

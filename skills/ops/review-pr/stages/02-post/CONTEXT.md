@@ -9,7 +9,6 @@
 ## Task
 Post the structured review comment, apply the `reviewed` label, and write the local report file.
 This stage runs inline in the orchestrator — do NOT spawn a Task. It is the only side-effecting
-stage. The `[pylot] outcome=...` marker MUST come from the orchestrator here, never from a
 subagent. NO Quest — write the local report file only.
 
 ## Steps
@@ -109,10 +108,6 @@ report. (There is no Quest step.)
 
 ### Step 4: Emit outcome marker (orchestrator, inline)
 
-```bash
-echo "[pylot] outcome=\"review-pr complete — reviewed label applied\" status=success"
-```
-
 ## Output: handoff.md
 
 Path: `.procedure-output/review-pr/02-post/handoff.md`
@@ -129,7 +124,6 @@ Posted
 - Report written to {REPORT_FILE}
 
 ## Outcome
-[pylot] outcome="review-pr complete — reviewed label applied" status=success
 ```
 
 ## Success criteria
@@ -137,8 +131,6 @@ Posted
 - `reviewed` label applied AFTER the comment posted
 - `double-checked` label NOT applied
 - Local report file written; NO Quest POST performed
-- `[pylot] outcome=...` marker emitted from the orchestrator
 
 ## Failure
 - Comment post fails → do NOT apply the label; emit
-  `[pylot] outcome="review-pr failed at stage 02: comment post failed" status=failed`

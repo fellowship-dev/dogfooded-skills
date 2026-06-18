@@ -103,7 +103,6 @@ stop only if the failure is unrecoverable (see Exit paths).
 
 ### Stage 05 (inline)
 
-Run yourself. Read CONTEXT.md and emit the `[pylot] outcome=...` marker from the orchestrator
 (never from a subagent).
 
 ## Stage handoff chain
@@ -123,10 +122,6 @@ Run yourself. Read CONTEXT.md and emit the `[pylot] outcome=...` marker from the
 
 ## Exit paths
 
-- **Success**: stage 05 emits `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
-- **Blocked**: stage 00 finds an existing `build/*` train in progress → `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`
-
 Per-build failures inside stage 02 do NOT fail the train — the failed issue is skipped and the
 train proceeds (skip-rather-than-break). The train only fails if zero builds succeed.
 
@@ -141,7 +136,6 @@ train proceeds (skip-rather-than-break). The train only fails if zero builds suc
 7. **Skip rather than break** — a failed build or unmergeable PR is skipped and logged; the train continues.
 8. **One build-train per repo at a time** — stage 00 checks for existing `build/*` branches before starting.
 9. **SCOPE LOCK** — each worker works only its assigned issue, nothing else.
-10. **Stage 00 and 05 run inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator.
 11. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
 12. **Each stage writes handoff.md before the next reads it.** No stage skipped (execute even if action is "nothing to do").
 

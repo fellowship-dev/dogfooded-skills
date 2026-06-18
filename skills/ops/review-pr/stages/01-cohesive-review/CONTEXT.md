@@ -110,4 +110,3 @@ Path: `.procedure-output/review-pr/01-cohesive-review/handoff.md`
 
 ## Failure
 - Diff missing/empty in the handoff → emit a handoff noting the failure; the orchestrator emits
-  `[pylot] outcome="review-pr failed at stage 01: {reason}" status=failed`

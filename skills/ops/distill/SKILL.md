@@ -21,7 +21,6 @@ Post-mission audit and distillation for crew operations. Two modes:
 
 ```bash
 python3 --version                       # needed for log parsing
-echo "${PYLOT_DISPATCH_TOKEN:?PYLOT_DISPATCH_TOKEN not set}"  # auth token required
 ```
 
 ## Failure Taxonomy
@@ -53,12 +52,10 @@ The skill receives `job_id` from the task input (e.g. `task: 'distill capture ab
 
 ```bash
 # Required
-PYLOT_DISPATCH_TOKEN    # Bearer token for hooks.fellowship.dev
 ```
 
 All API calls go to `https://hooks.fellowship.dev` with header:
 ```
-Authorization: Bearer $PYLOT_DISPATCH_TOKEN
 ```
 
 ### Step 1: Fetch mission metadata + anti-recursion guard
@@ -67,8 +64,6 @@ Fetch mission record from the Pylot API. Extract metadata and apply the anti-rec
 
 ```bash
 MISSION=$(curl -sf \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  "https://hooks.fellowship.dev/missions/${job_id}")
 
 if [ $? -ne 0 ] || [ -z "$MISSION" ]; then
   echo "ERROR: Failed to fetch mission $job_id"
@@ -96,10 +91,6 @@ fi
 
 ```bash
 curl -sf \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  -H "Accept: text/event-stream" \
-  "https://hooks.fellowship.dev/missions/${job_id}/logs/stream" \
-  > /tmp/distill_logs_${job_id}.txt
 
 echo "Log stream saved."
 ```
@@ -597,10 +588,6 @@ PYEOF
 # POST audit to Pylot API
 HTTP_STATUS=$(curl -sf -w "%{http_code}" -o /tmp/distill_audit_response.txt \
   -X POST \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "$AUDIT_JSON" \
-  "https://hooks.fellowship.dev/missions/${job_id}/audit")
 
 if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
   echo "Audit posted: $HTTP_STATUS"
@@ -627,7 +614,6 @@ fi
 
 ```bash
 # Required
-PYLOT_DISPATCH_TOKEN  # Bearer token for hooks.fellowship.dev
 
 # Optional
 ISSUE_REPO            # Target repo for GitHub issues (default: fellowship-dev/commander)
@@ -635,7 +621,6 @@ ISSUE_REPO            # Target repo for GitHub issues (default: fellowship-dev/c
 
 All API calls include the header:
 ```
-Authorization: Bearer $PYLOT_DISPATCH_TOKEN
 ```
 
 ### Step 1: Fetch audit data
@@ -643,7 +628,6 @@ Authorization: Bearer $PYLOT_DISPATCH_TOKEN
 Fetch audit records and aggregated stats from `hooks.fellowship.dev` for the past 7 days, plus the prior 7-day period for trend comparison:
 
 ```bash
-AUTH_HEADER="Authorization: Bearer $PYLOT_DISPATCH_TOKEN"
 
 AUDITS=$(curl -sf \
   -H "$AUTH_HEADER" \
@@ -825,7 +809,6 @@ echo "$AGGREGATE" > /tmp/distill_agg.json
 python3 << 'PYEOF'
 import json, os, urllib.request, urllib.error
 
-token = os.environ.get("PYLOT_DISPATCH_TOKEN", "")
 with open("/tmp/distill_agg.json") as _f:
     agg = json.load(_f)
 
@@ -968,7 +951,6 @@ Capture is dispatched by the poller after every mission — not declared in YAML
 
 ## Critical Rules
 
-- **Idempotent** — POST /missions/{job_id}/audit returns 409 if already captured; exit 0 on 409
 - **One issue per pattern** — deduplicate by `[distill]` title prefix before creating GitHub issues
 - **`??` codes are growth signals** — track frequency; 3+ `??` in analyze means the taxonomy needs a new code
 - **Labels must exist** before `gh issue create` — the skill creates them if missing

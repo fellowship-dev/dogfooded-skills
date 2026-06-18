@@ -17,7 +17,6 @@ ANY of the following triggers questions:
 1. Batch ALL gaps into a single numbered list Q1-Qn (one comment only — never two)
 2. Post comment: `gh issue comment {number} --repo {repo} --body "..."`
 3. Add label: `gh issue edit {number} --repo {repo} --add-label "open-questions"`
-4. Emit: `[pylot] outcome="questions posted" status=success`
 5. STOP — do not proceed to stage 07
 
 **If all clear → PRD draft:**

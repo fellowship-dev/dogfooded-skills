@@ -33,7 +33,6 @@ NOT parallelism. There is no fan-out anywhere in this proc.
   NICE-TO-HAVE) fixes in `REPO_DIR`, re-runs the test suite, and pushes. Skipped entirely if
   stage 02 reported `fixes_needed: false`.
 - **04-post** (inline): posts the curated review comment, applies the `double-checked` label,
-  writes the local report file, and emits the `[pylot] outcome=...` marker. Inline so the marker
   comes from the orchestrator.
 
 ## Key invariants
@@ -43,7 +42,6 @@ NOT parallelism. There is no fan-out anywhere in this proc.
 - Stage 03 is the only stage that mutates code; it is conditional on `fixes_needed: true`.
 - The `double-checked` label is applied only after the comment posts (stage 04).
 - NO Quest anywhere. Reporting = local report file only.
-- Stage 04 inline. MUST emit `[pylot] outcome=...` from orchestrator, never a subagent.
 
 ## Folder map
 
@@ -64,6 +62,3 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}" status=success`
-- Failure: `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="double-check blocked: {reason}" status=blocked`

@@ -619,9 +619,6 @@ Discovery artifacts are ephemeral. Reports and doc changes are committed.
 **Crew mission** (dispatched via Pylot):
 ```bash
 curl -X POST "$PYLOT_DISPATCH_URL" \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"agent":"crew.lead","task":"Run popsicle in loop mode on this repo. Commit doc improvements and reports.","repo":"org/repo"}'
 ```
 
 ---

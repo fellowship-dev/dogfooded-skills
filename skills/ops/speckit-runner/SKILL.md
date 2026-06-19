@@ -215,6 +215,7 @@ RESP=$(curl -sf -X POST "${STAGING_URL}/admin/deploy" \
 
 if [ -z "$RESP" ]; then
   PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
   { printf '%s\n\n' "$PR_BODY"
     printf '## Staging Evidence\n'
     printf '- **Branch:** `%s`\n' "$BRANCH"
@@ -244,6 +245,7 @@ for i in $(seq 1 30); do
     SUCCEEDED) DEPLOY_OK=1; break ;;
     FAILED|STOPPED)
       PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+      PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
       { printf '%s\n\n' "$PR_BODY"
         printf '## Staging Evidence\n'
         printf '- **Branch:** `%s`\n' "$BRANCH"
@@ -260,6 +262,7 @@ for i in $(seq 1 30); do
 done
 if [ "$DEPLOY_OK" -eq 0 ]; then
   PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
   { printf '%s\n\n' "$PR_BODY"
     printf '## Staging Evidence\n'
     printf '- **Branch:** `%s`\n' "$BRANCH"
@@ -293,6 +296,7 @@ done
 
 if [ "$HEALTH_OK" -eq 0 ]; then
   PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
   { printf '%s\n\n' "$PR_BODY"
     printf '## Staging Evidence\n'
     printf '- **Branch:** `%s`\n' "$BRANCH"
@@ -313,7 +317,10 @@ Step 7 — Compare live sha to PR HEAD sha (first 8 chars):
 LIVE_SHORT=$(printf '%s' "$LIVE_SHA" | cut -c1-8)
 EVIDENCE_TYPE="real"
 SHA_NOTE=""
-if [ -n "$HEAD_SHORT" ] && [ "$LIVE_SHORT" != "$HEAD_SHORT" ]; then
+if [ -z "$HEAD_SHORT" ]; then
+  EVIDENCE_TYPE="stale"
+  SHA_NOTE=" (SHA unverifiable — could not fetch PR HEAD)"
+elif [ "$LIVE_SHORT" != "$HEAD_SHORT" ]; then
   EVIDENCE_TYPE="stale"
   SHA_NOTE=" (SHA MISMATCH: expected $HEAD_SHORT, got $LIVE_SHORT)"
 fi
@@ -334,9 +341,10 @@ else: print(0)
 rm -f "$CREW_TMP"
 ```
 
-Step 9 — Append evidence block to PR body (do NOT replace the existing body):
+Step 9 — Append evidence block to PR body (strip prior evidence section first to avoid accumulation):
 ```bash
 PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
 { printf '%s\n\n' "$PR_BODY"
   printf '## Staging Evidence\n'
   printf '- **Branch:** `%s`\n' "$BRANCH"

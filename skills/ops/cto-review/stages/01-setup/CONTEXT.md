@@ -147,11 +147,16 @@ EOF
         exit 0
       fi
 
+      # N/A bypass — docs-only PRs emit no deployed_sha; pass them through
+      if echo "$PR_BODY" | grep -A3 '## Staging Evidence' | grep -qF 'N/A'; then
+        echo "[cto-review] staging evidence gate: PASSED (N/A — docs-only PR)"
+      else
+
       # Extract deployed_sha from evidence block and compare to current PR HEAD
       EVIDENCE_SHA=$(echo "$PR_BODY" | python3 -c "
 import sys, re
 body = sys.stdin.read()
-m = re.search(r'deployed_sha[^` \n]*\`([0-9a-f]{7,40})', body)
+m = re.search(r'deployed_sha[^\`\n]*\`([0-9a-f]{7,40})', body)
 print(m.group(1) if m else '')
 " 2>/dev/null || echo "")
       PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefSha --jq '.headRefSha' 2>/dev/null | cut -c1-8 || echo "")
@@ -188,6 +193,7 @@ ${CHANGED_FILES}
 EOF
         exit 0
       fi
+      fi  # end N/A bypass else branch
     else
       echo "[cto-review] staging evidence gate: BLOCKED — ## Staging Evidence missing"
       # Write a minimal handoff for the orchestrator to act on

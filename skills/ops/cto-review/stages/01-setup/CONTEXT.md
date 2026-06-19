@@ -125,7 +125,75 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
     # Fetch PR body to check for evidence section
     PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
     if echo "$PR_BODY" | grep -qF '## Staging Evidence'; then
-      echo "[cto-review] staging evidence gate: PASSED"
+      # Section exists — now validate it is real, current evidence (not pending/stale)
+      # Check for pending placeholder — always block
+      if echo "$PR_BODY" | grep -A2 '## Staging Evidence' | grep -qE '>\s*pending'; then
+        echo "[cto-review] staging evidence gate: BLOCKED — evidence is pending"
+        mkdir -p .procedure-output/cto-review/01-setup
+        cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+# Stage 01: Setup
+
+## PR Identity
+- PR: #${PR}
+- Repo: ${REPO}
+
+## Merge State
+- merge_state: open
+- short_circuit: missing-staging-evidence
+
+## Changed Files
+${CHANGED_FILES}
+EOF
+        exit 0
+      fi
+
+      # N/A bypass — docs-only PRs emit no deployed_sha; pass them through
+      if echo "$PR_BODY" | grep -A3 '## Staging Evidence' | grep -qF 'N/A'; then
+        echo "[cto-review] staging evidence gate: PASSED (N/A — docs-only PR)"
+      else
+
+      # Extract deployed_sha from evidence block and compare to current PR HEAD
+      EVIDENCE_SHA=$(echo "$PR_BODY" | python3 -c "
+import sys, re
+body = sys.stdin.read()
+m = re.search(r'deployed_sha[^\`\n]*\`([0-9a-f]{7,40})', body)
+print(m.group(1) if m else '')
+" 2>/dev/null || echo "")
+      PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefSha --jq '.headRefSha' 2>/dev/null | cut -c1-8 || echo "")
+
+      SHA_VALID=false
+      if [ -n "$EVIDENCE_SHA" ] && [ -n "$PR_HEAD_SHA" ]; then
+        EVIDENCE_SHORT=$(printf '%s' "$EVIDENCE_SHA" | cut -c1-8)
+        [ "$EVIDENCE_SHORT" = "$PR_HEAD_SHA" ] && SHA_VALID=true
+      fi
+
+      if [ "$SHA_VALID" = "true" ]; then
+        echo "[cto-review] staging evidence gate: PASSED (deployed_sha=${EVIDENCE_SHORT} matches PR HEAD)"
+      else
+        if [ -z "$EVIDENCE_SHA" ]; then
+          GATE_REASON="deployed_sha not found in evidence block"
+        else
+          GATE_REASON="deployed_sha ${EVIDENCE_SHORT:-$EVIDENCE_SHA} does not match PR HEAD ${PR_HEAD_SHA} (stale evidence)"
+        fi
+        echo "[cto-review] staging evidence gate: BLOCKED — $GATE_REASON"
+        mkdir -p .procedure-output/cto-review/01-setup
+        cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+# Stage 01: Setup
+
+## PR Identity
+- PR: #${PR}
+- Repo: ${REPO}
+
+## Merge State
+- merge_state: open
+- short_circuit: missing-staging-evidence
+
+## Changed Files
+${CHANGED_FILES}
+EOF
+        exit 0
+      fi
+      fi  # end N/A bypass else branch
     else
       echo "[cto-review] staging evidence gate: BLOCKED — ## Staging Evidence missing"
       # Write a minimal handoff for the orchestrator to act on

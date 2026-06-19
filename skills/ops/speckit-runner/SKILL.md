@@ -131,6 +131,273 @@ Poll per **Step P** now — run `bash ~/.claude/skills/speckit-runner/poll-worke
 
 ---
 
+## Step 4.5: staging-validation — Deploy Branch to Staging + Post Evidence
+
+After Step 4's poll-to-idle returns `POLL_RESULT=done`, re-fetch the worker output to extract the PR number, then queue the staging-validation worker prompt and poll to idle. This phase can take 15–30 minutes — expect many `POLL_RESULT=running` returns.
+
+```bash
+# Re-fetch worker output to extract PR number
+ST=$(curl -s --max-time 20 -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}")
+WORKER_OUT=$(echo "$ST" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("last_output",""))' 2>/dev/null)
+PR_NUM_45=$(echo "$WORKER_OUT" | python3 -c '
+import sys, re, collections
+wo = sys.stdin.read()
+repo = "'$REPO'"
+nums = re.findall(r"github\.com/%s/pull/(\d+)" % re.escape(repo), wo) if repo else []
+if not nums: nums = re.findall(r"/pull/(\d+)", wo)
+if not nums: raise SystemExit
+cnt = collections.Counter(nums); last = {n: i for i, n in enumerate(nums)}
+print(max(set(nums), key=lambda n: (cnt[n], last[n])))
+' 2>/dev/null)
+
+if [ -z "$PR_NUM_45" ]; then
+  echo "[speckit-runner] Phase 4.5 skipped — no PR number found in implement output"
+else
+  PROMPT=$(PR_NUM="$PR_NUM_45" REPO="$REPO" python3 << 'PYEOF'
+import json, os
+
+pr = os.environ['PR_NUM']
+repo = os.environ['REPO']
+
+# Use str.replace() substitution so bash ${VAR} and {} are not escaped
+prompt = """You are continuing on the feature branch after opening PR #PLACEHOLDER_PR in PLACEHOLDER_REPO.
+
+Phase 4.5 — Staging Validation:
+
+Run the following steps. Execute each bash block. When all steps complete, emit the final phase marker.
+
+Step 1 — Credential guard:
+```bash
+STAGING_URL="${PYLOT_STAGING_URL:-}"
+STAGING_TOKEN="${PYLOT_STAGING_DISPATCH_TOKEN:-}"
+if [ -z "$STAGING_URL" ] || [ -z "$STAGING_TOKEN" ]; then
+  echo "[pylot] phase=staging-validation status=blocked reason=\\"staging credentials missing\\""
+  exit 0
+fi
+STAGING_URL="${STAGING_URL%/}"
+PR_NUM="PLACEHOLDER_PR"
+REPO="PLACEHOLDER_REPO"
+```
+
+Step 2 — Resolve branch and PR HEAD sha:
+```bash
+BRANCH=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName --jq '.headRefName' 2>/dev/null || git rev-parse --abbrev-ref HEAD)
+HEAD_SHA=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefSha --jq '.headRefSha' 2>/dev/null || echo "")
+HEAD_SHORT=$(printf '%s' "$HEAD_SHA" | cut -c1-8)
+echo "[staging-validation] branch=$BRANCH expected_sha=$HEAD_SHORT"
+```
+
+Step 3 — Check deployable surface (N/A path for docs-only PRs):
+```bash
+CHANGED_FILES=$(gh pr diff "$PR_NUM" --repo "$REPO" --name-only 2>/dev/null || echo "")
+NEEDS_DEPLOY=false
+while IFS= read -r f; do
+  case "$f" in infra/*|gateway/*|crew.mjs|*/migrations/*.sql|src/*) NEEDS_DEPLOY=true; break ;; esac
+done <<< "$CHANGED_FILES"
+
+if [ "$NEEDS_DEPLOY" = "false" ]; then
+  PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  { printf '%s\n\n' "$PR_BODY"; printf '## Staging Evidence\n> N/A — no deployable surface changed\n'; } > /tmp/pr_body_$$.md
+  gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null || true
+  rm -f /tmp/pr_body_$$.md
+  echo "[pylot] phase=staging-validation status=done evidence=na"
+  exit 0
+fi
+```
+
+Step 4 — Deploy branch to staging:
+```bash
+echo "[staging-validation] deploying $BRANCH to staging..."
+RESP=$(curl -sf -X POST "${STAGING_URL}/admin/deploy" \
+  -H "Authorization: Bearer $STAGING_TOKEN" -H "Content-Type: application/json" \
+  -d "{\\"source_version\\": \\"$BRANCH\\"}" 2>/dev/null || echo "")
+
+if [ -z "$RESP" ]; then
+  PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  { printf '%s\n\n' "$PR_BODY"
+    printf '## Staging Evidence\n'
+    printf '- **Branch:** `%s`\n' "$BRANCH"
+    printf '- **Result:** FAILED (deploy trigger unreachable)\n'
+    printf '- **deployed_sha:** (unavailable)\n'; } > /tmp/pr_body_$$.md
+  gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null || true
+  rm -f /tmp/pr_body_$$.md
+  # Restore staging
+  curl -sf -X POST "${STAGING_URL}/admin/deploy" -H "Authorization: Bearer $STAGING_TOKEN" \
+    -H "Content-Type: application/json" -d '{"source_version":"develop"}' >/dev/null 2>&1 || true
+  echo "[pylot] phase=staging-validation status=done evidence=failed"
+  exit 0
+fi
+BUILD_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('build_id',''))" 2>/dev/null || echo "")
+echo "[staging-validation] build_id=$BUILD_ID"
+```
+
+Step 5 — Poll build status (up to 30x30s = 15 min):
+```bash
+DEPLOY_OK=0
+for i in $(seq 1 30); do
+  sleep 30
+  SRESP=$(curl -sf "${STAGING_URL}/admin/build-worker/$BUILD_ID" -H "Authorization: Bearer $STAGING_TOKEN" 2>/dev/null || echo "{}")
+  BSTAT=$(echo "$SRESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
+  echo "[staging-validation] [build $i/30] $BSTAT"
+  case "$BSTAT" in
+    SUCCEEDED) DEPLOY_OK=1; break ;;
+    FAILED|STOPPED)
+      PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+      { printf '%s\n\n' "$PR_BODY"
+        printf '## Staging Evidence\n'
+        printf '- **Branch:** `%s`\n' "$BRANCH"
+        printf '- **Build ID:** `%s`\n' "$BUILD_ID"
+        printf '- **Result:** BUILD %s\n' "$BSTAT"
+        printf '- **deployed_sha:** (build did not succeed)\n'; } > /tmp/pr_body_$$.md
+      gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null || true
+      rm -f /tmp/pr_body_$$.md
+      curl -sf -X POST "${STAGING_URL}/admin/deploy" -H "Authorization: Bearer $STAGING_TOKEN" \
+        -H "Content-Type: application/json" -d '{"source_version":"develop"}' >/dev/null 2>&1 || true
+      echo "[pylot] phase=staging-validation status=done evidence=failed"
+      exit 0 ;;
+  esac
+done
+if [ "$DEPLOY_OK" -eq 0 ]; then
+  PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  { printf '%s\n\n' "$PR_BODY"
+    printf '## Staging Evidence\n'
+    printf '- **Branch:** `%s`\n' "$BRANCH"
+    printf '- **Build ID:** `%s`\n' "$BUILD_ID"
+    printf '- **Result:** BUILD TIMEOUT\n'
+    printf '- **deployed_sha:** (build timed out after 15 min)\n'; } > /tmp/pr_body_$$.md
+  gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null || true
+  rm -f /tmp/pr_body_$$.md
+  curl -sf -X POST "${STAGING_URL}/admin/deploy" -H "Authorization: Bearer $STAGING_TOKEN" \
+    -H "Content-Type: application/json" -d '{"source_version":"develop"}' >/dev/null 2>&1 || true
+  echo "[pylot] phase=staging-validation status=done evidence=failed"
+  exit 0
+fi
+```
+
+Step 6 — Poll gateway health until sha is confirmed (up to 30x30s = 15 min):
+```bash
+HEALTH_TMP="/tmp/tis_health_$$.json"
+trap 'rm -f "$HEALTH_TMP"' EXIT
+LIVE_SHA="-"
+HEALTH_CODE="000"
+HEALTH_OK=0
+for i in $(seq 1 30); do
+  HEALTH_CODE=$(curl -so "$HEALTH_TMP" -w "%{http_code}" "${STAGING_URL}/health" 2>/dev/null || echo "000")
+  LIVE_SHA=$(cat "$HEALTH_TMP" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('sha','-'))" 2>/dev/null || echo "-")
+  LIVE_SHORT=$(printf '%s' "$LIVE_SHA" | cut -c1-8)
+  echo "[staging-validation] [health $i/30] code=$HEALTH_CODE sha=$LIVE_SHORT"
+  [ "$HEALTH_CODE" = "200" ] && [ "$LIVE_SHA" != "-" ] && { HEALTH_OK=1; break; }
+  sleep 30
+done
+
+if [ "$HEALTH_OK" -eq 0 ]; then
+  PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  { printf '%s\n\n' "$PR_BODY"
+    printf '## Staging Evidence\n'
+    printf '- **Branch:** `%s`\n' "$BRANCH"
+    printf '- **Build ID:** `%s`\n' "$BUILD_ID"
+    printf '- **Result:** HEALTH GATE FAILED (code=%s)\n' "$HEALTH_CODE"
+    printf '- **deployed_sha:** (health timeout; sha never confirmed)\n'; } > /tmp/pr_body_$$.md
+  gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null || true
+  rm -f /tmp/pr_body_$$.md
+  curl -sf -X POST "${STAGING_URL}/admin/deploy" -H "Authorization: Bearer $STAGING_TOKEN" \
+    -H "Content-Type: application/json" -d '{"source_version":"develop"}' >/dev/null 2>&1 || true
+  echo "[pylot] phase=staging-validation status=done evidence=failed"
+  exit 0
+fi
+```
+
+Step 7 — Compare live sha to PR HEAD sha (first 8 chars):
+```bash
+LIVE_SHORT=$(printf '%s' "$LIVE_SHA" | cut -c1-8)
+EVIDENCE_TYPE="real"
+SHA_NOTE=""
+if [ -n "$HEAD_SHORT" ] && [ "$LIVE_SHORT" != "$HEAD_SHORT" ]; then
+  EVIDENCE_TYPE="stale"
+  SHA_NOTE=" (SHA MISMATCH: expected $HEAD_SHORT, got $LIVE_SHORT)"
+fi
+```
+
+Step 8 — Run smoke tests:
+```bash
+CREW_TMP="/tmp/tis_crew_$$.json"
+CREW_CODE=$(curl -so "$CREW_TMP" -w "%{http_code}" -H "Authorization: Bearer $STAGING_TOKEN" \
+  "${STAGING_URL}/crew" 2>/dev/null || echo "000")
+CREW_COUNT=$(cat "$CREW_TMP" 2>/dev/null | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+if isinstance(d,list): print(len(d))
+elif isinstance(d,dict): print(len(d.get('operators',d.get('members',[]))))
+else: print(0)
+" 2>/dev/null || echo "0")
+rm -f "$CREW_TMP"
+```
+
+Step 9 — Append evidence block to PR body (do NOT replace the existing body):
+```bash
+PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+{ printf '%s\n\n' "$PR_BODY"
+  printf '## Staging Evidence\n'
+  printf '- **Branch:** `%s`\n' "$BRANCH"
+  printf '- **deployed_sha:** `%s`%s\n' "$LIVE_SHA" "$SHA_NOTE"
+  printf '- **Health check:** %s (gateway: `%s`)\n' "$HEALTH_CODE" "$STAGING_URL"
+  printf '- **Smoke tests:**\n'
+  printf '  - GET /health -> %s (sha=%s)\n' "$HEALTH_CODE" "$LIVE_SHORT"
+  printf '  - GET /crew -> %s (%s members)\n' "$CREW_CODE" "$CREW_COUNT"; } > /tmp/pr_body_$$.md
+gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null && \
+  echo "[staging-validation] evidence posted to PR #$PR_NUM" || \
+  echo "[staging-validation] WARNING: failed to post evidence to PR"
+rm -f /tmp/pr_body_$$.md
+```
+
+Step 10 — Restore staging to develop (always, success or failure):
+```bash
+echo "[staging-validation] restoring staging to develop..."
+RRESP=$(curl -sf -X POST "${STAGING_URL}/admin/deploy" \
+  -H "Authorization: Bearer $STAGING_TOKEN" -H "Content-Type: application/json" \
+  -d '{"source_version":"develop"}' 2>/dev/null || echo "")
+RBID=$(echo "$RRESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('build_id',''))" 2>/dev/null || echo "")
+if [ -n "$RBID" ]; then
+  for i in $(seq 1 20); do
+    sleep 30
+    RS=$(curl -sf "${STAGING_URL}/admin/build-worker/$RBID" -H "Authorization: Bearer $STAGING_TOKEN" 2>/dev/null || echo "{}")
+    RS_ST=$(echo "$RS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
+    echo "[staging-validation] [restore $i/20] $RS_ST"
+    case "$RS_ST" in SUCCEEDED|FAILED|STOPPED) break ;; esac
+  done
+  echo "[staging-validation] restore=$RS_ST"
+fi
+```
+
+Final — emit phase marker:
+```bash
+echo "[pylot] phase=staging-validation status=done evidence=$EVIDENCE_TYPE"
+```
+""".replace("PLACEHOLDER_PR", pr).replace("PLACEHOLDER_REPO", repo)
+print(json.dumps(prompt))
+PYEOF
+  )
+  PROMPT_RESP=$(curl -s --max-time 30 -X POST \
+    -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"prompt\": $PROMPT}" \
+    "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/prompt")
+  TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("turn_seq",""))' 2>/dev/null)
+  echo "[speckit-runner] staging-validation prompt queued (turn_seq=$TURN_SEQ)"
+fi
+```
+
+Poll per **Step P** now — run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"` and **re-run it while `POLL_RESULT=running`**. The deploy + health gate takes up to 30 minutes. When done, check the `phase=staging-validation` marker:
+
+- `status=blocked` → credentials missing; proceed to Step 5 (PR will be gated; file a separate issue to provision creds).
+- `status=done evidence=real` → evidence posted, sha matched; cto-review gate will pass.
+- `status=done evidence=failed` → failure evidence posted; PR blocked at gate (correct — mission is still `status=success`).
+- `status=done evidence=stale` → SHA mismatch posted; cto-review gate will short-circuit.
+- `status=done evidence=na` → docs-only PR; N/A posted; gate will not fire.
+
+---
+
 ## Step 5: Identify PR + Stop Worker
 
 ```bash

@@ -67,7 +67,18 @@ WORKER_LOG="$WORKER_LOG_DIR/${WORKER_SESSION}.log"
 ) &
 WORKER_PID=$!
 ```
-Use `scripts/wait-for-job.sh` to block until the worker exits.
+Block until the local worker exits — but poll its PID in short **foreground chunks**, never
+`wait "$WORKER_PID"` in one call. A worker turn can run for many minutes, and any Bash command
+past the harness's ~120s tool timeout is auto-backgrounded and then **killed ~5s after your turn
+ends** (pylot#1482), orphaning the work. Re-run this chunk until it prints `worker DONE`:
+
+```bash
+# ~96s chunk: poll the worker PID every 8s; exits early when it dies.
+for _ in $(seq 1 12); do kill -0 "$WORKER_PID" 2>/dev/null || break; sleep 8; done
+kill -0 "$WORKER_PID" 2>/dev/null && echo "worker RUNNING — run this chunk again" || echo "worker DONE"
+```
+
+(The previously-referenced `scripts/wait-for-job.sh` never existed.)
 
 ### Verify + fix the PR
 1. Find the PR the worker created:

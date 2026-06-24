@@ -125,20 +125,9 @@ node /tmp/record.mjs http://localhost:3000/form /tmp/evidence-before.gif \
 
 ### 3. Upload to Cloud Storage
 
-Upload screenshots and GIFs to your configured storage. Example with S3:
+Use the **evidence-upload** skill to upload screenshots and GIFs to the pylot assets backend. `$PYLOT_GATEWAY_URL` and `$PYLOT_DISPATCH_TOKEN` are already in every operator/worker environment — no static AWS keys needed.
 
-```bash
-aws s3 cp /tmp/evidence-<label>.png \
-  s3://<bucket>/assets/evidence/<repo>/<branch>/<label>.png \
-  --acl public-read --region <region>
-```
-
-For GIFs, add `--content-type image/gif`.
-
-Verify upload:
-```bash
-curl -s -o /dev/null -w '%{http_code}' "$IMAGE_URL"
-```
+Run `/evidence-upload` for each captured file and capture the returned `public_url` for embedding in Step 4.
 
 ### 4. PR Embedding
 

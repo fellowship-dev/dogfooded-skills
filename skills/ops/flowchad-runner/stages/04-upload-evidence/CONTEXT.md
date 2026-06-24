@@ -13,16 +13,30 @@ resulting URLs for the report. **This is best-effort: upload failure NEVER block
 
 ### 1. Read the evidence backend
 Follow the **evidence-upload** skill pattern. Backend comes from `.flowchad/config.yml`
-(`evidence_backend` in the stage 02 handoff; default `git` orphan branch).
+(`evidence_backend` in the stage 02 handoff; default `assets`).
 
-### 2. Upload per flow (git backend default)
+### 2. Upload per flow
+
+#### Assets backend (default)
+
+Use the **evidence-upload** skill for each file. `$PYLOT_GATEWAY_URL` and
+`$PYLOT_DISPATCH_TOKEN` are already available in every operator/worker environment — no
+static AWS keys needed. Run `/evidence-upload` for each screenshot and GIF from the stage
+03 handoff, then collect the returned `public_url` values for the report.
+
+#### Fallback: git orphan-branch
+
+If `evidence_backend` is explicitly set to `git` in `.flowchad/config.yml`, push
+screenshots and GIFs to a git evidence branch instead:
+
 ```bash
-# Git backend (default): push screenshots + GIF to evidence branch
+# Git backend (explicit fallback): push screenshots + GIF to evidence branch
 # Use GitHub Contents API — no local git operations needed
 for screenshot in ${SNAPSHOT_DIR}/step-*.png; do
   # Upload via gh api or git push to evidence branch
 done
 ```
+
 Do this for each flow's snapshot dir from the stage 03 handoff. Capture the resulting URLs
 for embedding in the report and GitHub comments.
 

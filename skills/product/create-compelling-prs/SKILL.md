@@ -1,6 +1,6 @@
 ---
 name: create-compelling-prs
-description: Use when preparing a PR for review — applies body templates, uploads visual evidence to S3, and runs the self-audit checklist.
+description: Use when preparing a PR for review — applies body templates, uploads visual evidence via the assets backend, and runs the self-audit checklist.
 user-invocable: true
 trigger-hint: "When creating a PR or preparing to push a branch for review"
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -102,33 +102,31 @@ Closes #ISSUE
 
 ---
 
-## Visual Evidence with S3
+## Visual Evidence
 
-For any UI-impacting change, capture before/after screenshots and embed them.
-
-**If `AWS_BUCKET` + `AWS_ACCESS_KEY_ID` are in env** (preferred):
+For any UI-impacting change, capture before/after screenshots and embed them using the **evidence-upload** skill (`skills/ops/evidence-upload`).
 
 ```bash
-# Capture screenshots (Playwright preferred, manual fallback)
-# Then upload:
-aws s3 cp before.png "s3://$AWS_BUCKET/evidence/${REPO}/${PR}/before.png" --acl public-read
-aws s3 cp after.png  "s3://$AWS_BUCKET/evidence/${REPO}/${PR}/after.png"  --acl public-read
+# Capture screenshots (Playwright preferred, manual fallback), then for each file:
+FILE=before.png CONTENT_TYPE=image/png REPO="$ORG/$REPO_NAME"
+BYTES=$(wc -c < "$FILE")
 
-# Embed in PR body:
-# Before: https://${AWS_BUCKET}.s3.amazonaws.com/evidence/${REPO}/${PR}/before.png
-# After:  https://${AWS_BUCKET}.s3.amazonaws.com/evidence/${REPO}/${PR}/after.png
+PRESIGN=$(curl -sS -X POST "$PYLOT_GATEWAY_URL/assets/presign" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"repo\":\"$REPO\",\"content_type\":\"$CONTENT_TYPE\",\"size\":$BYTES}")
+ASSET_ID=$(echo "$PRESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['asset_id'])")
+UPLOAD_URL=$(echo "$PRESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['upload_url'])")
+
+curl -sS -X PUT "$UPLOAD_URL" --data-binary @"$FILE" -H "Content-Type: $CONTENT_TYPE"
+
+PUBLIC_URL=$(curl -sS -X PATCH "$PYLOT_GATEWAY_URL/assets/$ASSET_ID" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"visibility":"public"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['public_url'])")
+
+# Embed: ![before]($PUBLIC_URL)
 ```
 
-**Fallback — git evidence branch:**
-
-```bash
-git checkout -b "evidence/${BRANCH}-screenshots"
-cp *.png specs/${ISSUE}/
-git add specs/ && git commit -m "evidence: before/after screenshots"
-git push origin "evidence/${BRANCH}-screenshots"
-# Embed as raw GitHub URLs in the PR body, then:
-git checkout -
-```
+`$PYLOT_GATEWAY_URL` and `$PYLOT_DISPATCH_TOKEN` are already in every operator/worker env. No AWS keys needed. See the evidence-upload skill for full error-handling and the allowlist (PNG/JPEG/GIF/WEBP/MP4, max 25 MB).
 
 **Skip** if: backend-only, CLI-only, config/infra, test-only, or capture exceeds 120s. Visual evidence is a bonus, never a gate.
 

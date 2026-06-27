@@ -152,12 +152,25 @@ EOF
         echo "[cto-review] staging evidence gate: PASSED (N/A — docs-only PR)"
       else
 
-      # Extract deployed_sha from evidence block and compare to current PR HEAD
+      # Extract deployed_sha from evidence block and compare to current PR HEAD.
+      # Tolerate BOTH the canonical /test-in-staging emitter line ('**Deployed SHA:** `sha`')
+      # AND hand-written 'deployed_sha: `sha`' — space-or-underscore, case-insensitive.
+      # Pick the sha from a SUCCESSFUL evidence section: skip any match whose section
+      # contains BUILD FAILED / (build did not succeed), and otherwise prefer the LAST
+      # match (a re-run's good section appears below a prior failed one — see #1667).
       EVIDENCE_SHA=$(echo "$PR_BODY" | python3 -c "
 import sys, re
 body = sys.stdin.read()
-m = re.search(r'deployed_sha[^\`\n]*\`([0-9a-f]{7,40})', body)
-print(m.group(1) if m else '')
+ms = list(re.finditer(r'deployed[ _]sha[^\`\n]*\`([0-9a-f]{7,40})\`', body, re.I))
+def failed(i):
+    s = ms[i].start()
+    h = body.rfind('\n##', 0, s)
+    p = ms[i-1].end() if i > 0 else -1
+    seg = body[max(h, p, 0):s]
+    return bool(re.search(r'BUILD FAILED|build did not succeed', seg, re.I))
+good = [m for i, m in enumerate(ms) if not failed(i)]
+pick = good[-1] if good else (ms[-1] if ms else None)
+print(pick.group(1) if pick else '')
 " 2>/dev/null || echo "")
       PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefSha --jq '.headRefSha' 2>/dev/null | cut -c1-8 || echo "")
 

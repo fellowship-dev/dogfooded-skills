@@ -9,7 +9,8 @@ No upstream handoffs — this is the first stage.
 ## Task
 Gather everything the review stage needs and prepare a clean local working tree:
 PR metadata, CI status, the existing (first) review comments, the full diff, and a checked-out
-PR branch with the base branch merged in (to surface conflicts early).
+PR branch rebased onto the base branch (resolving conflicts automatically where possible and
+pushing the rebased branch so the PR stays current).
 
 ## Steps
 
@@ -58,14 +59,14 @@ gh pr diff $PR --repo $REPO --name-only
 
 Include the full diff text in the handoff. The review stage works only from this handoff.
 
-### Checkout PR branch + merge base
+### Checkout PR branch + rebase onto base
 
 ```bash
 REPO_NAME=$(echo $REPO | cut -d/ -f2)
 REPO_DIR="/tmp/double-check-$REPO_NAME"
 
 if [ ! -d "$REPO_DIR" ]; then
-  git clone "https://github.com/$REPO.git" "$REPO_DIR"
+  git clone "https://x-access-token:${GH_TOKEN}@github.com/$REPO.git" "$REPO_DIR"
 fi
 
 cd "$REPO_DIR"
@@ -73,16 +74,28 @@ git fetch origin $PR_BRANCH
 git checkout $PR_BRANCH
 git pull origin $PR_BRANCH
 
-# Merge base branch to catch conflicts
+# Rebase onto base branch — resolves the PR branch against the latest base and pushes
+# so the PR is no longer conflicting. This is preferable to a merge: it keeps history
+# linear and unblocks downstream double-check/cto-review stages without human intervention.
 git fetch origin $BASE_BRANCH
-git merge origin/$BASE_BRANCH --no-edit || {
-  echo "Merge conflict — resolve manually"
-  exit 1
-}
+if ! git rebase origin/$BASE_BRANCH --no-edit; then
+  # Rebase failed — collect conflict details, abort cleanly, report blocked
+  CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
+  git rebase --abort 2>/dev/null || true
+  echo "Rebase conflict in: ${CONFLICT_FILES:-unknown files} — cannot auto-resolve, human intervention needed"
+  # Fall through to write handoff with setup_ok: false
+  REBASE_FAILED=true
+fi
+
+if [ -z "$REBASE_FAILED" ]; then
+  # Push the rebased branch so the PR reflects the conflict resolution
+  git push origin $PR_BRANCH --force-with-lease
+  echo "Rebased $PR_BRANCH onto origin/$BASE_BRANCH and pushed — PR conflict cleared"
+fi
 ```
 
-If the merge conflicts (or the PR can't be fetched/checked out), write the handoff with
-`setup_ok: false` and the reason — the orchestrator will treat this as a blocked exit.
+If the rebase cannot be auto-resolved (or the PR can't be fetched/checked out), write the
+handoff with `setup_ok: false` and the reason — the orchestrator will treat this as a blocked exit.
 
 ## Output: handoff.md
 
@@ -104,8 +117,8 @@ setup_ok: {true|false}
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
-- Checked out: `{PR_BRANCH}` with `{BASE_BRANCH}` merged
-- Merge conflict: {none | details}
+- Checked out: `{PR_BRANCH}` rebased onto `{BASE_BRANCH}`
+- Rebase: {succeeded and pushed | failed: details}
 
 ## CI Status
 {gh pr checks output, or "not accessible via token"}
@@ -126,8 +139,9 @@ setup_ok: {true|false}
 ## Success criteria
 - `setup_ok: true`
 - PR metadata, CI status, first review (verbatim), changed files, and full diff all captured
-- PR branch checked out in REPO_DIR with base merged; REPO_DIR recorded for downstream stages
+- PR branch checked out in REPO_DIR, rebased onto base, and pushed; REPO_DIR recorded for downstream stages
 
 ## Failure
-- PR not found / `gh` error / merge conflict → write handoff with `setup_ok: false` + reason
-  (orchestrator emits a blocked outcome)
+- PR not found / `gh` error → write handoff with `setup_ok: false` + reason (orchestrator emits a blocked outcome)
+- Rebase conflict that cannot be auto-resolved → write handoff with `setup_ok: false` + conflict file list
+  (orchestrator emits a blocked outcome; a human must resolve and re-dispatch)

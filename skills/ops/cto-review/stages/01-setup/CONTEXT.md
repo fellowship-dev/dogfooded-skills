@@ -172,7 +172,7 @@ good = [m for i, m in enumerate(ms) if not failed(i)]
 pick = good[-1] if good else (ms[-1] if ms else None)
 print(pick.group(1) if pick else '')
 " 2>/dev/null || echo "")
-      PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefSha --jq '.headRefSha' 2>/dev/null | cut -c1-8 || echo "")
+      PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' | cut -c1-8)
 
       SHA_VALID=false
       if [ -n "$EVIDENCE_SHA" ] && [ -n "$PR_HEAD_SHA" ]; then

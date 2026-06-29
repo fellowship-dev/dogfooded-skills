@@ -152,42 +152,53 @@ EOF
         echo "[cto-review] staging evidence gate: PASSED (N/A — docs-only PR)"
       else
 
-      # Extract deployed_sha from evidence block and compare to current PR HEAD.
-      # Tolerate BOTH the canonical /test-in-staging emitter line ('**Deployed SHA:** `sha`')
-      # AND hand-written 'deployed_sha: `sha`' — space-or-underscore, case-insensitive.
-      # Pick the sha from a SUCCESSFUL evidence section: skip any match whose section
-      # contains BUILD FAILED / (build did not succeed), and otherwise prefer the LAST
-      # match (a re-run's good section appears below a prior failed one — see #1667).
-      EVIDENCE_SHA=$(echo "$PR_BODY" | python3 -c "
-import sys, re
+      # Verify staging evidence against the real build record (fellowship-dev/pylot#1713).
+      # The worker emits staging_build_id: `<BUILD_ID>` only when its deploy SUCCEEDED
+      # and /health confirmed sha == HEAD. The gate calls /admin/build-worker/<id> and
+      # requires SUCCEEDED + sha == HEAD. A pasted deployed_sha string cannot pass this gate.
+      PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
+      GATE_RESULT=$(echo "$PR_BODY" | python3 -c "
+import sys, re, os, urllib.request, json
+
 body = sys.stdin.read()
-ms = list(re.finditer(r'deployed[ _]sha[^\`\n]*\`([0-9a-f]{7,40})\`', body, re.I))
-def failed(i):
-    s = ms[i].start()
-    h = body.rfind('\n##', 0, s)
-    p = ms[i-1].end() if i > 0 else -1
-    seg = body[max(h, p, 0):s]
-    return bool(re.search(r'BUILD FAILED|build did not succeed', seg, re.I))
-good = [m for i, m in enumerate(ms) if not failed(i)]
-pick = good[-1] if good else (ms[-1] if ms else None)
-print(pick.group(1) if pick else '')
-" 2>/dev/null || echo "")
-      PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' | cut -c1-8)
+STAGING_URL = os.environ.get('PYLOT_STAGING_URL', '').rstrip('/')
+STAGING_TOKEN = os.environ.get('PYLOT_STAGING_DISPATCH_TOKEN', '')
+head_sha = os.environ.get('PR_HEAD_SHA', '')
 
-      SHA_VALID=false
-      if [ -n "$EVIDENCE_SHA" ] && [ -n "$PR_HEAD_SHA" ]; then
-        EVIDENCE_SHORT=$(printf '%s' "$EVIDENCE_SHA" | cut -c1-8)
-        [ "$EVIDENCE_SHORT" = "$PR_HEAD_SHA" ] && SHA_VALID=true
-      fi
+BUILD_ID_RE = re.compile(r'staging_build_id\s*:\s*\`([A-Za-z0-9:/_-]+)\`')
+m = BUILD_ID_RE.search(body)
+if not m:
+    print('BLOCK:no verified build for HEAD')
+    sys.exit(0)
+build_id = m.group(1)
+try:
+    req = urllib.request.Request(
+        f'{STAGING_URL}/admin/build-worker/{build_id}',
+        headers={'Authorization': f'Bearer {STAGING_TOKEN}'},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        record = json.loads(resp.read())
+except Exception as e:
+    print(f'BLOCK:build-record lookup failed: {e}')
+    sys.exit(0)
+status = record.get('status', '')
+if status != 'SUCCEEDED':
+    print('BLOCK:build did not succeed')
+    sys.exit(0)
+build_sha = record.get('sha', '')
+short = min(len(head_sha), len(build_sha), 7)
+if head_sha[:short] != build_sha[:short]:
+    print('BLOCK:build sha mismatch')
+    sys.exit(0)
+print('PASS:verified build for HEAD')
+" PR_HEAD_SHA="$PR_HEAD_SHA" 2>/dev/null || echo "BLOCK:build-record check failed (python error)")
 
-      if [ "$SHA_VALID" = "true" ]; then
-        echo "[cto-review] staging evidence gate: PASSED (deployed_sha=${EVIDENCE_SHORT} matches PR HEAD)"
+      GATE_DECISION=$(echo "$GATE_RESULT" | cut -d: -f1)
+      GATE_REASON=$(echo "$GATE_RESULT" | cut -d: -f2-)
+
+      if [ "$GATE_DECISION" = "PASS" ]; then
+        echo "[cto-review] staging evidence gate: PASSED ($GATE_REASON)"
       else
-        if [ -z "$EVIDENCE_SHA" ]; then
-          GATE_REASON="deployed_sha not found in evidence block"
-        else
-          GATE_REASON="deployed_sha ${EVIDENCE_SHORT:-$EVIDENCE_SHA} does not match PR HEAD ${PR_HEAD_SHA} (stale evidence)"
-        fi
         echo "[cto-review] staging evidence gate: BLOCKED — $GATE_REASON"
         mkdir -p .procedure-output/cto-review/01-setup
         cat > .procedure-output/cto-review/01-setup/handoff.md << EOF

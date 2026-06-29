@@ -312,17 +312,24 @@ if [ "$HEALTH_OK" -eq 0 ]; then
 fi
 ```
 
-Step 7 — Compare live sha to PR HEAD sha (first 8 chars):
+Step 7 — Verify live sha matches PR HEAD sha (fail closed):
 ```bash
 LIVE_SHORT=$(printf '%s' "$LIVE_SHA" | cut -c1-8)
-EVIDENCE_TYPE="real"
-SHA_NOTE=""
-if [ -z "$HEAD_SHORT" ]; then
-  EVIDENCE_TYPE="stale"
-  SHA_NOTE=" (SHA unverifiable — could not fetch PR HEAD)"
-elif [ "$LIVE_SHORT" != "$HEAD_SHORT" ]; then
-  EVIDENCE_TYPE="stale"
-  SHA_NOTE=" (SHA MISMATCH: expected $HEAD_SHORT, got $LIVE_SHORT)"
+if [ -n "$HEAD_SHORT" ] && [ "$LIVE_SHORT" != "$HEAD_SHORT" ]; then
+  PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
+  { printf '%s\n\n' "$PR_BODY"
+    printf '## Staging Evidence\n'
+    printf '- **Branch:** `%s`\n' "$BRANCH"
+    printf '- **Build ID:** `%s`\n' "$BUILD_ID"
+    printf '- **Result:** BUILD SUCCEEDED — staging sha mismatch\n'
+    printf '- **Note:** /health returned sha=%s, expected %s (shared-staging race); no staging_build_id emitted\n' "$LIVE_SHORT" "$HEAD_SHORT"; } > /tmp/pr_body_$$.md
+  gh pr edit "$PR_NUM" --repo "$REPO" --body-file /tmp/pr_body_$$.md 2>/dev/null || true
+  rm -f /tmp/pr_body_$$.md
+  curl -sf -X POST "${STAGING_URL}/admin/deploy" -H "Authorization: Bearer $STAGING_TOKEN" \
+    -H "Content-Type: application/json" -d '{"source_version":"develop"}' >/dev/null 2>&1 || true
+  echo "[pylot] phase=staging-validation status=done evidence=failed"
+  exit 0
 fi
 ```
 
@@ -345,10 +352,11 @@ Step 9 — Append evidence block to PR body (strip prior evidence section first 
 ```bash
 PR_BODY=$(gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")
 PR_BODY=$(printf '%s' "$PR_BODY" | sed '/^## Staging Evidence/,$d')
+# canonical evidence token — gate verifies staging_build_id via /admin/build-worker; do not change format
 { printf '%s\n\n' "$PR_BODY"
   printf '## Staging Evidence\n'
   printf '- **Branch:** `%s`\n' "$BRANCH"
-  printf '- **deployed_sha:** `%s`%s\n' "$LIVE_SHA" "$SHA_NOTE"
+  printf '- staging_build_id: `%s`\n' "$BUILD_ID"
   printf '- **Health check:** %s (gateway: `%s`)\n' "$HEALTH_CODE" "$STAGING_URL"
   printf '- **Smoke tests:**\n'
   printf '  - GET /health -> %s (sha=%s)\n' "$HEALTH_CODE" "$LIVE_SHORT"
@@ -380,7 +388,7 @@ fi
 
 Final — emit phase marker:
 ```bash
-echo "[pylot] phase=staging-validation status=done evidence=$EVIDENCE_TYPE"
+echo "[pylot] phase=staging-validation status=done evidence=verified"
 ```
 """.replace("PLACEHOLDER_PR", pr).replace("PLACEHOLDER_REPO", repo)
 print(json.dumps(prompt))

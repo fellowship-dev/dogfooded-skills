@@ -1,111 +1,119 @@
 #!/usr/bin/env python3
-"""Fixture harness for the cto-review staging-evidence gate (fellowship-dev/pylot#1676, Phase 1).
+"""Fixture harness for the cto-review staging-evidence gate FORMAT layer.
 
-Mirrors the deployed_sha extractor embedded in CONTEXT.md (step 5.5) plus the
-sha-compare gate logic, and exercises the parser/emitter contract over the
-canonical `/test-in-staging` output and the known failure shapes.
+Mirrors the format-parsing in CONTEXT.md step 5.5 — the heading detector and the
+`staging_build_id` extractor — byte-equivalent to the regexes deployed there. The
+gate's SUBSTANCE (calling /admin/build-worker and requiring SUCCEEDED + build sha
+== PR HEAD) is NOT modelled here: it needs the live build record and is exercised
+end-to-end. Loosening the format never loosens that check.
+
+Why this harness exists (2026-06-29): the previous version tested an OLD
+`deployed_sha` string-compare gate that the deployed gate had already replaced with
+`staging_build_id` build-record verification — so it green-lit nothing real and
+masked the format brittleness that froze PRs (lowercase "## Staging evidence", a
+sha without backticks, an emoji in the heading). This version tests the ACTUAL
+format layer and is verified red-on-mutant (tighten either regex -> a fixture fails).
 
 Run: python3 test_evidence_gate.py   (exit 0 = all green)
 """
 import re
 import sys
 
-# ---- extractor: must stay byte-for-byte equivalent to the regex in CONTEXT.md ----
-def extract_sha(body: str) -> str:
-    ms = list(re.finditer(r'deployed[ _]sha[^`\n]*`([0-9a-f]{7,40})`', body, re.I))
-
-    def failed(i: int) -> bool:
-        s = ms[i].start()
-        h = body.rfind('\n##', 0, s)
-        p = ms[i - 1].end() if i > 0 else -1
-        seg = body[max(h, p, 0):s]
-        return bool(re.search(r'BUILD FAILED|build did not succeed', seg, re.I))
-
-    good = [m for i, m in enumerate(ms) if not failed(i)]
-    pick = good[-1] if good else (ms[-1] if ms else None)
-    return pick.group(1) if pick else ''
+# -- byte-equivalent to the regexes in CONTEXT.md step 5.5 ---------------------
+# Heading: bash `grep -iE '^#{1,4}[[:space:]].*[Ss]taging[[:space:]]+[Ee]vidence'`
+HEADING_RE = re.compile(r"^#{1,4}\s.*staging\s+evidence", re.I | re.M)
+# Build id: bash `staging[_ ]build[_ ]id\s*[:=]?\s*`?([A-Za-z0-9][A-Za-z0-9:/_-]+)`?` (-i)
+BUILD_ID_RE = re.compile(
+    r"staging[_ ]build[_ ]id\s*[:=]?\s*`?([A-Za-z0-9][A-Za-z0-9:/_-]+)`?", re.I
+)
 
 
-# ---- gate: replicate the bash control flow around the extractor ----
-def gate(body: str, pr_head_sha: str):
-    """Returns (verdict, reason). verdict in {PASS, BLOCK}."""
-    if not re.search(r'##\s*Staging Evidence', body):
-        return 'BLOCK', '## Staging Evidence missing'
-    # pending placeholder always blocks
-    seg = '\n'.join(body.splitlines()[:_idx(body) + 3])
-    if re.search(r'>\s*pending', seg):
-        return 'BLOCK', 'evidence is pending'
-    # N/A docs-only bypass
-    if 'N/A' in '\n'.join(body.splitlines()[_idx(body):_idx(body) + 4]):
-        return 'PASS', 'N/A — docs-only PR'
-    evidence_sha = extract_sha(body)
-    head8 = pr_head_sha[:8]
-    if evidence_sha and head8:
-        if evidence_sha[:8] == head8:
-            return 'PASS', f'deployed_sha={evidence_sha[:8]} matches PR HEAD'
-        return 'BLOCK', f'deployed_sha {evidence_sha[:8]} does not match PR HEAD {head8} (stale evidence)'
-    if not evidence_sha:
-        return 'BLOCK', 'deployed_sha not found in evidence block'
-    return 'BLOCK', 'no PR HEAD to compare'
+def heading_present(body: str) -> bool:
+    return HEADING_RE.search(body) is not None
 
 
-def _idx(body: str) -> int:
-    for i, ln in enumerate(body.splitlines()):
-        if re.search(r'##\s*Staging Evidence', ln):
-            return i
-    return 0
+def section(body: str, n: int) -> str:
+    """The heading line + next n lines (mirrors `grep -A{n}` context)."""
+    lines = body.splitlines()
+    for i, ln in enumerate(lines):
+        if HEADING_RE.search(ln):
+            return "\n".join(lines[i : i + 1 + n])
+    return ""
 
 
-HEAD = 'abcdef12'  # current PR HEAD (8-char)
+def is_pending(body: str) -> bool:
+    return re.search(r">\s*pending", section(body, 2)) is not None
 
+
+def is_na(body: str) -> bool:
+    return "n/a" in section(body, 3).lower()
+
+
+def extract_build_id(body: str) -> str:
+    m = BUILD_ID_RE.search(body)
+    return m.group(1) if m else ""
+
+
+# (label, body, heading, pending, na, build_id)
 FIXTURES = [
-    # (label, body, pr_head, expect_verdict, expect_reason_contains)
     (
-        'a) canonical **Deployed SHA:** (the core bug)',
-        "## Staging Evidence\n- **Branch:** `feat/x`\n- **Deployed SHA:** `abcdef1234`\n",
-        HEAD, 'PASS', 'matches PR HEAD',
+        "a) lowercase heading + clean build_id (the #1863 shape)",
+        "## Staging evidence\nstaging_build_id: `pylot-builder:abc-123`\n",
+        True, False, False, "pylot-builder:abc-123",
     ),
     (
-        'b) hand-written lowercase deployed_sha:',
-        "## Staging Evidence\ndeployed_sha: `abcdef1234`\n",
-        HEAD, 'PASS', 'matches PR HEAD',
+        "b) emoji + PR-cycle suffix heading (the auto-pylot shape)",
+        "## ✅ Staging Evidence — PR cycle (feat-x)\nstaging_build_id: `pylot-builder:d-4`\n",
+        True, False, False, "pylot-builder:d-4",
     ),
     (
-        'c) > pending placeholder',
+        "c) build id WITHOUT backticks",
+        "## Staging Evidence\nstaging_build_id: pylot-builder-staging:e5f6\n",
+        True, False, False, "pylot-builder-staging:e5f6",
+    ),
+    (
+        "d) 'staging build id' spaced, '=' separator",
+        "## Staging Evidence\n- staging build id = `pylot:g7`\n",
+        True, False, False, "pylot:g7",
+    ),
+    (
+        "e) ### (h3) heading",
+        "### Staging Evidence\nstaging_build_id: `x:y-9`\n",
+        True, False, False, "x:y-9",
+    ),
+    (
+        "f) pending placeholder still blocks",
         "## Staging Evidence\n> pending\n",
-        HEAD, 'BLOCK', 'pending',
+        True, True, False, "",
     ),
     (
-        'd) N/A docs-only bypass',
+        "g) N/A docs-only bypass",
         "## Staging Evidence\nN/A — docs-only PR\n",
-        HEAD, 'PASS', 'N/A',
+        True, False, True, "",
     ),
     (
-        'e) failed-build section THEN good section (#1667 shape)',
-        "## Staging Evidence (attempt 1)\nBUILD FAILED (build did not succeed)\n- **Deployed SHA:** `0000bad1`\n\n"
-        "## Staging Evidence\n- **Deployed SHA:** `abcdef1234`\n",
-        HEAD, 'PASS', 'abcdef12',
-    ),
-    (
-        'f) genuine stale (evidence sha != HEAD)',
-        "## Staging Evidence\n- **Deployed SHA:** `99999999`\n",
-        HEAD, 'BLOCK', 'stale evidence',
+        "h) no staging-evidence heading at all",
+        "## Summary\nsome other content\n",
+        False, False, False, "",
     ),
 ]
 
 
 def main() -> int:
     ok = True
-    for label, body, head, exp_v, exp_r in FIXTURES:
-        v, r = gate(body, head)
-        passed = (v == exp_v) and (exp_r.lower() in r.lower())
+    for label, body, h, pend, na, bid in FIXTURES:
+        got = (heading_present(body), is_pending(body), is_na(body), extract_build_id(body))
+        want = (h, pend, na, bid)
+        passed = got == want
         ok = ok and passed
-        flag = 'green' if passed else 'RED  '
-        print(f"[{flag}] {label}\n        -> {v}: {r}")
+        flag = "green" if passed else "RED  "
+        print(f"[{flag}] {label}")
+        if not passed:
+            print(f"        want {want}\n        got  {got}")
     print()
-    print('ALL GREEN' if ok else 'FAILURES PRESENT')
+    print("ALL GREEN" if ok else "FAILURES PRESENT")
     return 0 if ok else 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

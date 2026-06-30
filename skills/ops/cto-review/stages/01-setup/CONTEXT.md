@@ -124,10 +124,14 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   if [ "$NEEDS_EVIDENCE" = "true" ]; then
     # Fetch PR body to check for evidence section
     PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
-    if echo "$PR_BODY" | grep -qF '## Staging Evidence'; then
+    # Heading match is format-tolerant (#1754 follow-up): case-insensitive and
+    # decoration-tolerant so "## Staging evidence", "## ✅ Staging Evidence — PR cycle",
+    # "### Staging Evidence" all count. Substance (the verified build below) is NOT loosened.
+    EVIDENCE_HEADING='^#{1,4}[[:space:]].*[Ss]taging[[:space:]]+[Ee]vidence'
+    if echo "$PR_BODY" | grep -qiE "$EVIDENCE_HEADING"; then
       # Section exists — now validate it is real, current evidence (not pending/stale)
       # Check for pending placeholder — always block
-      if echo "$PR_BODY" | grep -A2 '## Staging Evidence' | grep -qE '>\s*pending'; then
+      if echo "$PR_BODY" | grep -iA2 -E "$EVIDENCE_HEADING" | grep -qE '>\s*pending'; then
         echo "[cto-review] staging evidence gate: BLOCKED — evidence is pending"
         mkdir -p .procedure-output/cto-review/01-setup
         cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
@@ -148,7 +152,7 @@ EOF
       fi
 
       # N/A bypass — docs-only PRs emit no deployed_sha; pass them through
-      if echo "$PR_BODY" | grep -A3 '## Staging Evidence' | grep -qF 'N/A'; then
+      if echo "$PR_BODY" | grep -iA3 -E "$EVIDENCE_HEADING" | grep -qiF 'N/A'; then
         echo "[cto-review] staging evidence gate: PASSED (N/A — docs-only PR)"
       else
 
@@ -165,7 +169,10 @@ STAGING_URL = os.environ.get('PYLOT_STAGING_URL', '').rstrip('/')
 STAGING_TOKEN = os.environ.get('PYLOT_STAGING_DISPATCH_TOKEN', '')
 head_sha = os.environ.get('PR_HEAD_SHA', '')
 
-BUILD_ID_RE = re.compile(r'staging_build_id\s*:\s*\`([A-Za-z0-9:/_-]+)\`')
+# Format-tolerant build-id extraction (#1754 follow-up): accept staging_build_id /
+# 'staging build id', ':' or '=' or none, with or without backticks. The VALUE is still
+# verified against the live build record below — loosening the format never loosens the check.
+BUILD_ID_RE = re.compile(r'staging[_ ]build[_ ]id\s*[:=]?\s*\`?([A-Za-z0-9][A-Za-z0-9:/_-]+)\`?', re.I)
 m = BUILD_ID_RE.search(body)
 if not m:
     print('BLOCK:no verified build for HEAD')

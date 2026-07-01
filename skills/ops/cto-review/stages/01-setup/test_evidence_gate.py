@@ -14,10 +14,24 @@ masked the format brittleness that froze PRs (lowercase "## Staging evidence", a
 sha without backticks, an emoji in the heading). This version tests the ACTUAL
 format layer and is verified red-on-mutant (tighten either regex -> a fixture fails).
 
+SUBSTANCE layer added 2026-07-01 (fellowship-dev/pylot#1861 residue item 1): the
+freshness fixtures below extract the real `GATE_RESULT=$(...)` invocation from
+CONTEXT.md and run it in bash against a stub /admin/build-worker server — so they
+exercise the exact invocation SHAPE, including whether PR_HEAD_SHA actually reaches
+the python snippet as environment. Verified red-on-mutant: with the argv-positioned
+`PR_HEAD_SHA="$PR_HEAD_SHA"` (the pre-fix form), the stale-sha and empty-sha
+fixtures go RED.
+
 Run: python3 test_evidence_gate.py   (exit 0 = all green)
 """
+import json
 import re
+import shlex
+import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 # -- byte-equivalent to the regexes in CONTEXT.md step 5.5 ---------------------
 # Heading: bash `grep -iE '^#{1,4}[[:space:]].*[Ss]taging[[:space:]]+[Ee]vidence'`
@@ -99,6 +113,96 @@ FIXTURES = [
 ]
 
 
+# -- SUBSTANCE layer: freshness check, run via the REAL CONTEXT.md invocation --
+# Extracts the `GATE_RESULT=$(...)` block from CONTEXT.md step 5.5 verbatim and runs
+# it in bash with PR_HEAD_SHA set exactly as the gate sets it (a plain shell var,
+# NOT exported). If the invocation shape fails to deliver PR_HEAD_SHA into the
+# python snippet's environment, the stale fixture passes the gate and goes RED here.
+
+HEAD_SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+OTHER_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+# (label, pr_head_sha, build_record, expected_decision)
+FRESHNESS_FIXTURES = [
+    (
+        "i) fresh: SUCCEEDED build whose sha == PR HEAD passes",
+        HEAD_SHA, {"status": "SUCCEEDED", "sha": HEAD_SHA}, "PASS",
+    ),
+    (
+        "j) STALE: SUCCEEDED build for a DIFFERENT sha must BLOCK",
+        HEAD_SHA, {"status": "SUCCEEDED", "sha": OTHER_SHA}, "BLOCK",
+    ),
+    (
+        "k) empty PR_HEAD_SHA must FAIL CLOSED (BLOCK, never pass)",
+        "", {"status": "SUCCEEDED", "sha": OTHER_SHA}, "BLOCK",
+    ),
+]
+
+
+class _BuildRecordStub(BaseHTTPRequestHandler):
+    record: dict = {}
+
+    def do_GET(self):  # noqa: N802 — http.server API
+        payload = json.dumps(type(self).record).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):  # silence request logging
+        pass
+
+
+def extract_gate_invocation() -> str:
+    """The GATE_RESULT=$(...) block from CONTEXT.md step 5.5, verbatim."""
+    lines = (Path(__file__).parent / "CONTEXT.md").read_text().splitlines()
+    start = next(i for i, ln in enumerate(lines) if "GATE_RESULT=$(" in ln)
+    end = next(
+        i for i, ln in enumerate(lines[start:], start)
+        if 'BLOCK:build-record check failed' in ln
+    )
+    return "\n".join(lines[start : end + 1])
+
+
+def run_gate_freshness(head_sha: str, port: int) -> str:
+    body = "## Staging Evidence\nstaging_build_id: `pylot-builder:test-1`\n"
+    script = "\n".join([
+        f'export PYLOT_STAGING_URL="http://127.0.0.1:{port}"',
+        'export PYLOT_STAGING_DISPATCH_TOKEN="test-token"',
+        f"PR_BODY={shlex.quote(body)}",
+        # exactly as the gate sets it: shell var, not exported
+        f"PR_HEAD_SHA={shlex.quote(head_sha)}",
+        extract_gate_invocation(),
+        'printf "%s" "$GATE_RESULT"',
+    ])
+    out = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=30
+    )
+    return out.stdout.strip()
+
+
+def run_freshness_fixtures() -> bool:
+    server = HTTPServer(("127.0.0.1", 0), _BuildRecordStub)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    ok = True
+    try:
+        for label, head_sha, record, want_decision in FRESHNESS_FIXTURES:
+            _BuildRecordStub.record = record
+            result = run_gate_freshness(head_sha, port)
+            got_decision = result.split(":", 1)[0]
+            passed = got_decision == want_decision
+            ok = ok and passed
+            flag = "green" if passed else "RED  "
+            print(f"[{flag}] {label}")
+            if not passed:
+                print(f"        want {want_decision}:*\n        got  {result!r}")
+    finally:
+        server.shutdown()
+    return ok
+
+
 def main() -> int:
     ok = True
     for label, body, h, pend, na, bid in FIXTURES:
@@ -110,6 +214,7 @@ def main() -> int:
         print(f"[{flag}] {label}")
         if not passed:
             print(f"        want {want}\n        got  {got}")
+    ok = run_freshness_fixtures() and ok
     print()
     print("ALL GREEN" if ok else "FAILURES PRESENT")
     return 0 if ok else 1

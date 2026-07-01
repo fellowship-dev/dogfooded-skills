@@ -161,13 +161,21 @@ EOF
       # and /health confirmed sha == HEAD. The gate calls /admin/build-worker/<id> and
       # requires SUCCEEDED + sha == HEAD. A pasted deployed_sha string cannot pass this gate.
       PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
-      GATE_RESULT=$(echo "$PR_BODY" | python3 -c "
+      # PR_HEAD_SHA must be an env-var PREFIX on the python3 command (VAR=x cmd form).
+      # Trailing VAR=x after `python3 -c "script"` is argv, not environment — the script
+      # would see an empty head_sha and the freshness check silently passes (pylot#1861).
+      GATE_RESULT=$(echo "$PR_BODY" | PR_HEAD_SHA="$PR_HEAD_SHA" python3 -c "
 import sys, re, os, urllib.request, json
 
 body = sys.stdin.read()
 STAGING_URL = os.environ.get('PYLOT_STAGING_URL', '').rstrip('/')
 STAGING_TOKEN = os.environ.get('PYLOT_STAGING_DISPATCH_TOKEN', '')
 head_sha = os.environ.get('PR_HEAD_SHA', '')
+if not head_sha:
+    # Fail CLOSED: an unresolved PR HEAD means freshness is unverifiable — an empty
+    # head_sha trivially matching any build sha is the exact bug class this guards.
+    print('BLOCK:PR head sha unresolved — freshness unverifiable')
+    sys.exit(0)
 
 # Format-tolerant build-id extraction (#1754 follow-up): accept staging_build_id /
 # 'staging build id', ':' or '=' or none, with or without backticks. The VALUE is still
@@ -198,7 +206,7 @@ if head_sha[:short] != build_sha[:short]:
     print('BLOCK:build sha mismatch')
     sys.exit(0)
 print('PASS:verified build for HEAD')
-" PR_HEAD_SHA="$PR_HEAD_SHA" 2>/dev/null || echo "BLOCK:build-record check failed (python error)")
+" 2>/dev/null || echo "BLOCK:build-record check failed (python error)")
 
       GATE_DECISION=$(echo "$GATE_RESULT" | cut -d: -f1)
       GATE_REASON=$(echo "$GATE_RESULT" | cut -d: -f2-)

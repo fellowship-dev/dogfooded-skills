@@ -59,7 +59,7 @@ files/commands that produced it. If a check can't run, say so and score conserva
 | 4 | **CI/CD** | workflow files present; default-branch status of latest runs (via API); branch protection on default branch |
 | 5 | **Task readiness** | open issues count; % with body >200 chars; labels exist; issue templates present |
 | 6 | **Secrets hygiene** | `.env.example` or documented config; `.env`/keys NOT committed (grep for obvious creds: `-----BEGIN`, `AKIA`, `sk-`, hardcoded passwords); secrets usage documented |
-| 7 | **Pylot wiring** (only if `$2` team given) | repo in team's `repos` (GET /crew); devbox_config registered; worker image exists; team goals set. Skip cleanly (`n/a`) if no team arg |
+| 7 | **Pylot wiring** (only if `$2` team given) | repo in team's `repos` (GET /crew); devbox_config registered; worker image exists; team goals set; **org skills home exists** — probe `GET $PYLOT_GATEWAY_URL/git-token?repo=<org>/pylot-skills` (also try `<org>/skills`): 200 = exists & App-accessible, 4xx = missing. Skip cleanly (`n/a`) if no team arg |
 | 8 | **Code health quick-scan** | lint/format config present; largest file LOC (>1500 = smell); TODO/FIXME density; dependency staleness (count majors behind on top 10 deps) |
 
 ### 2. Compute the verdict
@@ -94,6 +94,9 @@ Body template:
 
 ## What agents can already do here
 <2-4 bullets of work types that are safe to dispatch TODAY given current scores>
+
+## Org setup (include ONLY if the org skills home probe failed)
+- [ ] **Create your org's private skills home** — repo `<org>/pylot-skills` (private, empty is fine), then install the pylot GitHub App on it. This is where org-specific agent skills live; without it your teams can only use the shared cross-org skills. *(An org admin must do this — pylot's App token cannot create repos by design.)*
 
 ## Details
 <per-dimension: checks run, outputs, and why the score>

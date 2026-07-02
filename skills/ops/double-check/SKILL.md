@@ -36,7 +36,7 @@ Parse from `$ARGUMENTS`: first token is `pr`, second is `repo`.
 | 01-setup | subagent | Fetch PR metadata, CI status, existing review comments, full diff; checkout PR branch + merge base |
 | 02-review | subagent | ONE cohesive critical review in clean context: verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
-| 04-post | inline | Post curated review comment, apply `double-checked` label, write local report file, emit outcome marker |
+| 04-post | inline | Detect re-check context (needs-work in labels), post curated review comment, apply labels to close the pipeline loop (re-check) or signal completion (first-check), write local report file, emit outcome marker |
 
 ## Handoff locations
 
@@ -105,7 +105,15 @@ marker from the orchestrator (never from a subagent).
 
 ## Exit paths
 
-- **Success**: stage 04 emits `[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}" status=success`
+- **Re-check PASS** (PR had `needs-work`, verdict=ready): stage 04 removes `needs-work`, re-toggles
+  `double-checked` (remove + re-add), and emits:
+  `[pylot] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
+- **Re-check FAIL** (PR had `needs-work`, verdict=needs-work): stage 04 leaves `needs-work` in place,
+  does NOT re-toggle `double-checked`, posts a structured verdict comment with a
+  `<!-- pylot:recheck-fail -->` marker (idempotent — skipped if marker already present), and emits:
+  `[pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success`
+- **First-check success**: stage 04 applies `double-checked` label and emits:
+  `[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}, {N} findings curated, {N} fixes pushed" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
 - **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR) →
   `[pylot] outcome="double-check blocked: {reason}" status=blocked`
@@ -124,7 +132,9 @@ marker from the orchestrator (never from a subagent).
 7. **Do not skip stages** except stage 03 when `fixes_needed: false` (an explicit, allowed skip).
 8. **NO Quest.** Reporting is the local report file only — no Quest POST, no `127.0.0.1:4242`,
    no `quest.fellowship.dev`, no `QUEST_TOKEN`.
-9. **Apply the `double-checked` label only after the comment posts successfully** (stage 04).
+9. **Apply labels only after the comment posts successfully** (stage 04). On re-check PASS,
+   remove `needs-work` BEFORE re-adding `double-checked` — this is the structural loop-break.
+   On re-check FAIL, do NOT touch labels or re-toggle `double-checked`.
 
 ## Reference files
 

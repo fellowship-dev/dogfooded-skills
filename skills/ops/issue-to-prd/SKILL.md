@@ -32,7 +32,7 @@ Example: `/issue-to-prd fellowship-dev/pylot 123`
 
 ## Exit paths
 - **Questions path** (stage 06): posts GH comment, adds `open-questions` label, stops
-- **PRD path** (stage 07): rewrites issue body, adds `ready-to-work` + `challenged` labels
+- **PRD path** (stage 07): rewrites issue body, adds `ready-to-work` + `prd-ready` labels
 
 ## Stage handoffs
 Each stage writes to its `output/handoff.md`. Downstream stages read upstream handoffs.

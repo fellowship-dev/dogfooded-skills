@@ -18,7 +18,7 @@ Stages 01-05 are pure analysis (no GH side effects). Stages 06-07 write to GitHu
 - Stages 01-05: read-only. No GH comments, no label changes.
 - Stage 06: the ONLY decision point. All questions batched into ONE comment.
 - Stage 07: runs ONLY when stage 06 produced a PRD (not a questions list).
-- Labels added, never removed. `challenged` prevents re-processing.
+- Labels added, never removed. `prd-ready` signals "has a PRD" and enables deep-triage to greenlight.
 
 ## Folder map
 ```

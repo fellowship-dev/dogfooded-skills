@@ -15,7 +15,7 @@ Rewrite the issue body with the PRD and apply final labels.
 2. Edit the issue body: `gh issue edit {number} --repo {repo} --body "{prd_content}"`
 3. Add labels:
    - `gh issue edit {number} --repo {repo} --add-label "ready-to-work"`
-   - `gh issue edit {number} --repo {repo} --add-label "challenged"`
+   - `gh issue edit {number} --repo {repo} --add-label "prd-ready"`
 4. Write confirmation to `stages/07-publish/output/handoff.md`
 
 ## Output: handoff.md
@@ -27,7 +27,7 @@ Published
 
 ## Actions taken
 - Issue body rewritten with PRD
-- Labels added: ready-to-work, challenged
+- Labels added: ready-to-work, prd-ready
 
 ## Issue URL
 {url}
@@ -35,5 +35,5 @@ Published
 
 ## Success criteria
 - Issue body contains PRD structure (## Problem Statement visible)
-- Labels `ready-to-work` and `challenged` both applied
+- Labels `ready-to-work` and `prd-ready` both applied
 - `open-questions` label NOT present (guard: only run when stage 06 is PRD path)

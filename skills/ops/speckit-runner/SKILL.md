@@ -68,9 +68,9 @@ bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"
 Read its last line:
 - `POLL_RESULT=done` (exit 0) → worker finished this turn; the printed output carries the phase marker. Proceed.
 - `POLL_RESULT=running` (exit 10) → worker is **healthy and still working** — **run the exact same command again** (re-inline `WID`/`TURN_SEQ`; the script resumes its cumulative timer via a state file). The implement phase needs many of these — keep going.
-- `POLL_RESULT=block_elapsed` (exit 20) → a poll block (default 30 min) elapsed; the worker is **NOT stopped** and is very likely still working. The script printed a **decision packet**: `heartbeat_age`, `output_changed`, and a tail of the worker's output. Decide:
-  - **heartbeat fresh (< a few min) and output advancing → run the exact same command again.** That grants another block. This is the DEFAULT for a healthy worker — long implement turns legitimately take multiple blocks; never fail a healthy worker just because time passed.
-  - **heartbeat stale or output stuck across two consecutive blocks (`output_changed=no` twice) → the worker is wedged.** Stop it yourself (`POST ${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop`) and emit a failed outcome quoting the last output.
+- `POLL_RESULT=block_elapsed` (exit 20) → a poll block (default 30 min) elapsed; the worker is **NOT stopped** and is very likely still working. The script printed a **decision packet**: `heartbeat_age`, `output_changed`, and a tail of the worker's output. Decide — **heartbeat_age is the primary signal**:
+  - **heartbeat fresh (< ~5 min) → run the exact same command again.** That grants another block. This is the DEFAULT for a healthy worker — long implement turns legitimately take multiple blocks; never fail a healthy worker just because time passed. `output_changed=empty` mid-turn is NORMAL (worker output only lands at turn end) and is not a stuck signal.
+  - **heartbeat stale (> ~10 min, W_STATE still running) → the worker is wedged.** Stop it yourself (`POST ${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop`) and emit a failed outcome quoting the packet. `output_changed=no` across consecutive blocks is corroborating evidence only, never sufficient by itself.
 - `POLL_RESULT=ceiling_timeout` (exit 1) → the hard ceiling (default 4 h per turn) was hit; the worker has already been stopped by the script. Emit a failed outcome.
 
 Each call returns in <2 min by design, so it never gets backgrounded. **Never** hand-roll a poll loop, set a long Bash `timeout`, background the call, wait for a notification, or end your turn while a worker turn is in flight — any of those abandons a healthy worker and fails the mission.
@@ -176,7 +176,7 @@ fi
 
 - **Pre-flight is mandatory** — the worker must gather real data before speckit phases
 - **Poll only via the script** — after every phase run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"` (default Bash timeout); it returns in <2 min, so just run it again while it prints `POLL_RESULT=running`. Never hand-roll a poll loop, never pass a long Bash `timeout`, never let it get backgrounded, never wait for a notification, never end your turn while a worker turn is in flight (the session exits → bogus `"poll timeout"` on a healthy worker).
-- **Never stop a healthy worker on a timer** — `block_elapsed` is a checkpoint, not a failure. Only stop a worker when its heartbeat is stale, its output is stuck across two consecutive blocks, or it reported a failure. The script alone enforces the hard ceiling.
+- **Never stop a healthy worker on a timer** — `block_elapsed` is a checkpoint, not a failure. Only stop a worker when its heartbeat is stale (> ~10 min) or it reported a failure; never on elapsed time or empty mid-turn output alone. The script alone enforces the hard ceiling.
 - **Stop the worker** — always call /stop when done, even on failure
 - **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting
 - **"already complete" only at the dedup gate** — only emit this when the issue is genuinely CLOSED (Step 0); never for timeouts or missing notifications

@@ -85,7 +85,11 @@ except Exception: pass' 2>/dev/null
 elif [ "$TOTAL" -ge "$BLOCK_END" ]; then
   # Block boundary: print the decision packet. The worker keeps running — the
   # operator decides (re-run to continue, or POST /stop to give up).
-  if [ "$OUT_HASH" = "$PREV_HASH" ]; then CHANGED="no"; elif [ "$PREV_HASH" = "-" ]; then CHANGED="first-block"; else CHANGED="yes"; fi
+  EMPTY_HASH=$(printf '' | python3 -c 'import sys,hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])')
+  if [ "$OUT_HASH" = "$EMPTY_HASH" ]; then CHANGED="empty"
+  elif [ "$OUT_HASH" = "$PREV_HASH" ]; then CHANGED="no"
+  elif [ "$PREV_HASH" = "-" ]; then CHANGED="first-block"
+  else CHANGED="yes"; fi
   printf '%s' "$ST" | python3 -c 'import sys, json, datetime
 try: d = json.load(sys.stdin)
 except Exception: d = {}
@@ -94,11 +98,16 @@ age = "-"
 if hb:
     try:
         t = datetime.datetime.fromisoformat(str(hb).replace("Z", "+00:00"))
+        if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)  # gateway sends naive UTC
         age = str(int((datetime.datetime.now(datetime.timezone.utc) - t).total_seconds())) + "s"
     except Exception: pass
 print("heartbeat_age=%s turn_started_at=%s" % (age, d.get("turn_started_at","-")))
-print("--- last worker output (tail) ---")
-print((d.get("last_output","") or "")[-2000:])' 2>/dev/null
+out = (d.get("last_output","") or "")[-2000:]
+if out:
+    print("--- last worker output (tail) ---")
+    print(out)
+else:
+    print("(no output captured yet this turn — last_output fills at turn end; judge health by heartbeat_age)")' 2>/dev/null
   printf '%s\n%s\n' "$TOTAL" "$OUT_HASH" > "$STATE"
   echo "POLL_RESULT=block_elapsed output_changed=$CHANGED total=${TOTAL}s ceiling=${CEILING}s"
   exit 20

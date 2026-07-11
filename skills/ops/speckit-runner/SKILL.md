@@ -14,7 +14,7 @@ through the speckit phases via the gateway worker API.
 Gateway: `$PYLOT_API` (or `$PYLOT_GATEWAY_URL`). Token: `$PYLOT_DISPATCH_TOKEN`.
 Mission: `$PYLOT_JOB_ID`. Repo: `$1` (or `$PYLOT_REPO`).
 
-> **Drive the worker in the foreground by polling the worker API — in short chunks you re-run yourself.** After queueing each phase prompt, run the Poll-to-idle snippet (Step P) with the Bash tool, **using the default Bash timeout (do NOT pass a long `timeout`)**. Each call returns in **under 2 minutes** with a `POLL_RESULT`; while it prints `POLL_RESULT=running`, **run Step P again immediately** — repeat until `POLL_RESULT=done`.
+> **Drive the worker in the foreground by polling the worker API — in short chunks you re-run yourself.** After queueing each phase prompt, run the Poll-to-idle snippet (Step P) with the Bash tool, **using the default Bash timeout (do NOT pass a long `timeout`)**. Each call returns in **under 2 minutes** with a `POLL_RESULT`; while it prints `POLL_RESULT=running`, **run Step P again immediately**. Every ~30 min it prints `POLL_RESULT=block_elapsed` with a decision packet (heartbeat age, output-changed flag, log tail) — review it and, if the worker is healthy, **run Step P again to grant another block**. Repeat until `POLL_RESULT=done`.
 >
 > **The trap (read this):** the harness **auto-backgrounds any Bash command that runs past its tool `timeout`** (default ~120 s). A backgrounded poll is fatal. You may *see* a completion notification arrive for a background task — **ignore that signal as a reason to wait.** Those notifications only fire **while your session is actively running tool calls**; the instant you end your turn to "wait for it," the headless `claude -p` session exits and the mission is finalized as **failed** — while the worker is still healthy. So: never set a long Bash `timeout` on Step P, never background it, never "wait for a notification," never end your turn while a worker turn is in flight. If Step P ever gets backgrounded, that is a bug — kill it and run it again. Each call is short synchronous shell you run, read, and re-run yourself.
 
@@ -68,7 +68,10 @@ bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"
 Read its last line:
 - `POLL_RESULT=done` (exit 0) → worker finished this turn; the printed output carries the phase marker. Proceed.
 - `POLL_RESULT=running` (exit 10) → worker is **healthy and still working** — **run the exact same command again** (re-inline `WID`/`TURN_SEQ`; the script resumes its cumulative timer via a state file). The implement phase needs many of these — keep going.
-- `POLL_RESULT=timeout` (exit 1) → budget hit; worker already stopped. Emit a failed outcome.
+- `POLL_RESULT=block_elapsed` (exit 20) → a poll block (default 30 min) elapsed; the worker is **NOT stopped** and is very likely still working. The script printed a **decision packet**: `heartbeat_age`, `output_changed`, and a tail of the worker's output. Decide:
+  - **heartbeat fresh (< a few min) and output advancing → run the exact same command again.** That grants another block. This is the DEFAULT for a healthy worker — long implement turns legitimately take multiple blocks; never fail a healthy worker just because time passed.
+  - **heartbeat stale or output stuck across two consecutive blocks (`output_changed=no` twice) → the worker is wedged.** Stop it yourself (`POST ${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop`) and emit a failed outcome quoting the last output.
+- `POLL_RESULT=ceiling_timeout` (exit 1) → the hard ceiling (default 4 h per turn) was hit; the worker has already been stopped by the script. Emit a failed outcome.
 
 Each call returns in <2 min by design, so it never gets backgrounded. **Never** hand-roll a poll loop, set a long Bash `timeout`, background the call, wait for a notification, or end your turn while a worker turn is in flight — any of those abandons a healthy worker and fails the mission.
 
@@ -127,7 +130,7 @@ TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sy
 echo "[speckit-runner] implement prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
-Poll per **Step P** now — run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"`. **This is the longest phase — expect many `POLL_RESULT=running` returns; just run the same command again after each** until `POLL_RESULT=done`. Do not abandon the worker between calls, do not wait for a notification, do not end your turn. When done, the printed output carries `phase=implement status=done pr=<PR_URL>`.
+Poll per **Step P** now — run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"`. **This is the longest phase — expect many `POLL_RESULT=running` returns and several `POLL_RESULT=block_elapsed` decision points; review each packet and run the same command again while the worker is healthy** until `POLL_RESULT=done`. A multi-hour implement turn is normal — continue granting blocks as long as heartbeats are fresh and output advances. Do not abandon the worker between calls, do not wait for a notification, do not end your turn. When done, the printed output carries `phase=implement status=done pr=<PR_URL>`.
 
 ---
 
@@ -173,6 +176,7 @@ fi
 
 - **Pre-flight is mandatory** — the worker must gather real data before speckit phases
 - **Poll only via the script** — after every phase run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"` (default Bash timeout); it returns in <2 min, so just run it again while it prints `POLL_RESULT=running`. Never hand-roll a poll loop, never pass a long Bash `timeout`, never let it get backgrounded, never wait for a notification, never end your turn while a worker turn is in flight (the session exits → bogus `"poll timeout"` on a healthy worker).
+- **Never stop a healthy worker on a timer** — `block_elapsed` is a checkpoint, not a failure. Only stop a worker when its heartbeat is stale, its output is stuck across two consecutive blocks, or it reported a failure. The script alone enforces the hard ceiling.
 - **Stop the worker** — always call /stop when done, even on failure
 - **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting
 - **"already complete" only at the dedup gate** — only emit this when the issue is genuinely CLOSED (Step 0); never for timeouts or missing notifications

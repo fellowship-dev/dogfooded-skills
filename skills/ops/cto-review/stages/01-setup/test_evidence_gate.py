@@ -36,9 +36,10 @@ from pathlib import Path
 # -- byte-equivalent to the regexes in CONTEXT.md step 5.5 ---------------------
 # Heading: bash `grep -iE '^#{1,4}[[:space:]].*[Ss]taging[[:space:]]+[Ee]vidence'`
 HEADING_RE = re.compile(r"^#{1,4}\s.*staging\s+evidence", re.I | re.M)
-# Build id: bash `staging[_ ]build[_ ]id\s*[:=]?\s*`?([A-Za-z0-9][A-Za-z0-9:/_-]+)`?` (-i)
+# Build id: staging_build_id / 'staging build id' OR the '**Build:**' prose label
+# (pylot#2097) — ':' or '=' or none, backticks optional (-i)
 BUILD_ID_RE = re.compile(
-    r"staging[_ ]build[_ ]id\s*[:=]?\s*`?([A-Za-z0-9][A-Za-z0-9:/_-]+)`?", re.I
+    r"(?:staging[_ ]build[_ ]id|\*\*build:?\*\*)\s*[:=]?\s*`?([A-Za-z0-9][A-Za-z0-9:/_-]+)`?", re.I
 )
 
 
@@ -94,6 +95,16 @@ FIXTURES = [
         "e) ### (h3) heading",
         "### Staging Evidence\nstaging_build_id: `x:y-9`\n",
         True, False, False, "x:y-9",
+    ),
+    (
+        "e2) '**Build:**' prose label with backticks + arrow suffix (the pylot#2084 shape)",
+        "## Staging Evidence\n- **Build:** `pylot-builder-staging:6a57e56e-e4c7` \u2192 SUCCEEDED (gate green)\n- **Deployed SHA:** `b9de2ca8` (PR HEAD)\n",
+        True, False, False, "pylot-builder-staging:6a57e56e-e4c7",
+    ),
+    (
+        "e3) '**Build**:' colon outside bold, no backticks",
+        "## Staging Evidence\n**Build**: pylot-builder-staging:aa11-bb22\n",
+        True, False, False, "pylot-builder-staging:aa11-bb22",
     ),
     (
         "f) pending placeholder still blocks",

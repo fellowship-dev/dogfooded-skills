@@ -177,10 +177,12 @@ if not head_sha:
     print('BLOCK:PR head sha unresolved — freshness unverifiable')
     sys.exit(0)
 
-# Format-tolerant build-id extraction (#1754 follow-up): accept staging_build_id /
-# 'staging build id', ':' or '=' or none, with or without backticks. The VALUE is still
-# verified against the live build record below — loosening the format never loosens the check.
-BUILD_ID_RE = re.compile(r'staging[_ ]build[_ ]id\s*[:=]?\s*\`?([A-Za-z0-9][A-Za-z0-9:/_-]+)\`?', re.I)
+# Format-tolerant build-id extraction (#1754 follow-up + pylot#2097): accept
+# staging_build_id / 'staging build id' (':' or '=' or none, backticks optional) AND the
+# prose form '**Build:** \`pylot-builder-staging:<id>\`' that real evidence blocks use
+# (pylot#2084 false-block). The VALUE is still verified against the live build record
+# below — loosening the format never loosens the check.
+BUILD_ID_RE = re.compile(r'(?:staging[_ ]build[_ ]id|\*\*build:?\*\*)\s*[:=]?\s*\`?([A-Za-z0-9][A-Za-z0-9:/_-]+)\`?', re.I)
 m = BUILD_ID_RE.search(body)
 if not m:
     print('BLOCK:no verified build for HEAD')

@@ -25,19 +25,31 @@ All three are judged together as cross-cutting concerns, yielding ONE verdict.
 
 ## Steps
 
-1. Read the setup handoff. Build a mental model of what the diff changes and why.
+1. Read the setup handoff. Note the `## Review State` section (risk tier + findings ledger +
+   verification manifest from review-pr, #2210). Build a mental model of what the diff changes and
+   why — the ledger's summary spares you re-deriving intent, but the DIFF remains the ground truth.
 
-2. **Curate the first review's findings.** Classify EACH finding as:
+2. **Curate the findings — by ledger ID when Review State is present.** Classify EACH finding as:
    - **MUST FIX** — accurate, important for correctness/security/spec compliance
    - **NICE TO HAVE** — accurate but low priority, non-blocking
    - **DISCARD** — inaccurate, irrelevant, overly pedantic, or far-fetched
 
-   Document the classification and reason for each. A human CTO reads this to understand what the
-   AI reviewers actually caught vs. what was noise.
-   - If no first-review findings exist: note "No CI review comments found — reviewed diff directly".
+   Document the classification and reason for each, keyed by the ledger ID (`R1`, `R2`, …) when one
+   exists. A human CTO reads this to understand what the AI reviewers actually caught vs. noise.
+   - Review State `none` + no first-review findings: note "No CI review comments found — reviewed
+     diff directly".
 
 3. **Identify new issues not caught by the first review** — correctness, edge cases, security,
-   missing tests, doc/type/dep gaps. List each with the file/line and what's wrong.
+   missing tests, doc/type/dep gaps. List each with the file/line and what's wrong. Give each an
+   ID continuing the ledger: `D1`, `D2`, … **Depth scales with the risk tier** (#2210):
+   - **LOW** — verify acceptance criteria and tests posture, spot-check the 2-3 riskiest hunks;
+     no exhaustive fresh hunt on a template-following diff.
+   - **MEDIUM** — full fresh hunt as before.
+   - **HIGH** — full fresh hunt AND confirm the runtime-shape checklist verdicts recorded in the
+     ledger's `verified` manifest actually hold against the diff (post-response async work,
+     boundary return shapes, cursor math, local-vs-prod substrate drift, RMW races). If the
+     manifest lacks the checklist (older review), run it yourself.
+   You may ESCALATE the tier (never lower it) — record the new tier + reason in your handoff.
 
 4. **Decide tests posture.** Note whether tests should be run after fixes (and the likely stack),
    or whether tests are not applicable (e.g. deps-only / lockfile-only PR — note this explicitly).
@@ -70,19 +82,29 @@ fixes_needed: {true | false}
 ## Implementation
 {2-4 bullets: key approach, files changed grouped by area}
 
+## Risk Tier
+- tier: {from Review State, or the ESCALATED tier + reason, or "unknown (no review-state)"}
+
 ## Curated First-Review Findings
-| # | Finding | Verdict | Action |
-|---|---------|---------|--------|
-| 1 | {description} | MUST FIX | {what fix is needed} |
-| 2 | {description} | NICE TO HAVE | {worth doing? why} |
-| 3 | {description} | DISCARD | {why it's irrelevant} |
-{or "No CI review comments found — reviewed diff directly"}
+| ID | Finding | Verdict | Action |
+|----|---------|---------|--------|
+| R1 | {description} | MUST FIX | {what fix is needed} |
+| R2 | {description} | NICE TO HAVE | {worth doing? why} |
+| R3 | {description} | DISCARD | {why it's irrelevant} |
+{ledger IDs when Review State present, else 1..N — or "No CI review comments found — reviewed diff directly"}
 
 ## New Issues (not caught by first review)
-| # | Issue | File:line | Severity | Fix needed |
-|---|-------|-----------|----------|------------|
-| 1 | {description} | {path:line} | {must-fix/nice} | {what to do} |
+| ID | Issue | File:line | Severity | Fix needed |
+|----|-------|-----------|----------|------------|
+| D1 | {description} | {path:line} | {must-fix/nice} | {what to do} |
 {or "none"}
+
+## Verified (delta this stage adds to the manifest)
+| What | How |
+|------|-----|
+| {e.g. "first-review findings re-judged against diff"} | read |
+| {e.g. "runtime-shape checklist re-confirmed"} | read |
+{stage 03, if it runs, appends its test run as {"what":"test suite after fixes","how":"executed"}}
 
 ## Tests Posture
 {stack + whether to run after fixes, OR "not applicable — deps-only/lockfile-only"}

@@ -63,10 +63,48 @@ gh pr diff $PR --repo $REPO
 
 # Changed file names (for quick overview)
 gh pr diff $PR --repo $REPO --name-only
+
+# Head SHA (recorded in review-state so later stages know which snapshot was reviewed)
+HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 ```
 
 Capture the FULL diff into the handoff — the entire diff is reviewed together in stage 01, so the
 subagent needs all of it.
+
+### Step 3: Compute the Risk Tier (mechanical — #2210)
+
+Evaluate this rubric against the diff/file list you just fetched. It is deterministic — no
+judgement calls beyond what the checks state. Record the tier AND every reason that fired.
+
+**HIGH** if ANY of:
+- touches a DB migration (`*/migrations/*` or files creating/altering tables)
+- touches auth/credential surface (path or symbol matches `auth|token|jwt|secret|cred|session`)
+- ADDED lines call an external service/driver the repo talks to over a boundary (new SDK/client
+  imports, new HTTP/queue/DB driver calls) — boundary-shape bugs are the top escape class
+- adds or rewires HTTP routes / webhook / event processing
+- creates new non-test source files that do NOT mirror an existing module's structure
+- > 400 changed lines outside tests/docs
+
+**LOW** if NO HIGH trigger fired AND any of:
+- docs/comments-only diff
+- ≤ 150 changed lines, tests included, and the change follows an existing pattern in the repo
+  (same shape as a sibling module/handler)
+
+**MEDIUM** otherwise.
+
+Later stages may ESCALATE the tier (never lower it) if they find something the rubric missed.
+
+## Output: handoff.md
+
+Append to the handoff, after the PR metadata section:
+
+```markdown
+## Risk Tier
+- tier: {HIGH|MEDIUM|LOW}
+- head_sha: {HEAD_SHA}
+- reasons:
+  - {each rubric line that fired, or "no HIGH triggers; small template-following diff" for LOW}
+```
 
 ### Step 3: Closes vs Refs raw data (for the mandatory check in stage 01)
 

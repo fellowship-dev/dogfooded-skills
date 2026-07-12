@@ -37,7 +37,22 @@ PR_URL=$(gh pr view $PR --repo $REPO --json url --jq '.url')
 gh pr checks $PR --repo $REPO 2>/dev/null || echo "CI checks not accessible via token"
 ```
 
-### Read ALL existing PR review comments (the "first review")
+### Extract the review-state block (#2210) + read existing review comments
+
+First try to extract the LAST `review-state v1` block from the PR comments — review-pr embeds a
+machine ledger (findings with IDs + verification manifest + risk tier) so this stage extends it
+instead of re-deriving everything cold:
+
+```bash
+REVIEW_STATE=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
+  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
+echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE=""   # unparseable → treat as absent
+```
+
+- **Block found**: put it verbatim in the handoff's `## Review State` section. Carry over any OTHER
+  bot/CI findings NOT already in the ledger (compare by file/description) verbatim as before.
+- **Block absent or invalid** (pre-#2210 review, or review-pr failed): fall back to the original
+  behavior — capture ALL existing review comments verbatim, and write `## Review State` as `none`.
 
 ```bash
 gh pr view $PR --repo $REPO --json comments --jq '.comments[].body'
@@ -126,8 +141,13 @@ setup_ok: {true|false}
 ## PR Body
 {PR body verbatim}
 
+## Review State
+{the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
+
 ## First Review (existing comments + reviews, verbatim)
-{every finding from CI / bots / reviewers, verbatim — or "No existing review comments found"}
+{every finding from CI / bots / reviewers, verbatim — or "No existing review comments found".
+When Review State is present, findings already in its ledger may be summarized by ID instead of
+repeated verbatim.}
 
 ## Changed Files
 {name list}

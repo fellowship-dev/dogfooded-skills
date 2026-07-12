@@ -37,11 +37,22 @@ handoffs:
 gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 # CTO Review: $REPO PR #$PR — $PR_TITLE
 ... (see shared/review-comment-format.md — verbatim) ...
+
+<!-- review-state v1
+{REVIEW_STATE_JSON}
+-->
 COMMENT_EOF
 )"
 ```
 For `merge_state: merged`, prefix the verdict line to make clear it is a post-merge note.
 Capture the returned comment URL for the report.
+
+**Finalizing `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
+`## Review State` (or a fresh `{"v":1,"findings":[]}` if `none`), set `"stage": "cto-review"`,
+update finding statuses per stage 02's Ledger Reconciliation (a REWORK verdict leaves its driving
+findings `open`; LGTM with dismissals records the dismissal reasons in `note`), and append
+`verified` entries for the dimensions this review covered. Validate with `jq .` before posting —
+the block is the pipeline's permanent audit trail (close-audit and re-checks read it).
 
 ### Step 2: Apply the verdict label
 ```bash

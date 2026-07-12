@@ -85,15 +85,32 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 ### Verdict
 [Ready for CTO review / Needs more work — list remaining items]
 
+<!-- review-state v1
+{REVIEW_STATE_JSON}
+-->
+
 REVIEW_EOF
 )"
 ```
+
+**Updating `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
+`## Review State` (or start a fresh object with `"findings": []` if it was `none`), then:
+- set `"stage": "double-check"` and refresh `"head_sha"` (fix commits may have moved it)
+- set `"tier"` to the final tier (respect any escalation from stage 02; never lower)
+- update each existing finding's `"status"`: `fixed` (stage 03 addressed it — add
+  `"note": "fixed in <sha>"`), `dismissed` (DISCARD verdict — note the reason), or leave `open`
+- append stage-02's new issues as findings with their `D{n}` IDs, `"status": "open"` or `"fixed"`
+- append this stage's `verified` entries (and stage 03's
+  `{"what": "test suite after fixes", "how": "executed", "by": "double-check"}` when tests ran)
+
+Validate with `jq .` before posting — downstream cto-review parses it.
 
 **Rules:**
 - If no CI findings exist: write "No CI review comments found — reviewed diff directly"
 - If tests weren't run: explain why (e.g., "deps-only change, no test suite applicable")
 - Verdict must be specific: either "ready for CTO review" or list what still needs work
 - If stage 03 was skipped (`fixes_needed: false`): mark all "Fixed?" cells "No (no fix needed)"
+- The `review-state v1` block is ALWAYS present and valid JSON
 
 ### Apply labels (re-check vs first-check)
 

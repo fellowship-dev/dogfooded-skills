@@ -135,6 +135,10 @@ marker from the orchestrator (never from a subagent).
 9. **Apply labels only after the comment posts successfully** (stage 04). On re-check PASS,
    remove `needs-work` BEFORE re-adding `double-checked` — this is the structural loop-break.
    On re-check FAIL, do NOT touch labels or re-toggle `double-checked`.
+10. **Extend the review-state ledger, never fork it** (#2210) — setup extracts the LAST
+    `review-state v1` block; stage 02 curates by ledger ID at tier-scaled depth (escalate-only);
+    stage 04 re-posts the updated block as valid JSON. No block found → pre-#2210 fallback
+    (verbatim first-review curation, full depth).
 
 ## Reference files
 

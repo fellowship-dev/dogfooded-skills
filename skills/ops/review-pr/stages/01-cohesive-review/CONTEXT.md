@@ -18,10 +18,37 @@ do NOT check out, fix, or push anything.
 
 ## Steps
 
-### Step 1: Read the Diff
-Read the full diff from the handoff carefully. Build a mental model of what changed and why. Focus
-on understanding intent before looking for issues. Reason across files — a finding in one file may
-only be a bug because of what another file in the same diff does. Cross-file cohesion is the point.
+### Step 1: Read the Diff — at the depth the Risk Tier demands
+Read the `## Risk Tier` section of the handoff first, then the full diff. Build a mental model of
+what changed and why. Focus on understanding intent before looking for issues. Reason across
+files — a finding in one file may only be a bug because of what another file in the same diff
+does. Cross-file cohesion is the point.
+
+**Tier-scaled depth (#2210):**
+- **LOW** — bounded pass: verify the change does what the PR claims, check the Closes-vs-Refs data
+  (Step 4) and any convention the diff obviously touches, and inspect only the riskiest 2-3 hunks
+  in depth. Do not exhaustively sweep a template-following diff. If anything you see contradicts
+  the LOW rating (a rubric trigger the mechanical pass missed), ESCALATE: record the new tier +
+  reason in your handoff and review at that depth instead.
+- **MEDIUM** — the full cohesive review as described below.
+- **HIGH** — the full cohesive review PLUS the runtime-shape checklist:
+
+**Runtime-shape checklist (HIGH tier only).** These are the defect classes that diff-reading
+historically misses because the code *looks* idiomatic — walk each one explicitly against the diff
+and record the answer (fine / finding / not applicable) in your handoff:
+1. **Post-response async work on serverless** — any promise started but not awaited before the
+   handler returns (fire-and-forget writes, `.catch(() => undefined)` tails). On Lambda the
+   process freezes when the response is sent; the work silently never happens.
+2. **Boundary return shapes** — values crossing a driver/API boundary (DB rows, SDK responses):
+   does the code assume `Date`/number where the real driver returns strings (e.g. RDS Data API
+   returns timestamps as strings)? Comparisons/sorting on such fields are the classic failure.
+3. **Pagination/cursor math** — cursor comparisons, tuple ordering, off-by-one on page
+   boundaries; would a full page of equal-timestamp rows or a string-typed cursor break it?
+4. **Local-vs-prod substrate drift** — behavior that differs between the test substrate (PGlite,
+   local mocks) and prod (Aurora/Data API/real Lambda): case sensitivity, JSON casting, implicit
+   transactions, cold-start state.
+5. **Read-modify-write on shared state** — lost-update windows on config/secrets/labels that two
+   concurrent missions could interleave.
 
 ### Step 2: Analyze and Score Findings
 
@@ -81,14 +108,31 @@ Path: `.procedure-output/review-pr/01-cohesive-review/handoff.md`
 ## Summary
 [2-3 sentences: what this PR does, what problem it solves, and whether the approach is sound]
 
-## Findings
-| # | Severity | Location | Finding | Confidence |
-|---|----------|----------|---------|------------|
-| 1 | 🔴 Bug | `path/file.ts#L67-72` | [description] | 95 |
-| 2 | 🟡 Warning | `path/other.ts#L23` | [description] | 85 |
-| 3 | ℹ️ Info | `path/util.ts#L45` | [description] | 80 |
+## Risk Tier
+- tier: {tier from handoff, or the ESCALATED tier + reason}
 
-[If no findings ≥ 80 confidence: "No issues found above confidence threshold."]
+## Findings
+| ID | Severity | Location | Finding | Confidence |
+|----|----------|----------|---------|------------|
+| R1 | 🔴 Bug | `path/file.ts#L67-72` | [description] | 95 |
+| R2 | 🟡 Warning | `path/other.ts#L23` | [description] | 85 |
+| R3 | ℹ️ Info | `path/util.ts#L45` | [description] | 80 |
+
+[IDs are `R{n}` — they persist into the review-state ledger that double-check and cto-review
+update, so never renumber. If no findings ≥ 80 confidence: "No issues found above confidence
+threshold."]
+
+## Verified
+[What you actually checked and how — this feeds the review-state manifest that tells later
+stages what is already covered. `how` is always `read` in this stage (this skill never executes).]
+| What | How |
+|------|-----|
+| {e.g. "whole diff, cross-file cohesion"} | read |
+| {e.g. "runtime-shape checklist items 1-5"} | read |
+| {e.g. "Closes-vs-Refs AC counts"} | read |
+
+## Runtime-Shape Checklist
+[HIGH tier only: item-by-item fine / finding {ID} / n-a. Other tiers: "n/a — tier {tier}"]
 
 ## Convention Compliance
 [Findings from CLAUDE.md — or "No CLAUDE.md found" / "All conventions followed"]

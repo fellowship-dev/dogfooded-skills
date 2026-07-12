@@ -156,6 +156,11 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 9. **Never merge if CI is red** — even on an LGTM verdict.
 10. **No Quest** — reporting is the local report file only.
 11. **Staging evidence gate fires first** — if `short_circuit: missing-staging-evidence`, skip everything else and post the rejection inline. This gate cannot be bypassed.
+12. **Scope by the verification manifest, don't assume** (#2210) — setup extracts the LAST
+    `review-state v1` block; the review trusts what the manifest covers, spot-checks what it
+    doesn't, treats still-open ledger findings as verdict inputs, and stage 03 re-posts the
+    finalized block as valid JSON. No block found → pre-#2210 fallback (assume earlier phases
+    covered code quality).
 
 ## Reference files
 

@@ -16,9 +16,21 @@ If the setup handoff has `merge_state: merged`, frame the output as a **post-mer
 (findings + follow-ups), not a merge gate. If `short_circuit: closed-no-merge` is present this stage
 should not have been invoked — write a no-op handoff and exit.
 
-## The CTO review is strategic, not code-level
-Code quality was already covered by the `reviewed` and `double-checked` phases. Focus on: docs gaps,
-ops holes, downstream risk, security, and merge strategy — reading the WHOLE diff in one pass.
+## The CTO review is strategic, not code-level — scoped by the verification manifest (#2210)
+Read the setup handoff's `## Review State` first. Its `verified` manifest states exactly what the
+`reviewed` and `double-checked` phases checked and HOW (`read` vs `executed`), and its findings
+ledger shows what they caught and what status each finding is in. Trust what the manifest covers;
+**spot-check what it doesn't**:
+- a dimension below that the manifest doesn't cover → check it yourself against the diff
+- ledger findings still `"status": "open"` → they are unresolved; weigh them in your verdict
+  (an open bug-severity finding is REWORK material, not something to re-litigate)
+- everything marked `"how": "read"` means NOBODY has executed this code — factor that into
+  production-impact judgement on HIGH-tier PRs
+- `## Review State: none` (pre-#2210 PR) → fall back to the old assumption that code quality was
+  covered by the earlier phases, and note that in your output
+
+Focus on: docs gaps, ops holes, downstream risk, security, and merge strategy — reading the WHOLE
+diff in one pass.
 
 **Skip tooling-enforced findings**: Do not surface lint errors, formatting violations, or type errors
 that the project's CI/CD pipeline already catches. Reserve judgement for logic bugs, design issues,
@@ -159,6 +171,10 @@ Wrong-but-plausible: {none | list of findings}
 
 ## Correctness & Security
 - {findings, or "none — no correctness/security concerns"}
+
+## Ledger Reconciliation
+- open findings from review-state: {IDs still open + how each affected the verdict, or "none open" / "no review-state"}
+- executed-vs-read: {e.g. "tests executed by double-check; all else read-only" — or "nothing executed (read-only pipeline)"}
 
 ## Action Items
 1. **`path/to/file`** — specific change needed

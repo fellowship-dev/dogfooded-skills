@@ -48,13 +48,43 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 ### Verdict
 [Clean — proceed to double-check / {N} findings to address — proceed to double-check]
 
+<!-- review-state v1
+{REVIEW_STATE_JSON}
+-->
+
 REVIEW_EOF
 )"
 ```
 
+**Building `REVIEW_STATE_JSON` (#2210):** one minified-ish JSON object assembled from the two
+handoffs — this is the machine ledger double-check and cto-review extend instead of re-deriving
+everything cold. Shape:
+
+```json
+{
+  "v": 1,
+  "stage": "review-pr",
+  "head_sha": "{from stage 00 Risk Tier section}",
+  "tier": "{HIGH|MEDIUM|LOW — the FINAL tier (post-escalation if stage 01 escalated)}",
+  "tier_reasons": ["{reason}", "..."],
+  "findings": [
+    {"id": "R1", "severity": "bug", "loc": "path/file.ts#L67-72", "desc": "{short}", "confidence": 95, "status": "open"}
+  ],
+  "verified": [
+    {"what": "whole diff, cross-file cohesion", "how": "read", "by": "review-pr"},
+    {"what": "runtime-shape checklist 1-5", "how": "read", "by": "review-pr"}
+  ]
+}
+```
+
+All findings start `"status": "open"`. Keep `desc` to one sentence — the human table above carries
+the detail. Valid JSON is a hard requirement (downstream stages parse it); if in doubt, validate
+with `jq . <<< "$REVIEW_STATE_JSON"` before posting.
+
 **Comment rules:**
 - Always include the Summary — even if no findings, the summary helps the double-checker
-- Empty findings table → write "No issues found above confidence threshold"
+- Empty findings table → write "No issues found above confidence threshold" (and `"findings": []`
+  in the state block — the block itself is ALWAYS present)
 - Never write findings below 80 confidence — they are noise
 - Location must reference file path and line numbers from the diff
 - Verdict is always "proceed to double-check" — this skill never blocks

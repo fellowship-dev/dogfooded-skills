@@ -262,7 +262,17 @@ fi
 If `short_circuit: missing-staging-evidence` is set, the orchestrator will post the rejection
 comment, apply `needs-work`, and emit the blocked outcome without running stage 02 or 03.
 
-6. Fetch the FULL diff (the review reads this whole, in cohesion):
+6. Extract the LAST `review-state v1` block from the PR comments (#2210) — the machine ledger the
+   earlier pipeline stages accumulated (findings with statuses + verification manifest + risk tier):
+```bash
+REVIEW_STATE=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
+  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
+echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE="none"
+```
+   Record it verbatim in the handoff's `## Review State` section (`none` if absent/unparseable —
+   pre-#2210 PRs).
+
+7. Fetch the FULL diff (the review reads this whole, in cohesion):
 ```bash
 gh pr diff $PR --repo $REPO
 ```
@@ -271,12 +281,12 @@ Also pull dependency-manifest changes explicitly so they are easy to spot:
 gh pr diff $PR --repo $REPO -- "**/package.json" "**/Gemfile" "**/requirements.txt" "**/go.mod" "**/pyproject.toml"
 ```
 
-7. Fetch CI status (the review and act stages must honor it):
+8. Fetch CI status (the review and act stages must honor it):
 ```bash
 gh pr checks $PR --repo $REPO || echo "CHECKS_UNAVAILABLE"
 ```
 
-8. Resolve the team merge strategy (default `auto`):
+9. Resolve the team merge strategy (default `auto`):
 ```bash
 MERGE_STRATEGY=$(python3 -c "
 import yaml
@@ -294,7 +304,7 @@ echo "merge_strategy=$MERGE_STRATEGY"
 ```
 (Crew config may live in the DB rather than a YAML file; if `crew.yml` is absent, default `auto`.)
 
-9. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
+10. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
 
 ## Output: handoff.md
 
@@ -328,6 +338,9 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 
 ## PR Description / Linked Issue
 {PR body; linked issue number+title if extractable from body or branch}
+
+## Review State
+{the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
 
 ## Spec
 - spec_ref: {SPEC_REF — e.g. #42 | fellowship-dev/pylot#42 | none}

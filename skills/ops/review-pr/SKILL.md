@@ -43,9 +43,9 @@ Parse from `$ARGUMENTS`: `PR=$1`, `REPO=$2`. Both required.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 00-context | inline | Dedup gate (exit if already `reviewed`) + gather PR metadata, conventions, existing comments, CI status, and the full diff |
-| 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion: analyze, confidence-score findings (≥80), convention compliance, Closes-vs-Refs. Clean isolated context. |
-| 02-post | inline | Post structured review comment + apply `reviewed` label + write local report + emit outcome marker |
+| 00-context | inline | Dedup gate (exit if already `reviewed`) + gather PR metadata, conventions, existing comments, CI status, the full diff, and the **mechanical risk tier** (#2210) |
+| 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion at tier-scaled depth (LOW bounded / MEDIUM full / HIGH full + runtime-shape checklist): analyze, confidence-score findings (≥80), convention compliance, Closes-vs-Refs. Clean isolated context. |
+| 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** (findings ledger + verification manifest consumed by double-check/cto-review, #2210) + apply `reviewed` label + write local report + emit outcome marker |
 
 There is exactly one subagent stage (01). It is NOT split per-file or per-dimension.
 
@@ -138,6 +138,11 @@ Post the comment, apply the `reviewed` label, write the local report file, and e
 10. **Never apply `double-checked`** — only `reviewed`. The verdict is always "proceed to
     double-check"; this skill never blocks.
 11. **Do not skip stages** — every stage executes (except stage 01/02 when the dedup gate exits at 00).
+12. **Risk tier is mechanical and escalate-only** (#2210) — stage 00 computes it from the rubric;
+    stage 01 may raise it (recording why) but never lower it. LOW-tier review is bounded by design —
+    do not "be thorough" past the tier; the saved depth is reallocated to HIGH-tier PRs.
+13. **The `review-state v1` block is always posted and must be valid JSON** — it is the ledger
+    double-check and cto-review extend. Findings keep their `R{n}` IDs downstream; never renumber.
 
 ## Reference files
 

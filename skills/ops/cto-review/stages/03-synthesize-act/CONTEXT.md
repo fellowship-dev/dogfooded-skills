@@ -79,6 +79,26 @@ gh pr checks $PR --repo $REPO
 # Verify required labels
 gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
 ```
+**If the branch is CONFLICTING with base** (`gh pr view $PR --json mergeable`): a
+conflict is NOT a hold reason — finish it now, in this order:
+
+1. **Superseded check first.** On agent-driven repos the usual cause is a competing
+   PR for the same issue that already merged. Compare base's current version of the
+   conflicted files against this PR's changes (`gh pr list --state merged --search
+   "<issue#>"`, then read both implementations). If base already contains an
+   equivalent implementation → **close the PR** with evidence naming the merged PR
+   and what was compared. Action: `closed-superseded`.
+2. **Otherwise rebase and resolve semantically.** `gh pr checkout $PR && git fetch
+   origin $BASE && git rebase origin/$BASE` — read both sides of each conflict,
+   write the resolution that preserves both intents, verify zero leftover conflict
+   markers AND the repo's test gate passes, then `git push --force-with-lease`.
+   Your LGTM verdict already covers the content; the rebase only replays it onto
+   current base. Then merge below.
+3. If the two sides genuinely contradict and the issue doesn't say which behavior
+   wins: comment the specific one-sentence decision needed, apply `blocked`. This
+   is the only legitimate non-merge outcome for a conflict, and it must name a
+   human-decidable question.
+
 Use the `merge_strategy` resolved in stage 01:
 ```bash
 if [ "$MERGE_STRATEGY" = "label-only" ]; then
@@ -92,7 +112,7 @@ else
 fi
 ```
 If CI is failing: do NOT merge — the verdict should already be hold; note the CI failure in the
-comment if not already noted. Record the action taken: `merged` | `labeled` | `held`.
+comment if not already noted. Record the action taken: `merged` | `labeled` | `closed-superseded` | `held` (CI-red only — never for a conflict).
 
 ### Step 4: Write the report file (local only — NO Quest)
 Use the template in `shared/report-format.md`:
@@ -105,7 +125,7 @@ report ends at the file write; operators surface it via the mission report.
 
 ### Step 5: Emit the outcome marker (orchestrator only)
 ```
-[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|held|post-merge-note}" status=success
+[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
 ```
 On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
 If a side effect failed hard (comment post errored), emit:
@@ -124,7 +144,7 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 - merge_state: {open | merged | closed-no-merge}
 - comment_posted: {url or "skipped (closed-no-merge)"}
 - label_applied: {approved | needs-work | ready-to-merge | none}
-- merge_action: {merged | labeled-ready-to-merge | held | skipped (already merged) | skipped (closed)}
+- merge_action: {merged | labeled-ready-to-merge | closed-superseded | held (CI-red only) | skipped (already merged) | skipped (closed)}
 - report_path: {path}
 
 ## Outcome

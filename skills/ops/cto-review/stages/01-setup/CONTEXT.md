@@ -246,14 +246,12 @@ EOF
       # Body had no evidence heading — scan PR comments newest-first (pylot#1861 fix 2).
       # /test-in-staging posts its evidence block as a comment by default; body-only scan
       # was causing false-negative blocks even when evidence existed in a comment.
-      COMMENT_BODY=""
-      while IFS= read -r cb; do
-        if echo "$cb" | grep -qiE "$EVIDENCE_HEADING"; then
-          COMMENT_BODY="$cb"
-          break
-        fi
-      done < <(gh pr view $PR --repo $REPO --json comments \
-        --jq '[.comments[] | .body] | reverse | .[]' 2>/dev/null || true)
+      # Use jq --arg to select the full body of the first (newest) matching comment in one
+      # shot — avoids the line-by-line read trap that would capture only the heading line.
+      COMMENT_BODY=$(gh pr view $PR --repo $REPO --json comments 2>/dev/null \
+        | jq -r --arg pat "$EVIDENCE_HEADING" \
+          '[.comments[]] | reverse | map(select(.body | test($pat;"i"))) | .[0].body // ""' \
+        2>/dev/null || true)
 
       if [ -n "$COMMENT_BODY" ]; then
         echo "[cto-review] staging evidence gate: evidence found in PR comment — evaluating"

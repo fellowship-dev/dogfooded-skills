@@ -130,7 +130,7 @@ FIXTURES = [
     # comment-scan fixtures: these bodies have NO heading (body scan misses),
     # but a comment (simulated separately in COMMENT_SCAN_FIXTURES) would have one.
     (
-        "h2) comment-body WITH evidence heading (same regex applies to comment text)",
+        "h2) heading regex also matches comment-body format (bash loop not tested here — requires bash-level integration test)",
         "## Staging Evidence\nstaging_build_id: `pylot-builder:comment-test`\n",
         True, False, False, "pylot-builder:comment-test",
     ),

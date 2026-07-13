@@ -33,7 +33,7 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state. Short-circuit if CLOSED-not-merged or if infra/backend PR lacks staging evidence. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state. Short-circuit if CLOSED-not-merged or if infra/backend PR lacks staging evidence. Evidence is searched in the PR body first, then in comments (newest-first). `*.d.mts` (type-declaration) files are excluded from the infra/backend necessity trigger. Docs/test/type-only PRs are waived with a recorded rationale. |
 | 02-review | subagent | ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items. |
 | 03-synthesize-act | inline | Post GH comment, apply label, merge-or-label honoring merge state, write report file, emit outcome marker. |
 
@@ -141,7 +141,7 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 - **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
 - **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- **Blocked (evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked`
+- **Blocked (evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked` (fires only when staging IS required AND no valid fresh evidence was found in body or comments)
 
 ## Hard Rules
 

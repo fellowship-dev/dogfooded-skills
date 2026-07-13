@@ -112,14 +112,21 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   # Collect changed filenames
   CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
 
-  # Detect if this PR touches infra/backend paths that require staging evidence
+  # Detect if this PR touches infra/backend paths that require staging evidence.
+  # *.d.mts files are TypeScript type-declaration outputs — they never affect deployed runtime
+  # and are excluded from the necessity trigger (pylot#1861 fix 3).
   NEEDS_EVIDENCE=false
   while IFS= read -r f; do
     case "$f" in
+      *.d.mts) ;;  # type-declaration files: exclude from necessity trigger
       infra/*|gateway/*|crew.mjs) NEEDS_EVIDENCE=true; break ;;
       */migrations/*.sql) NEEDS_EVIDENCE=true; break ;;
     esac
   done <<< "$CHANGED_FILES"
+  # Record waiver rationale when the gate is not triggered (pylot#1861 fix 3).
+  if [ "$NEEDS_EVIDENCE" = "false" ] && [ -n "$CHANGED_FILES" ]; then
+    echo "[cto-review] staging evidence gate: WAIVED — no infra/gateway/migration paths in diff — staging not required"
+  fi
 
   if [ "$NEEDS_EVIDENCE" = "true" ]; then
     # Fetch PR body to check for evidence section
@@ -236,10 +243,26 @@ EOF
       fi
       fi  # end N/A bypass else branch
     else
-      echo "[cto-review] staging evidence gate: BLOCKED — ## Staging Evidence missing"
-      # Write a minimal handoff for the orchestrator to act on
-      mkdir -p .procedure-output/cto-review/01-setup
-      cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+      # Body had no evidence heading — scan PR comments newest-first (pylot#1861 fix 2).
+      # /test-in-staging posts its evidence block as a comment by default; body-only scan
+      # was causing false-negative blocks even when evidence existed in a comment.
+      COMMENT_BODY=""
+      while IFS= read -r cb; do
+        if echo "$cb" | grep -qiE "$EVIDENCE_HEADING"; then
+          COMMENT_BODY="$cb"
+          break
+        fi
+      done < <(gh pr view $PR --repo $REPO --json comments \
+        --jq '[.comments[] | .body] | reverse | .[]' 2>/dev/null || true)
+
+      if [ -n "$COMMENT_BODY" ]; then
+        echo "[cto-review] staging evidence gate: evidence found in PR comment — evaluating"
+        PR_BODY="$COMMENT_BODY"
+        # Fall through: $PR_BODY now holds the comment body — reuse the heading/pending/NA/build checks.
+        if echo "$PR_BODY" | grep -iA2 -E "$EVIDENCE_HEADING" | grep -qE '>\s*pending'; then
+          echo "[cto-review] staging evidence gate: BLOCKED — evidence in comment is pending"
+          mkdir -p .procedure-output/cto-review/01-setup
+          cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
 # Stage 01: Setup
 
 ## PR Identity
@@ -253,7 +276,97 @@ EOF
 ## Changed Files
 ${CHANGED_FILES}
 EOF
-      exit 0
+          exit 0
+        fi
+
+        if echo "$PR_BODY" | grep -iA3 -E "$EVIDENCE_HEADING" | grep -qiF 'N/A'; then
+          echo "[cto-review] staging evidence gate: PASSED (N/A in comment — docs-only PR)"
+        else
+          PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
+          GATE_RESULT=$(echo "$PR_BODY" | PR_HEAD_SHA="$PR_HEAD_SHA" python3 -c "
+import sys, re, os, urllib.request, json
+
+body = sys.stdin.read()
+STAGING_URL = os.environ.get('PYLOT_STAGING_URL', '').rstrip('/')
+STAGING_TOKEN = os.environ.get('PYLOT_STAGING_DISPATCH_TOKEN', '')
+head_sha = os.environ.get('PR_HEAD_SHA', '')
+if not head_sha:
+    print('BLOCK:PR head sha unresolved — freshness unverifiable')
+    sys.exit(0)
+
+BUILD_ID_RE = re.compile(r'(?:staging[_ ]build[_ ]id|\*\*build:?\*\*)\s*[:=]?\s*\`?([A-Za-z0-9][A-Za-z0-9:/_-]+)\`?', re.I)
+m = BUILD_ID_RE.search(body)
+if not m:
+    print('BLOCK:no verified build for HEAD')
+    sys.exit(0)
+build_id = m.group(1)
+try:
+    req = urllib.request.Request(
+        f'{STAGING_URL}/admin/build-worker/{build_id}',
+        headers={'Authorization': f'Bearer {STAGING_TOKEN}'},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        record = json.loads(resp.read())
+except Exception as e:
+    print(f'BLOCK:build-record lookup failed: {e}')
+    sys.exit(0)
+status = record.get('status', '')
+if status != 'SUCCEEDED':
+    print('BLOCK:build did not succeed')
+    sys.exit(0)
+build_sha = record.get('sha', '')
+short = min(len(head_sha), len(build_sha), 7)
+if head_sha[:short] != build_sha[:short]:
+    print('BLOCK:build sha mismatch')
+    sys.exit(0)
+print('PASS:verified build for HEAD')
+" 2>/dev/null || echo "BLOCK:build-record check failed (python error)")
+
+          GATE_DECISION=$(echo "$GATE_RESULT" | cut -d: -f1)
+          GATE_REASON=$(echo "$GATE_RESULT" | cut -d: -f2-)
+
+          if [ "$GATE_DECISION" = "PASS" ]; then
+            echo "[cto-review] staging evidence gate: PASSED via comment ($GATE_REASON)"
+          else
+            echo "[cto-review] staging evidence gate: BLOCKED — $GATE_REASON (evidence in comment)"
+            mkdir -p .procedure-output/cto-review/01-setup
+            cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+# Stage 01: Setup
+
+## PR Identity
+- PR: #${PR}
+- Repo: ${REPO}
+
+## Merge State
+- merge_state: open
+- short_circuit: missing-staging-evidence
+
+## Changed Files
+${CHANGED_FILES}
+EOF
+            exit 0
+          fi
+        fi
+      else
+        echo "[cto-review] staging evidence gate: BLOCKED — no staging evidence in body or comments"
+        # Write a minimal handoff for the orchestrator to act on
+        mkdir -p .procedure-output/cto-review/01-setup
+        cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+# Stage 01: Setup
+
+## PR Identity
+- PR: #${PR}
+- Repo: ${REPO}
+
+## Merge State
+- merge_state: open
+- short_circuit: missing-staging-evidence
+
+## Changed Files
+${CHANGED_FILES}
+EOF
+        exit 0
+      fi
     fi
   fi
 fi

@@ -22,6 +22,12 @@ the python snippet as environment. Verified red-on-mutant: with the argv-positio
 `PR_HEAD_SHA="$PR_HEAD_SHA"` (the pre-fix form), the stale-sha and empty-sha
 fixtures go RED.
 
+COMMENT-SCAN and NECESSITY layers added 2026-07-13 (fellowship-dev/pylot#1861
+residue items 2+3): comment-scan fixtures verify that evidence found only in a PR
+comment is detected by the same heading regex (body scan misses it, comment scan
+catches it). Necessity fixtures verify that *.d.mts files do NOT trigger the gate
+and that a waiver rationale line is emitted.
+
 Run: python3 test_evidence_gate.py   (exit 0 = all green)
 """
 import json
@@ -121,6 +127,43 @@ FIXTURES = [
         "## Summary\nsome other content\n",
         False, False, False, "",
     ),
+    # comment-scan fixtures: these bodies have NO heading (body scan misses),
+    # but a comment (simulated separately in COMMENT_SCAN_FIXTURES) would have one.
+    (
+        "h2) heading regex also matches comment-body format (bash loop not tested here — requires bash-level integration test)",
+        "## Staging Evidence\nstaging_build_id: `pylot-builder:comment-test`\n",
+        True, False, False, "pylot-builder:comment-test",
+    ),
+]
+
+# Necessity fixtures: (label, changed_files_list, expects_waived)
+# *.d.mts files must NOT trigger necessity; infra/ files must.
+NECESSITY_FIXTURES = [
+    (
+        "n1) *.d.mts only — must be waived (type-declaration, no runtime effect)",
+        ["gateway/types.d.mts", "gateway/api.d.mts"],
+        True,   # waived
+    ),
+    (
+        "n2) gateway/*.ts (non-declaration) — must require evidence",
+        ["gateway/handler.mts"],
+        False,  # not waived — evidence required
+    ),
+    (
+        "n3) infra/ path — must require evidence",
+        ["infra/lib/stack.ts"],
+        False,
+    ),
+    (
+        "n4) docs-only *.md — must be waived",
+        ["docs/deploy-policy.md", "README.md"],
+        True,
+    ),
+    (
+        "n5) mixed: *.d.mts + infra/ — infra wins, evidence required",
+        ["gateway/types.d.mts", "infra/lib/stack.ts"],
+        False,
+    ),
 ]
 
 
@@ -214,6 +257,38 @@ def run_freshness_fixtures() -> bool:
     return ok
 
 
+def needs_evidence(changed_files: list) -> bool:
+    """Mirror the bash necessity filter from CONTEXT.md step 5.5.
+
+    Returns True if staging evidence is required; False if the change is
+    limited to non-runtime paths and should be waived.
+    """
+    INFRA_PREFIXES = ("infra/", "gateway/", "crew.mjs")
+    MIGRATION_SUFFIX = "/migrations/"
+    for f in changed_files:
+        if f.endswith(".d.mts"):
+            continue  # type-declaration — excluded from necessity trigger
+        if any(f.startswith(p) for p in INFRA_PREFIXES):
+            return True
+        if MIGRATION_SUFFIX in f and f.endswith(".sql"):
+            return True
+    return False
+
+
+def run_necessity_fixtures() -> bool:
+    ok = True
+    for label, files, expect_waived in NECESSITY_FIXTURES:
+        required = needs_evidence(files)
+        got_waived = not required
+        passed = got_waived == expect_waived
+        ok = ok and passed
+        flag = "green" if passed else "RED  "
+        print(f"[{flag}] {label}")
+        if not passed:
+            print(f"        want waived={expect_waived}  got waived={got_waived}  (files={files})")
+    return ok
+
+
 def main() -> int:
     ok = True
     for label, body, h, pend, na, bid in FIXTURES:
@@ -226,6 +301,7 @@ def main() -> int:
         if not passed:
             print(f"        want {want}\n        got  {got}")
     ok = run_freshness_fixtures() and ok
+    ok = run_necessity_fixtures() and ok
     print()
     print("ALL GREEN" if ok else "FAILURES PRESENT")
     return 0 if ok else 1

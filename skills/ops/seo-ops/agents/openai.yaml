@@ -1,0 +1,4 @@
+interface:
+  display_name: "SEO Ops"
+  short_description: "Audit technical and multilingual SEO with evidence"
+  default_prompt: "Audit this website for technical, canonical, multilingual, metadata, structured-data, and crawlability problems, then prioritize fixes with evidence."

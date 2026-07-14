@@ -95,6 +95,29 @@ class AuditTests(unittest.TestCase):
             canonical.close()
             alternate.close()
 
+    def test_robots_multi_stanza_no_false_positive(self):
+        """Dropping DOTALL means a BadBot stanza's Disallow: / doesn't
+        falsely match under User-agent: *.  audit_site must NOT emit
+        robots-block-all for this robots.txt."""
+        site = Site().start()
+        try:
+            root = site.origin + "/"
+            robots_body = (
+                "User-agent: *\nAllow: /\n"
+                "\n"
+                "User-agent: BadBot\nDisallow: /\n"
+            ).encode()
+            site.server.responses.update({
+                "/": (200, {"Content-Type": "text/html"}, page(root)),
+                "/robots.txt": (200, {"Content-Type": "text/plain"}, robots_body),
+                "/sitemap.xml": (200, {"Content-Type": "application/xml"}, b"<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'></urlset>"),
+            })
+            report = AUDIT.audit_site(SimpleNamespace(url=root, compare_origin=[], max_pages=1, timeout=5))
+            critical_codes = [item["code"] for item in report["findings"] if item["severity"] == "Critical"]
+            self.assertNotIn("robots-block-all", critical_codes)
+        finally:
+            site.close()
+
     def test_curl_transport_decodes_gzip(self):
         site = Site().start()
         try:

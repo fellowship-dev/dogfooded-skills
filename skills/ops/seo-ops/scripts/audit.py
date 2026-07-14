@@ -326,7 +326,7 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
         add(findings, "Medium", "robots-unavailable", robots_url, f"robots.txt returned HTTP {robots.status or 'error'}", robots.error or "")
     else:
         robots_text = robots.body.decode("utf-8", errors="replace")
-        if re.search(r"(?ims)User-agent:\s*\*.*?Disallow:\s*/\s*(?:$|\n)", robots_text):
+        if re.search(r"(?im)User-agent:\s*\*.*?Disallow:\s*/\s*(?:$|\n)", robots_text):
             add(findings, "Critical", "robots-block-all", robots_url, "robots.txt appears to block all crawling", robots_text[:500])
 
     sitemap_results: list[dict[str, object]] = []

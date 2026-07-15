@@ -3,12 +3,12 @@
 ## Inputs
 - `.procedure-output/flowchad-runner/01-preflight/handoff.md`
   (read `flow_name`, `repo`, `pr_number`, `report_date`, `report_path`, `transcript_path`,
-  `target_url`)
+  `target_url`, `target_kind`, `target_sha`, `result_state`)
 - `.procedure-output/flowchad-runner/03-walk-flows/handoff.md` (per-flow + step results)
 - `.procedure-output/flowchad-runner/04-upload-evidence/handoff.md` (evidence URLs)
 
 ## Task
-Aggregate all flow results, post results to GitHub, create issues on failure, write the local
+Aggregate all flow results, post results to GitHub, create/dedupe issues on failure, write the local
 report file, and emit the outcome marker. **This stage runs INLINE in the orchestrator — do
 NOT spawn a Task.** The `[pylot] outcome=...` marker MUST come from here.
 
@@ -19,13 +19,15 @@ NOT spawn a Task.** The `[pylot] outcome=...` marker MUST come from here.
 ## Steps
 
 ### 1. Aggregate
-Read stages 01/03/04 handoffs. Compute overall status: PASSED if every flow passed, else
-FAILED. Build the per-step results table per flow, attaching evidence URLs from stage 04.
+Read stages 01/03/04 handoffs. Compute overall status: `N/A` if preflight selected no affected
+flow; otherwise `BLOCKED` if any required flow was blocked; otherwise `PASSED` if every flow
+passed; otherwise `FAILED`. Build the per-step results table per flow, attaching evidence URLs.
+Never compute `PASSED` unless every interactive flow records real browser evidence.
 
 ### 2. Post results to GitHub (if pr_number set)
 ```bash
 gh pr comment $PR_NUMBER --repo $REPO --body "## FlowChad Results: ${FLOW_NAME}
-**Status**: PASSED / FAILED
+**Status**: PASSED / FAILED / BLOCKED / N/A
 **Date**: ${REPORT_DATE}
 **Browser**: Playwright headless / Navvi (auto-switched)
 
@@ -40,7 +42,20 @@ gh pr comment $PR_NUMBER --repo $REPO --body "## FlowChad Results: ${FLOW_NAME}
 _Run by flowchad-runner_"
 ```
 
-### 3. On FAILURE — create a GitHub issue per failing flow
+### 3. On FAILURE — create or update a GitHub issue per failing flow
+
+Build a stable fingerprint from repository + environment + flow + failed expectation. Search
+open issues before creating one, especially in cron mode:
+
+```bash
+FINGERPRINT=$(printf '%s|%s|%s|%s' "$REPO" "$TARGET_KIND" "$FLOW_NAME" "$FAILED_EXPECTATION" \
+  | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])')
+EXISTING_ISSUE=$(gh issue list --repo "$REPO" --state open \
+  --search "flowchad:${FINGERPRINT} in:body" --json number --jq '.[0].number // empty')
+```
+
+When found, comment with the new date, target SHA, failing steps, and browser evidence URLs.
+Otherwise create the issue and include `<!-- flowchad:${FINGERPRINT} -->` in its body:
 ```bash
 gh issue create --repo $REPO \
   --title "FlowChad failure: ${FLOW_NAME} — ${REPORT_DATE}" \
@@ -53,6 +68,8 @@ gh issue create --repo $REPO \
 **Evidence:**
 {GIF and screenshot links}
 
+<!-- flowchad:${FINGERPRINT} -->
+
 This issue was auto-created by flowchad-runner. Fix the flow or the code, then re-run to verify."
 ```
 This is the **closed-loop trigger** — the `ready-to-work` label + issue body gives speckit
@@ -62,7 +79,7 @@ enough context to investigate and fix.
 Write to `report_path` (`reports/${REPORT_DATE}-flowchad-${FLOW_SLUG}.md`):
 ```markdown
 # FlowChad Run: ${FLOW_NAME} in ${REPO}
-**Status**: PASSED / FAILED
+**Status**: PASSED / FAILED / BLOCKED / N/A
 **Date**: ${REPORT_DATE}
 **Browser**: Playwright / Navvi (auto-switched at step N)
 **Transcript**: ${TRANSCRIPT}
@@ -90,12 +107,20 @@ GIF: [link if uploaded]
 
 # one or more failed (issues already created in step 3)
 [pylot] outcome="flowchad ${FLOW_NAME} on ${REPO}: {N} flow(s) failed" status=failed
+
+# browser/deploy/credential capability missing
+[pylot] outcome="flowchad blocked: ${BLOCK_REASON}" status=blocked
+
+# irrelevant PR; no preview created
+[pylot] outcome="flowchad N/A: no affected interactive flow" status=success
 ```
 
 ## Success criteria
 - Local report file written at `report_path`.
 - If `pr_number` set, PR comment posted.
 - On any flow failure, a `ready-to-work` issue created and `status=failed` emitted.
+- Cron failures update a matching open issue instead of creating duplicates.
+- `BLOCKED` and `N/A` are reported explicitly and cannot be converted to `PASSED`.
 - `[pylot] outcome=...` marker emitted in the orchestrator session.
 
 ## Failure

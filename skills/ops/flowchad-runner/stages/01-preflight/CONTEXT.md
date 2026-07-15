@@ -1,197 +1,227 @@
-# Stage 01: Deployment-Aware Preflight (subagent)
+# Stage 01: Environment-Aware Preflight (subagent)
 
 ## Inputs
-- None (this is the first stage). The orchestrator passes the parsed `$ARGUMENTS`
-  positionally in the Task prompt: `flow-name`, `repo`, `pr-number`, `trigger`.
+
+- Parsed `$ARGUMENTS`: `flow-name`, `repo`, `pr-number`, `trigger`
+- `.flowchad/config.yml` and `.flowchad/flows/`
 
 ## Task
-Parse arguments, resolve `TARGET_URL` (trigger-driven), wait for any in-progress deploy,
-check Navvi availability + persona, and build the `FLOWS_TO_RUN` list. Write all resolved
-run context to the handoff so downstream stages need no re-resolution.
+
+Validate the repository/target contract, return `N/A` before deployment for irrelevant PRs,
+resolve or provision one selective target, verify browser capabilities, and write the complete
+run context. Never certify an interactive run from curl or static HTML.
 
 ## Steps
 
-### 1. Setup
-```bash
-export GH_TOKEN=$(grep 'GH_TOKEN_FELLOWSHIP' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
+### 1. Setup and contract validation
 
-# Parse arguments
+```bash
 FLOW_NAME="$1"
 REPO="$2"
 PR_NUMBER="${3:-}"
-TRIGGER="${4:-manual}"   # pr | merge | cron | manual
+[ "$PR_NUMBER" = none ] && PR_NUMBER=""
+TRIGGER="${4:-manual}"
 REPORT_DATE=$(date +%Y-%m-%d)
-FLOW_SLUG=$(echo "$FLOW_NAME" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+FLOW_SLUG=$(printf %s "$FLOW_NAME" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
 TRANSCRIPT="reports/${REPORT_DATE}-flowchad-${FLOW_SLUG}.jsonl"
 REPORT="reports/${REPORT_DATE}-flowchad-${FLOW_SLUG}.md"
-mkdir -p reports
+mkdir -p reports .procedure-output/flowchad-runner
+
+gh auth status >/dev/null
+python3 -c 'import yaml' || { echo "BLOCKED: PyYAML unavailable"; exit 1; }
+
+MODE="$TRIGGER"
+[ "$MODE" = merge ] && MODE=production
+[ "$MODE" = pr ] && MODE=preview
+[ "$MODE" = manual ] && MODE=local
+python3 .claude/skills/flowchad-runner/scripts/validate_contract.py \
+  --mode "$MODE" --repo "$REPO" --format json \
+  > .procedure-output/flowchad-runner/contract.json
 ```
 
-### 2. Environment Resolution (trigger-driven)
+For production, preview, and cron, any validation error is `BLOCKED`. Never fall back to legacy
+`.url`, a localhost target, or template identity. For local mode, report validation errors and
+block any affected control rather than guessing.
 
-**PR trigger** — resolve Vercel preview URL from PR deployments API:
+If `environments.production.captcha.site_key_env` is configured, validate its runtime value
+without printing it:
+
 ```bash
-PREVIEW_URL=$(gh api repos/${REPO}/deployments \
-  --jq "[.[] | select(.environment | test(\"Preview\"; \"i\"))] | .[0].payload.web_url // empty" 2>/dev/null)
+SITE_KEY_ENV=$(yq '.environments.production.captcha.site_key_env // ""' .flowchad/config.yml)
+if [ -n "$SITE_KEY_ENV" ]; then
+  SITE_KEY=$(printenv "$SITE_KEY_ENV")
+  [ -n "$SITE_KEY" ] || { echo "BLOCKED: CAPTCHA site key is empty"; exit 1; }
+  TRIMMED=$(printf %s "$SITE_KEY" | awk '{$1=$1};1')
+  [ "$SITE_KEY" = "$TRIMMED" ] || { echo "BLOCKED: CAPTCHA site key has surrounding whitespace"; exit 1; }
+fi
+unset SITE_KEY TRIMMED
+```
 
-# Fallback: check deployment statuses for a success URL
-if [ -z "$PREVIEW_URL" ]; then
-  DEPLOY_ID=$(gh api repos/${REPO}/deployments --jq '.[0].id' 2>/dev/null)
-  PREVIEW_URL=$(gh api repos/${REPO}/deployments/${DEPLOY_ID}/statuses \
-    --jq '.[0].environment_url // empty' 2>/dev/null)
+### 2. Select relevant PR work before preview resolution
+
+For `TRIGGER=pr`, inspect the exact PR:
+
+```bash
+PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json author,headRefOid,files,state)
+PR_AUTHOR=$(printf %s "$PR_JSON" | jq -r '.author.login // ""')
+HEAD_SHA=$(printf %s "$PR_JSON" | jq -r '.headRefOid')
+CHANGED_FILES=$(printf %s "$PR_JSON" | jq -r '.files[].path')
+CHANGED_FILES_PATH=.procedure-output/flowchad-runner/changed-files.txt
+printf '%s\n' "$CHANGED_FILES" > "$CHANGED_FILES_PATH"
+
+if printf %s "$PR_AUTHOR" | grep -Eqi 'dependabot|renovate'; then
+  RESULT_STATE="N/A"; BLOCK_REASON="automated dependency PR"
+elif [ -n "$CHANGED_FILES" ] && ! printf '%s\n' "$CHANGED_FILES" | grep -Evq \
+  '(^docs/|\.md$|^\.github/|^LICENSE$)'; then
+  RESULT_STATE="N/A"; BLOCK_REASON="docs-only PR"
+fi
+```
+
+If `RESULT_STATE=N/A`, write the handoff and stop. Do not call a deployment provider. For other
+PRs, select flows through their checked-in `affects` globs:
+
+```bash
+python3 .claude/skills/flowchad-runner/scripts/validate_contract.py \
+  --mode preview --repo "$REPO" --changed-files "$CHANGED_FILES_PATH" --format json \
+  > .procedure-output/flowchad-runner/contract.json
+AFFECTED_FLOWS=$(jq -r '.affected_flows[]' .procedure-output/flowchad-runner/contract.json)
+if [ -z "$AFFECTED_FLOWS" ]; then
+  RESULT_STATE="N/A"; BLOCK_REASON="no declared flow affected"
+fi
+```
+
+If a specific flow was requested, intersect it with `AFFECTED_FLOWS`. If the intersection is
+empty, return `N/A` without creating a preview. Declare `affects` globs in every PR-verifiable
+flow; never guess impact from filenames outside the contract.
+
+### 3. Resolve the target
+
+#### PR trigger
+
+Prefer configured staging. Otherwise resolve a successful preview for the exact HEAD SHA:
+
+```bash
+TARGET_URL=$(yq '.environments.staging.url // ""' .flowchad/config.yml)
+TARGET_KIND=staging
+PREVIEW_CREATED=false
+PREVIEW_MODE=$(yq '.environments.preview.mode' .flowchad/config.yml)
+
+if [ -z "$TARGET_URL" ]; then
+  TARGET_KIND=preview
+  DEPLOY_ID=$(gh api "repos/${REPO}/deployments?ref=${HEAD_SHA}" \
+    --jq '[.[] | select(.environment | test("Preview"; "i"))][0].id // empty')
+  if [ -n "$DEPLOY_ID" ]; then
+    TARGET_URL=$(gh api "repos/${REPO}/deployments/${DEPLOY_ID}/statuses" \
+      --jq '[.[] | select(.state == "success")][0].environment_url // empty')
+  fi
+fi
+```
+
+If still absent and `preview.mode: on-demand`, provision exactly one Vercel preview for this
+explicitly dispatched HEAD. The org/project IDs are non-secret target configuration; the token
+comes from the runtime secret store:
+
+```bash
+if [ -z "$TARGET_URL" ] && [ "$PREVIEW_MODE" = on-demand ]; then
+  [ "$(yq '.environments.preview.provider' .flowchad/config.yml)" = vercel ] || {
+    echo "BLOCKED: unsupported on-demand preview provider"; exit 1;
+  }
+  : "${VERCEL_TOKEN:?BLOCKED: VERCEL_TOKEN unavailable for on-demand preview}"
+  VERCEL_ORG_ID=$(yq '.environments.preview.vercel.org_id' .flowchad/config.yml)
+  VERCEL_PROJECT_ID=$(yq '.environments.preview.vercel.project_id' .flowchad/config.yml)
+
+  EXISTING=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+    "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=preview&limit=20" \
+    | jq -r --arg sha "$HEAD_SHA" \
+      '[.deployments[] | select(.meta.githubCommitSha == $sha and .state == "READY")][0].url // empty')
+  if [ -n "$EXISTING" ]; then
+    TARGET_URL="https://${EXISTING}"
+  else
+    mkdir -p .vercel
+    printf '{"orgId":"%s","projectId":"%s"}\n' "$VERCEL_ORG_ID" "$VERCEL_PROJECT_ID" \
+      > .vercel/project.json
+    DEPLOY_OUTPUT=$(npx vercel deploy --yes --token="$VERCEL_TOKEN" \
+      --meta githubCommitSha="$HEAD_SHA" --meta githubPrId="$PR_NUMBER" 2>&1)
+    TARGET_URL=$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -E '^https://' | tail -1)
+    PREVIEW_CREATED=true
+  fi
 fi
 
-TARGET_URL="$PREVIEW_URL"
+[ -n "$TARGET_URL" ] || {
+  echo "BLOCKED: no staging or preview target; preview mode is ${PREVIEW_MODE}"; exit 1;
+}
 ```
 
-**Merge to branch trigger** — resolve staging/production URL and wait for deploy:
+This never connects the Git repository to Vercel or enables automatic previews.
+
+#### Merge, cron, and manual triggers
+
 ```bash
-TARGET_URL=$(yq '.environments.staging.url // .environments.production.url // ""' .flowchad/config.yml 2>/dev/null)
-DEPLOY_CHECK="merge"   # triggers deploy-wait in step 3
+case "$TRIGGER" in
+  merge|cron)
+    TARGET_URL=$(yq '.environments.production.url // ""' .flowchad/config.yml)
+    TARGET_KIND=production
+    ;;
+  manual|*)
+    TARGET_URL=$(yq '.environments.local.url // ""' .flowchad/config.yml)
+    TARGET_KIND=local
+    ;;
+esac
+[ -n "$TARGET_URL" ] || { echo "BLOCKED: no explicit target URL"; exit 1; }
 ```
 
-**Cron trigger** — use production URL from config.yml:
+### 4. Wait for an identified deployment
+
+For a merge or newly created preview, poll only the deployment associated with the target SHA.
+Use the configured timeout (default 300 seconds). `failure`, `error`, `inactive`, unknown terminal
+state, and timeout are `BLOCKED`; create a deployment issue with the deploy ID and SHA.
+
 ```bash
-TARGET_URL=$(yq '.environments.production.url // .url // ""' .flowchad/config.yml 2>/dev/null)
-```
-
-**Manual/unknown trigger** — use URL from config.yml or fall back:
-```bash
-TARGET_URL=$(yq '.url // ""' .flowchad/config.yml 2>/dev/null)
-```
-
-If TARGET_URL is still empty after resolution, write handoff with `blocked: true`,
-`block_reason: no target URL`, and exit — cannot proceed without a URL.
-
-### 3. Deploy-Wait (merge trigger or deploy in progress)
-
-Skip this step unless TRIGGER=merge or a deploy was detected as in-progress.
-```bash
-DEPLOY_TIMEOUT=$(yq '.environments.staging.deploy_timeout // .environments.production.deploy_timeout // 300' .flowchad/config.yml 2>/dev/null || echo 300)
+DEPLOY_TIMEOUT=$(yq ".environments.${TARGET_KIND}.deploy_timeout // 300" .flowchad/config.yml)
 POLL_INTERVAL=15
 ELAPSED=0
-
-DEPLOY_ID=$(gh api repos/${REPO}/deployments --jq '.[0].id')
-
-while [ $ELAPSED -lt $DEPLOY_TIMEOUT ]; do
-  STATE=$(gh api repos/${REPO}/deployments/${DEPLOY_ID}/statuses --jq '.[0].state // "unknown"')
-
+while [ -n "${DEPLOY_ID:-}" ] && [ "$ELAPSED" -lt "$DEPLOY_TIMEOUT" ]; do
+  STATE=$(gh api "repos/${REPO}/deployments/${DEPLOY_ID}/statuses" --jq '.[0].state // "unknown"')
   case "$STATE" in
-    success)
-      echo "Deploy succeeded — proceeding"
-      break
-      ;;
-    pending|queued|in_progress)
-      echo "Deploy ${STATE} — waiting ${POLL_INTERVAL}s (${ELAPSED}/${DEPLOY_TIMEOUT})"
-      sleep $POLL_INTERVAL
-      ELAPSED=$((ELAPSED + POLL_INTERVAL))
-      ;;
-    failure|error)
-      gh issue create --repo "$REPO" \
-        --title "Deploy failed: ${REPO} — flowchad blocked" \
-        --label "ready-to-work" \
-        --body "FlowChad runner was blocked because the latest deploy failed (state: ${STATE}).\n\nDeploy ID: ${DEPLOY_ID}\nRepo: ${REPO}\nDate: ${REPORT_DATE}"
-      echo "Deploy failed — created GitHub issue, exiting"
-      # write handoff blocked: true, block_reason: deploy ${STATE}, then exit
-      exit 1
-      ;;
-    *)
-      gh issue create --repo "$REPO" \
-        --title "Deploy status unknown: ${REPO} — flowchad blocked" \
-        --label "ready-to-work" \
-        --body "FlowChad runner was blocked because deploy status is unknown (state: ${STATE}).\n\nDeploy ID: ${DEPLOY_ID}\nRepo: ${REPO}\nDate: ${REPORT_DATE}\nElapsed: ${ELAPSED}s / timeout: ${DEPLOY_TIMEOUT}s"
-      echo "Deploy status unknown after ${ELAPSED}s — created GitHub issue, exiting"
-      # write handoff blocked: true, block_reason: deploy status unknown, then exit
-      exit 1
-      ;;
+    success) break ;;
+    pending|queued|in_progress) sleep "$POLL_INTERVAL"; ELAPSED=$((ELAPSED + POLL_INTERVAL)) ;;
+    *) echo "BLOCKED: deploy ${DEPLOY_ID} is ${STATE}"; exit 1 ;;
   esac
 done
-
-# If loop exited by timeout without breaking on success
-if [ $ELAPSED -ge $DEPLOY_TIMEOUT ]; then
-  gh issue create --repo "$REPO" \
-    --title "Deploy status unknown: ${REPO} — flowchad blocked" \
-    --label "ready-to-work" \
-    --body "FlowChad runner timed out waiting for deploy (${DEPLOY_TIMEOUT}s).\n\nDeploy ID: ${DEPLOY_ID}\nRepo: ${REPO}\nDate: ${REPORT_DATE}"
-  echo "Deploy timed out after ${DEPLOY_TIMEOUT}s — created GitHub issue, exiting"
-  # write handoff blocked: true, block_reason: deploy timeout, then exit
-  exit 1
-fi
+[ "$ELAPSED" -lt "$DEPLOY_TIMEOUT" ] || { echo "BLOCKED: deploy timeout"; exit 1; }
 ```
 
-### 4. Navvi Availability & Persona Check
+### 5. Resolve browser and persona capability
 
-Navvi can run locally (Docker), remotely (Codespaces/Ona), or not at all.
 ```bash
-NAVVI_AVAILABLE="false"
-NAVVI_PERSONA=""
-
-# 1. Check if navvi MCP tools are available (navvi_status)
-navvi_status_result=$(navvi_status 2>/dev/null) || true
-
-if [ -n "$navvi_status_result" ]; then
-  NAVVI_MODE=$(echo "$navvi_status_result" | grep -i "mode:" | awk '{print $2}')
-
-  if [ "$NAVVI_MODE" = "off" ] || [ -z "$NAVVI_MODE" ]; then
-    # Try to start Navvi — auto-detects: Docker→local, CODESPACE_NAME→Codespaces, gh cs→Ona
-    navvi_start 2>/dev/null && NAVVI_AVAILABLE="true" || true
-  else
-    NAVVI_AVAILABLE="true"
-  fi
-fi
-
-# 2. Resolve persona
-PERSONA=$(yq '.persona // ""' .flowchad/config.yml 2>/dev/null)
-
-if [ -n "$PERSONA" ] && [ "$NAVVI_AVAILABLE" = "true" ]; then
-  PERSONA_EMAIL=$(gopass show navvi/${PERSONA}/email 2>/dev/null || true)
-  if [ -n "$PERSONA_EMAIL" ]; then
-    echo "Persona found: ${PERSONA} (${PERSONA_EMAIL}) — authenticated flows enabled"
-    NAVVI_PERSONA="$PERSONA"
-  else
-    echo "WARNING: persona '${PERSONA}' not found in gopass — using default persona"
-    NAVVI_PERSONA="default"
-  fi
-elif [ "$NAVVI_AVAILABLE" = "true" ]; then
-  echo "No persona configured — Navvi available with default persona for CAPTCHAs"
-  NAVVI_PERSONA="default"
-fi
-
-echo "NAVVI_AVAILABLE: $NAVVI_AVAILABLE"
-echo "NAVVI_PERSONA: ${NAVVI_PERSONA:-<none>}"
+PLAYWRIGHT_AVAILABLE=false
+npx --no-install playwright --version >/dev/null 2>&1 && PLAYWRIGHT_AVAILABLE=true
+PERSONA=$(yq '.persona // ""' .flowchad/config.yml)
 ```
 
-### 5. Smoketest Config Resolution (build FLOWS_TO_RUN)
+Use the available Navvi MCP status/start tools to set `NAVVI_AVAILABLE` and load `PERSONA` when
+configured. Do not emulate MCP calls as shell commands. CAPTCHA, bot-detection, or authenticated
+flows that require Navvi are `BLOCKED` when it is unavailable. Other interactive flows are
+`BLOCKED` when neither Playwright nor Navvi can drive a browser. Curl/static diagnostics may be
+attached to the blocked result but cannot change it to `PASSED`.
+
+### 6. Build the flow set
+
 ```bash
 ALL_FLOWS=$(yq '.smoke.flows[]' .flowchad/config.yml 2>/dev/null)
-SKIP_PRODUCTION=$(yq '.smoke.skip_production[]' .flowchad/config.yml 2>/dev/null)
-
-if [ "$FLOW_NAME" = "all" ]; then
+CRITICAL_FLOWS=$(yq '.smoke.critical[]' .flowchad/config.yml 2>/dev/null)
+if [ "$TRIGGER" = cron ]; then
+  FLOWS_TO_RUN="$CRITICAL_FLOWS"
+elif [ "$FLOW_NAME" = all ]; then
   FLOWS_TO_RUN="$ALL_FLOWS"
 else
   FLOWS_TO_RUN="$FLOW_NAME"
 fi
-
-# On cron/production trigger, skip production-excluded flows (unless persona available)
-if [ "$TRIGGER" = "cron" ] && [ -z "$NAVVI_PERSONA" ] && [ -n "$SKIP_PRODUCTION" ]; then
-  FILTERED=""
-  for flow in $FLOWS_TO_RUN; do
-    if echo "$SKIP_PRODUCTION" | grep -qx "$flow"; then
-      echo "Skipping '${flow}' — in skip_production and no persona available"
-    else
-      FILTERED="$FILTERED $flow"
-    fi
-  done
-  FLOWS_TO_RUN=$(echo $FILTERED | xargs)
-fi
-
-# Fallback: if no flows resolved, use FLOW_NAME arg
-if [ -z "$FLOWS_TO_RUN" ]; then
-  FLOWS_TO_RUN="$FLOW_NAME"
-fi
+[ -n "$FLOWS_TO_RUN" ] || { echo "BLOCKED: no flows selected"; exit 1; }
 ```
 
-### 6. Write handoff with all resolved context.
+Cron never filters `smoke.critical` because a persona or browser is missing. Missing capability
+is `BLOCKED`, not a skip.
 
 ## Output: handoff.md
 
@@ -203,6 +233,7 @@ Path: `.procedure-output/flowchad-runner/01-preflight/handoff.md`
 ## Status
 blocked: {true|false}
 block_reason: {reason or "none"}
+result_state: {pending|BLOCKED|N/A}
 
 ## Run context
 flow_name: {FLOW_NAME}
@@ -213,22 +244,28 @@ report_date: {REPORT_DATE}
 flow_slug: {FLOW_SLUG}
 transcript_path: {TRANSCRIPT}
 report_path: {REPORT}
+flows_to_run: {ordered flow names}
 
 ## Resolved environment
 target_url: {TARGET_URL}
+target_kind: {local|staging|preview|production}
+target_sha: {HEAD_SHA or "n/a"}
+preview_created: {true|false}
+playwright_available: {true|false}
 navvi_available: {true|false}
-navvi_persona: {persona name or "<none>"}
-flows_to_run: {space- or newline-separated flow names}
-
-## Deploy-wait
-result: {skipped | success | n/a}
+navvi_persona: {persona or "none"}
+contract_result: {.procedure-output/flowchad-runner/contract.json}
 ```
 
-## Success criteria
-- TARGET_URL resolved (non-empty) OR handoff marked `blocked: true` with reason.
-- If TRIGGER=merge, deploy-wait completed (success) or blocked with an issue created.
-- `flows_to_run` is non-empty.
+## Success Criteria
+
+- Identity, environments, critical set, and flow contracts validate.
+- An exact target and flow set are resolved.
+- Interactive work has the required real-browser capability.
+- An irrelevant PR returns `N/A` before any deployment provider call.
 
 ## Failure
-- Empty TARGET_URL → `blocked: true`, `block_reason: no target URL`, exit.
-- Deploy failed/unknown/timeout → GitHub issue created, `blocked: true`, exit.
+
+- Invalid contract, missing target/deploy/browser/persona capability: `BLOCKED`.
+- Dependabot, docs-only, or unaffected PR: `N/A`, not failure.
+- Never downgrade these states to a static/curl pass.

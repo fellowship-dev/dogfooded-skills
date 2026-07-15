@@ -22,8 +22,9 @@ Stage 05 (report) runs inline in the orchestrator so it can emit the outcome mar
 
 ## Key invariants
 
-- Stage 01: resolves run context (TARGET_URL via trigger, deploy-wait, Navvi/persona,
-  FLOWS_TO_RUN). First gate — no URL or failed deploy → blocked.
+- Stage 01: validates the environment contract, resolves run context (TARGET_URL via trigger,
+  selective on-demand preview, deploy-wait, browser/Navvi/persona, FLOWS_TO_RUN). First gate —
+  invalid identity/target, no browser for interactive work, no URL, or failed deploy → blocked.
 - Stage 02: pure read/validate. Flow file missing → blocked (issue created).
 - Stage 03: the only stage that drives a browser. **Sequential per-flow loop** — connect,
   walk steps, screenshot each step, judge `expect`, CAPTCHA→Navvi escalation, JSONL transcript.
@@ -31,6 +32,8 @@ Stage 05 (report) runs inline in the orchestrator so it can emit the outcome mar
 - Stage 04: best-effort evidence upload. Failure here never blocks; it degrades to "no URLs".
 - Stage 05: inline. Aggregates, posts PR comment, creates failure issues, writes the local
   report file, emits `[pylot] outcome=...` from the orchestrator. NO Quest, no dashboards.
+- Interactive runs have four terminal states: PASSED, FAILED, BLOCKED, and N/A. Static/curl
+  diagnostics cannot produce PASSED.
 
 ## Folder map
 

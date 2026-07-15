@@ -6,7 +6,8 @@
 
 ## Task
 Read the FlowChad config, confirm every flow in `flows_to_run` has a definition file, and
-load each flow's YAML so the walk stage has validated input. Missing flows are blocking.
+load each flow's YAML so the walk stage has validated input. Missing flows and invalid
+production-critical contracts are blocking.
 
 ## Steps
 
@@ -42,6 +43,17 @@ For each loaded flow YAML, scan it so the walk stage can pick the browser withou
 - any step with `captcha: true` → prefers Navvi
 - otherwise → headless Playwright (fast path)
 
+Also record:
+
+- `interactive`: true when the flow declares it or uses click/fill/submit/select/upload/CAPTCHA
+- `browser_evidence`: value of `evidence.browser`
+- `captcha_contract`: renders, token, submission, success-ui, backend-boundary
+- `i18n_regions`: header, main, form, footer when `contract.kind: i18n`
+
+For preview, production, and cron, block an interactive flow unless `evidence.browser: required`.
+For production and cron, block optional CAPTCHA steps or an incomplete CAPTCHA contract. Block
+i18n flows that assert only URL/`<html lang>` or omit any representative visible-copy region.
+
 ### 5. Write handoff.
 
 ## Output: handoff.md
@@ -60,18 +72,20 @@ config_path: .flowchad/config.yml
 evidence_backend: {value of .evidence.backend // "git"}
 
 ## Validated flows
-| Flow | File | Status | Prefers | Notes |
-|------|------|--------|---------|-------|
-| {name} | .flowchad/flows/{name}.yml | ok / missing | navvi / playwright | headed=…, captcha steps=… |
+| Flow | File | Status | Interactive | Prefers | Browser evidence | Notes |
+|------|------|--------|-------------|---------|------------------|-------|
+| {name} | .flowchad/flows/{name}.yml | ok / missing / invalid | true/false | navvi / playwright | required / missing | captcha/i18n contract |
 
 ## Walk order
 {ordered list of flow names to walk, missing flows excluded}
 ```
 
 ## Success criteria
-- Config read; every requested flow resolved to `ok` or `missing`.
+- Config read; every requested flow resolved to `ok`, `missing`, or `invalid`.
 - At least one `ok` flow in the walk order, OR `blocked: true` if all are missing.
 
 ## Failure
 - All requested flows missing → comment + issues created, `blocked: true`, exit.
 - `.flowchad/config.yml` unreadable → `blocked: true`, `block_reason: no flowchad config`.
+- Any requested interactive flow has an invalid environment/evidence/CAPTCHA/i18n contract →
+  `blocked: true`; do not walk it under weaker legacy semantics.

@@ -9,7 +9,7 @@
 ## Task
 Walk each flow in the walk order **ONE AT A TIME, in a sequential loop**. Do NOT fan out —
 flows share the browser, session, and persona state and will collide if run concurrently.
-For each flow: choose & connect a browser, execute every step (screenshot + expect-judgement
+For each flow: require & connect a real browser, execute every step (screenshot + expect-judgement
 + timing), handle errors and CAPTCHA→Navvi escalation, finalize video/GIF, and append to the
 JSONL transcript.
 
@@ -24,9 +24,11 @@ completely (including stopping its recording) before starting the next.
 ### 2a. Choose browser & connect (per flow)
 
 **Decision logic — per flow:**
-1. Scan the flow YAML for `captcha: true` on any step, or `headed: true` on the flow.
+1. Read the stage 02 `interactive`, `captcha`, and `prefers` classification.
 2. If captcha/headed found AND `navvi_available=true` → use Navvi.
 3. Otherwise → use headless Playwright (fast path).
+4. If the required browser cannot connect, set the flow to `blocked`. Static/curl diagnostics
+   may be captured separately but cannot execute or pass the flow.
 
 **Headless Playwright (default):**
 ```javascript
@@ -87,7 +89,8 @@ For each step in the flow definition:
 - Log error, record status as `error`.
 - **Continue to next step** — collect full evidence before stopping.
 
-If step has `optional: true` and fails, record but don't flag as critical.
+If step has `optional: true` and fails, record but don't flag as critical, except CAPTCHA in
+production/cron: the contract validator blocks optional CAPTCHA before the walk.
 
 **CAPTCHA auto-detection and Navvi escalation:**
 
@@ -103,8 +106,8 @@ Turnstile, reCAPTCHA, Arkose, or similar bot detection):
    - **Retry the failed step** using Navvi tools
    - **Continue remaining steps** with Navvi (don't switch back mid-flow)
 2. If `navvi_available=false`:
-   - Record status as `skipped` with note "CAPTCHA detected — Navvi not available"
-   - Continue to next step
+   - Record status as `blocked` with note "CAPTCHA detected — Navvi not available"
+   - Capture any static diagnostics separately and stop this flow; never roll it up as passed
 
 CAPTCHA detection patterns (check error message AND screenshot):
 - Cloudflare Turnstile: `cf-turnstile`, "Verify you are human", "Please complete the verification"
@@ -134,9 +137,10 @@ Append every operation to the transcript file (`transcript_path` from stage 01):
 
 ### After the loop
 
-A flow is `pass` only if all non-optional steps passed (steps in `error`/`skipped`/`slow`
-roll up to a flow-level `fail` if any non-optional step did not meet its `expect`). Write the
-handoff aggregating all flows walked.
+A flow is `pass` only if all non-optional steps passed in a real browser and the evidence records
+the browser session. Steps in `error`/`skipped`/`slow` roll up to `fail` when the browser ran and
+demonstrated a defect. Missing required capability rolls up to `blocked`, never `fail` or `pass`.
+Write the handoff aggregating all flows walked.
 
 ## Output: handoff.md
 
@@ -149,11 +153,12 @@ Path: `.procedure-output/flowchad-runner/03-walk-flows/handoff.md`
 flows_walked: N
 flows_passed: N
 flows_failed: N
+flows_blocked: N
 
 ## Per-flow results
 | Flow | Status | Steps (pass/total) | Browser | CAPTCHA switch | Snapshot dir | results.json |
 |------|--------|--------------------|---------|----------------|--------------|--------------|
-| {name} | pass/fail | M/N | playwright/navvi | yes@step K / no | .flowchad/snapshots/{date}-{slug}/ | {path} |
+| {name} | pass/fail/blocked | M/N | playwright/navvi/none | yes@step K / no / blocked | .flowchad/snapshots/{date}-{slug}/ | {path} |
 
 ## Step-level detail (per flow)
 {for each flow: a table of step | status | timing | browser | error/note}
@@ -167,10 +172,12 @@ path: {transcript_path}
 
 ## Success criteria
 - Every flow in the walk order was attempted, sequentially, one at a time.
-- Each flow has a snapshot dir, results.json, and a flow-level pass/fail verdict.
+- Each attempted flow has results.json and a flow-level pass/fail/blocked verdict. Browser-driven
+  attempts also have a snapshot directory; capability blocks record why no snapshot exists.
+- Every `pass` includes real-browser screenshots/video plus a browser identifier in results.json.
 - Transcript appended for every step.
 
 ## Failure
-- A flow that errors mid-walk is still recorded (broken step = finding). The stage itself
-  only "fails" if it cannot drive any browser at all — in that case set every flow `fail`
-  with the connection error and still write the handoff so stage 05 can report.
+- A flow that errors mid-walk is still recorded (broken step = finding). If no required browser
+  can be driven, set affected flows `blocked` with the connection/capability error and still write
+  the handoff so stage 05 can report. Static analysis cannot replace the missing evidence.

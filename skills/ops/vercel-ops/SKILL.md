@@ -336,7 +336,7 @@ Repeat the project guard, obtain explicit approval for the attachment, and add w
 
 ```bash
 (cd "$DEPLOY_DIR" && npx vercel domains add \
-  "$PROD_DOMAIN" "$EXPECTED_PROJECT_NAME" \
+  "$PROD_DOMAIN" \
   --token="$VERCEL_TOKEN") || exit 1
 ```
 

@@ -39,7 +39,7 @@ Safe patterns for Vercel environment variable writes, domain operations, and dep
 
 1. **NEVER use `echo` to write env var values** — it appends a trailing newline that corrupts the value
 2. **NEVER print secret values to stdout/stderr** — use length/checksum comparison only
-3. **NEVER use `vercel env pull`** for reading sensitive values — it writes plaintext to disk
+3. **NEVER use `vercel env pull` to persist plaintext env values** — if used for fingerprinting only, write to a tmpfile (`mktemp`) and delete it immediately after reading
 4. **NEVER use `vercel link`** — it prompts interactively; write `.vercel/project.json` directly
 5. **NEVER mutate any Vercel resource before verifying project ID/name match**
 6. **NEVER globally enable automatic preview deployments** — use explicit `vercel deploy` calls
@@ -94,9 +94,13 @@ echo "[vercel-ops] Project verified: $ACTUAL_NAME ($VERCEL_PROJECT_ID)"
 # Step 1: verify project before mutation (see Operation 1)
 
 # Step 2: write the value via API using printf to avoid trailing newlines
-printf '%s' "$VAR_VALUE" | vercel env add "$VAR_NAME" "$VAR_TARGET" \
-  --token="$VERCEL_TOKEN" \
-  --yes
+# NOTE: vercel env add only accepts ONE target at a time — loop over comma-separated targets
+IFS=',' read -ra TARGETS <<< "$VAR_TARGET"
+for TARGET in "${TARGETS[@]}"; do
+  printf '%s' "$VAR_VALUE" | vercel env add "$VAR_NAME" "$TARGET" \
+    --token="$VERCEL_TOKEN" \
+    --yes
+done
 
 # Step 3: fingerprint immediately after write to confirm no trailing newline
 WRITTEN_LEN=$(printf '%s' "$VAR_VALUE" | wc -c)
@@ -106,23 +110,25 @@ echo "[vercel-ops] Wrote $VAR_NAME to $VAR_TARGET — expected length: $WRITTEN_
 # playbook entry: VAR_NAME, VAR_TARGET, length, sha256, last-set date
 ```
 
-**If using the Vercel REST API directly** (preferred for programmatic writes):
+**If using the Vercel REST API directly** (preferred for programmatic writes — supports multi-target in one call):
 
 ```bash
+# Pass secrets via environment variables — never via shell interpolation into python strings.
+# This keeps VAR_VALUE out of the process argument list (ps aux) and handles all byte values safely.
 curl -sf -X POST \
   "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?teamId=$VERCEL_ORG_ID" \
   -H "Authorization: Bearer $VERCEL_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$(python3 -c "
-import json, sys
+  -d "$(VAR_NAME="$VAR_NAME" VAR_VALUE="$VAR_VALUE" VAR_TARGET="$VAR_TARGET" python3 -c '
+import os, json
 payload = {
-  'key': '$VAR_NAME',
-  'value': '$VAR_VALUE',
-  'target': $(python3 -c "import json; print(json.dumps('$VAR_TARGET'.split(',')))"),
-  'type': 'plain'
+  "key": os.environ["VAR_NAME"],
+  "value": os.environ["VAR_VALUE"],
+  "target": os.environ["VAR_TARGET"].split(","),
+  "type": "plain"
 }
 print(json.dumps(payload))
-")" | python3 -c "import sys,json; d=json.load(sys.stdin); print('Created env var id:', d.get('id',''))"
+')" | python3 -c "import sys,json; d=json.load(sys.stdin); print('Created env var id:', d.get('id',''))"
 ```
 
 ---
@@ -132,7 +138,11 @@ print(json.dumps(payload))
 Check the **length** and **checksum** of an env var value without printing it.
 
 ```bash
-# VAL — the value retrieved securely (e.g. from vercel env pull into a tmpfile, then read)
+# VAL — the value retrieved securely.
+# If using vercel env pull for fingerprinting, use a tmpfile and delete immediately:
+#   TMPFILE=$(mktemp) && vercel env pull --environment=production "$TMPFILE" --token="$VERCEL_TOKEN" --yes
+#   VAL=$(grep '^VAR_NAME=' "$TMPFILE" | cut -d= -f2-)
+#   rm -f "$TMPFILE"
 # EXPECTED_LEN — known good byte count (e.g. 25 for Turnstile site key)
 
 ACTUAL_LEN=$(printf '%s' "$VAL" | wc -c)
@@ -173,7 +183,7 @@ for e in envs:
 "
 ```
 
-> **Note**: `decrypt=false` (the default) returns encrypted values — safe to log. If you need the plaintext value to fingerprint it, use `vercel env pull` into a temp file and delete it immediately after.
+> **Note**: `decrypt=false` (the default) returns encrypted values — safe to log. If you need the plaintext value to fingerprint it, use `vercel env pull` into a tmpfile (`TMPFILE=$(mktemp)`) and delete it immediately after (`rm -f "$TMPFILE"`). Never leave a plaintext env file on disk.
 
 ---
 
@@ -292,17 +302,21 @@ cat > "$DEPLOY_DIR/.vercel/project.json" <<'PROJECTEOF'
 }
 PROJECTEOF
 
-# Replace placeholders with real values
-python3 -c "
-import json
-with open('$DEPLOY_DIR/.vercel/project.json') as f:
+# Replace placeholders with real values.
+# Pass paths and IDs via environment variables to handle spaces/metacharacters safely.
+DEPLOY_DIR="$DEPLOY_DIR" VERCEL_ORG_ID="$VERCEL_ORG_ID" VERCEL_PROJECT_ID="$VERCEL_PROJECT_ID" \
+python3 -c '
+import os, json
+deploy_dir = os.environ["DEPLOY_DIR"]
+path = os.path.join(deploy_dir, ".vercel", "project.json")
+with open(path) as f:
     d = json.load(f)
-d['orgId'] = '$VERCEL_ORG_ID'
-d['projectId'] = '$VERCEL_PROJECT_ID'
-with open('$DEPLOY_DIR/.vercel/project.json', 'w') as f:
+d["orgId"] = os.environ["VERCEL_ORG_ID"]
+d["projectId"] = os.environ["VERCEL_PROJECT_ID"]
+with open(path, "w") as f:
     json.dump(d, f, indent=2)
-print('[vercel-ops] .vercel/project.json written')
-"
+print("[vercel-ops] .vercel/project.json written")
+'
 ```
 
 ---

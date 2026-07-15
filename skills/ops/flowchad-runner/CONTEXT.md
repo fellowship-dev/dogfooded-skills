@@ -24,13 +24,22 @@ Stage 05 (report) runs inline in the orchestrator so it can emit the outcome mar
 
 - Stage 01: resolves run context (TARGET_URL via trigger, deploy-wait, Navvi/persona,
   FLOWS_TO_RUN). First gate — no URL or failed deploy → blocked.
+  For `cron`/`merge` triggers: validates config identity (`name ≠ booster-pack`, `url` not
+  localhost) and confirms `environments.production.url` is present before proceeding.
+  For `pr` trigger: provisions an on-demand preview deploy if no URL exists and the PR is
+  relevant (not Dependabot/docs-only). Never enables provider auto-preview globally.
 - Stage 02: pure read/validate. Flow file missing → blocked (issue created).
 - Stage 03: the only stage that drives a browser. **Sequential per-flow loop** — connect,
   walk steps, screenshot each step, judge `expect`, CAPTCHA→Navvi escalation, JSONL transcript.
   Flows never overlap.
+  Pre-checks run before the loop: (1) if neither Playwright nor Navvi is available, all flows
+  are marked `blocked` and the stage exits cleanly; (2) per-flow CAPTCHA pre-check blocks any
+  flow requiring Navvi when Navvi is unavailable on `cron`/`merge` triggers.
+  Non-optional CAPTCHA steps that fail → flow `fail` (not `skip`).
 - Stage 04: best-effort evidence upload. Failure here never blocks; it degrades to "no URLs".
-- Stage 05: inline. Aggregates, posts PR comment, creates failure issues, writes the local
-  report file, emits `[pylot] outcome=...` from the orchestrator. NO Quest, no dashboards.
+- Stage 05: inline. Aggregates, posts PR comment, creates capability/failure issues (with
+  deduplication), writes the local report file, emits `[pylot] outcome=...` from the
+  orchestrator. `status=success` is NEVER emitted when any flow is blocked. NO Quest, no dashboards.
 
 ## Folder map
 
@@ -54,4 +63,7 @@ Per-flow evidence (screenshots, video, GIF, results.json) lands under
 
 - Success: `[pylot] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
 - Failure: `[pylot] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
-- Blocked: `[pylot] outcome="flowchad blocked: {reason}" status=blocked`
+- Blocked (stage 01/02): `[pylot] outcome="flowchad blocked: {reason}" status=blocked`
+- Blocked (stage 03/05): `[pylot] outcome="flowchad {flow} on {repo}: blocked — {reason}" status=blocked`
+
+`status=success` is NEVER emitted when any flow is blocked.

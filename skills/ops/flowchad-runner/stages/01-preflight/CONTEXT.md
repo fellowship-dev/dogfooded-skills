@@ -27,6 +27,55 @@ REPORT="reports/${REPORT_DATE}-flowchad-${FLOW_SLUG}.md"
 mkdir -p reports
 ```
 
+### 1b. Config Identity Validation (cron and merge triggers only)
+
+Skip this step for `manual` and `pr` triggers (localhost URLs are valid in local dev).
+
+```bash
+if [ "$TRIGGER" = "cron" ] || [ "$TRIGGER" = "merge" ]; then
+  CONFIG_NAME=$(yq '.name // ""' .flowchad/config.yml 2>/dev/null)
+  CONFIG_URL=$(yq '.url // ""' .flowchad/config.yml 2>/dev/null)
+
+  STALE_IDENTITY=false
+  if [ "$CONFIG_NAME" = "booster-pack" ] || echo "$CONFIG_URL" | grep -q "localhost"; then
+    STALE_IDENTITY=true
+    cat > .procedure-output/flowchad-runner/01-preflight/handoff.md <<EOF
+# Stage 01: Preflight
+
+## Status
+blocked: true
+block_reason: stale template identity in config.yml (name="${CONFIG_NAME}", url="${CONFIG_URL}")
+config_validated: false
+stale_identity: true
+on_demand_deploy: n/a
+EOF
+    echo "Blocked: stale template identity in config.yml — aborting"
+    exit 1
+  fi
+
+  # FR-002: production URL required for cron
+  if [ "$TRIGGER" = "cron" ]; then
+    PROD_URL=$(yq '.environments.production.url // ""' .flowchad/config.yml 2>/dev/null)
+    if [ -z "$PROD_URL" ]; then
+      cat > .procedure-output/flowchad-runner/01-preflight/handoff.md <<EOF
+# Stage 01: Preflight
+
+## Status
+blocked: true
+block_reason: no production URL for cron trigger
+config_validated: false
+stale_identity: false
+on_demand_deploy: n/a
+EOF
+      echo "Blocked: no production URL defined in config.yml for cron trigger — aborting"
+      exit 1
+    fi
+  fi
+fi
+CONFIG_VALIDATED=true
+STALE_IDENTITY=false
+```
+
 ### 2. Environment Resolution (trigger-driven)
 
 **PR trigger** — resolve Vercel preview URL from PR deployments API:
@@ -42,6 +91,61 @@ if [ -z "$PREVIEW_URL" ]; then
 fi
 
 TARGET_URL="$PREVIEW_URL"
+```
+
+### 2b. On-Demand Preview Provisioning (PR trigger only)
+
+Runs only when `TRIGGER=pr` AND `TARGET_URL` is still empty after step 2 resolution above.
+Auto-preview must NOT be enabled globally — this provisions exactly one preview on-demand.
+
+```bash
+ON_DEMAND_DEPLOY="n/a"
+
+if [ "$TRIGGER" = "pr" ] && [ -z "$TARGET_URL" ] && [ -n "$PR_NUMBER" ]; then
+  # Check exemptions: dependencies label or docs/infra-only files
+  LABELS=$(gh api repos/${REPO}/issues/${PR_NUMBER}/labels --jq '[.[].name] | join(" ")' 2>/dev/null)
+  FILES=$(gh api repos/${REPO}/pulls/${PR_NUMBER}/files --jq '[.[].filename] | join("\n")' 2>/dev/null)
+
+  IS_DEPS=false
+  echo "$LABELS" | grep -qw "dependencies" && IS_DEPS=true
+
+  # Count files that are NOT docs/**  or *.md — 0 means docs-only
+  NON_DOCS=$(echo "$FILES" | grep -cvE '^docs/|\.md$' || true)
+  IS_DOCS_ONLY=false
+  [ "$NON_DOCS" -eq 0 ] && IS_DOCS_ONLY=true
+
+  if [ "$IS_DEPS" = "true" ] || [ "$IS_DOCS_ONLY" = "true" ]; then
+    ON_DEMAND_DEPLOY="skipped"
+    echo "PR #${PR_NUMBER} is exempt (deps=${IS_DEPS}, docs-only=${IS_DOCS_ONLY}) — skipping on-demand preview"
+    # TARGET_URL stays empty; proceed with whatever URL is available (may block on no URL below)
+  else
+    ON_DEMAND_DEPLOY="triggered"
+    echo "PR #${PR_NUMBER} is relevant — triggering on-demand Vercel preview deploy"
+    # Trigger via Vercel API or deployment-checker skill dispatch.
+    # Pattern: POST to Vercel deployments API with the PR branch ref, then poll for success.
+    VERCEL_PROJECT=$(yq '.vercel.project_id // ""' .flowchad/config.yml 2>/dev/null)
+    VERCEL_TOKEN="${VERCEL_TOKEN:-$VERCEL_API_TOKEN}"
+    if [ -n "$VERCEL_PROJECT" ] && [ -n "$VERCEL_TOKEN" ]; then
+      PR_BRANCH=$(gh api repos/${REPO}/pulls/${PR_NUMBER} --jq '.head.ref' 2>/dev/null)
+      DEPLOY_RESP=$(curl -s -X POST "https://api.vercel.com/v13/deployments" \
+        -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"${VERCEL_PROJECT}\",\"gitSource\":{\"type\":\"github\",\"repoId\":\"$(gh api repos/${REPO} --jq .id)\",\"ref\":\"${PR_BRANCH}\"}}" 2>/dev/null)
+      DEPLOY_URL=$(echo "$DEPLOY_RESP" | jq -r '.url // empty' 2>/dev/null)
+      if [ -n "$DEPLOY_URL" ]; then
+        TARGET_URL="https://${DEPLOY_URL}"
+        # Wait for the deploy to reach success state (reuse deploy-wait logic from step 3)
+        echo "On-demand preview deploy triggered: ${TARGET_URL}"
+      else
+        echo "WARNING: on-demand preview deploy failed — response: ${DEPLOY_RESP}"
+        ON_DEMAND_DEPLOY="failed"
+      fi
+    else
+      echo "WARNING: VERCEL_PROJECT or VERCEL_TOKEN not set — cannot trigger on-demand preview"
+      ON_DEMAND_DEPLOY="failed"
+    fi
+  fi
+fi
 ```
 
 **Merge to branch trigger** — resolve staging/production URL and wait for deploy:
@@ -203,6 +307,8 @@ Path: `.procedure-output/flowchad-runner/01-preflight/handoff.md`
 ## Status
 blocked: {true|false}
 block_reason: {reason or "none"}
+config_validated: {true|false}
+stale_identity: {true|false}
 
 ## Run context
 flow_name: {FLOW_NAME}
@@ -222,13 +328,20 @@ flows_to_run: {space- or newline-separated flow names}
 
 ## Deploy-wait
 result: {skipped | success | n/a}
+
+## Preview
+on_demand_deploy: {triggered | skipped | failed | n/a}
 ```
 
 ## Success criteria
+- For `cron`/`merge` triggers: `config_validated: true` (identity + production URL checks pass).
 - TARGET_URL resolved (non-empty) OR handoff marked `blocked: true` with reason.
 - If TRIGGER=merge, deploy-wait completed (success) or blocked with an issue created.
 - `flows_to_run` is non-empty.
+- `on_demand_deploy` field written for every run.
 
 ## Failure
+- Stale template identity for `cron`/`merge` → `blocked: true`, `block_reason: stale template identity in config.yml`, exit.
+- No production URL for `cron` → `blocked: true`, `block_reason: no production URL for cron trigger`, exit.
 - Empty TARGET_URL → `blocked: true`, `block_reason: no target URL`, exit.
 - Deploy failed/unknown/timeout → GitHub issue created, `blocked: true`, exit.

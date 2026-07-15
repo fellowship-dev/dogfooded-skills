@@ -105,6 +105,51 @@ report file, and emit the `[pylot] outcome=...` marker from the orchestrator (ne
 - **Blocked**: stage 01 (no URL / deploy failed) or stage 02 (flow missing) emits
   `[pylot] outcome="flowchad blocked: {reason}" status=blocked` and the chain stops.
 
+## Cron Mode
+
+Run a weekly production smoke against the critical flow set.
+
+**Trigger**: pass `trigger=cron` as the 4th argument.
+
+**What it walks**: Only flows marked `critical: true` under `smoke.flows` in `.flowchad/config.yml`.
+Flows without that flag are skipped. Example config:
+
+```yaml
+smoke:
+  flows:
+    - name: contact-form
+      critical: true
+    - name: language-switch
+      critical: true
+    - name: page-load
+      critical: true
+    - name: author-page    # no critical: true — excluded from cron
+```
+
+**Config requirements for cron**: Stage 01 validates two things before running:
+1. `name` must not be `booster-pack` (stale template identity).
+2. `environments.production.url` must be present (non-empty).
+
+A stale or missing config blocks immediately with a clear `block_reason` — no flows are walked.
+
+**CAPTCHA-gated flows in cron**: If a critical flow has a non-optional `captcha: true` step
+and Navvi is available, the flow is walked using Navvi. If Navvi is unavailable, the flow is
+marked `blocked` (not `pass`) and a capability issue is created.
+
+**Failure issue deduplication**: Stage 05 checks for existing open issues with matching title
+before creating. If an open issue already exists for that flow, no duplicate is created. This
+means repeated cron runs on a broken site produce exactly one open issue per failing flow.
+
+**Scheduling**: Pylot handles the weekly dispatch via its own cron system. This skill only
+needs `trigger=cron` passed in — it does not self-schedule. To configure weekly execution,
+set a Pylot cron job to call:
+```
+/flowchad-runner all <org/repo> "" cron
+```
+
+**Exit**: `[pylot] outcome="flowchad all on {repo}: all flows passed" status=success`
+or `status=failed` / `status=blocked` depending on results.
+
 ## Hard Rules
 
 1. **All stages run SEQUENTIALLY** — exactly one Task at a time, awaited before the next.

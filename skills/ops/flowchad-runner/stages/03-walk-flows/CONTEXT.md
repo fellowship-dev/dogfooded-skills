@@ -18,8 +18,82 @@ JSONL transcript.
 
 ## Steps
 
+### 0. Browser Availability Pre-check
+
+Run this check BEFORE the per-flow loop. If neither Playwright nor Navvi is available, mark
+ALL flows blocked and write the handoff immediately — do not attempt to walk any flow.
+
+```bash
+PLAYWRIGHT_OK=false
+node -e "require('playwright-core')" 2>/dev/null && PLAYWRIGHT_OK=true
+
+if [ "$PLAYWRIGHT_OK" = "false" ] && [ "$NAVVI_AVAILABLE" = "false" ]; then
+  echo "BLOCKED: no browser available (Playwright missing, Navvi unavailable)"
+  # Build per-flow blocked entries for every flow in the walk order
+  BLOCKED_ROWS=""
+  for FLOW in $FLOWS_TO_RUN; do
+    BLOCKED_ROWS="${BLOCKED_ROWS}| ${FLOW} | blocked | 0/0 | none | no | — | — |\n"
+  done
+  cat > .procedure-output/flowchad-runner/03-walk-flows/handoff.md <<EOF
+# Stage 03: Walk Flows
+
+## Summary
+flows_walked: 0
+flows_passed: 0
+flows_failed: 0
+flows_blocked: $(echo $FLOWS_TO_RUN | wc -w)
+
+## Per-flow results
+| Flow | Status | Steps (pass/total) | Browser | CAPTCHA switch | Snapshot dir | results.json |
+|------|--------|--------------------|---------|----------------|--------------|--------------|
+$(printf "$BLOCKED_ROWS")
+
+## Step-level detail (per flow)
+All flows blocked — no browser available.
+
+## Transcript
+path: ${TRANSCRIPT_PATH}
+
+## Evidence to upload
+none
+
+## Blocked reason
+no browser available (Playwright missing, Navvi unavailable)
+EOF
+  exit 0
+fi
+```
+
 Iterate the walk order sequentially: `for FLOW in <walk order>; do … done`. Finish one flow
 completely (including stopping its recording) before starting the next.
+
+### 1. CAPTCHA Pre-check (per flow, before walking steps)
+
+For each flow, before connecting a browser, scan the loaded YAML for CAPTCHA requirements.
+If the flow cannot be safely walked given current browser availability, mark it blocked and
+skip to the next flow.
+
+```bash
+for FLOW in $FLOWS_TO_RUN; do
+  FLOW_YAML=".flowchad/flows/${FLOW}.yml"
+
+  # Detect any non-optional step with captcha: true
+  HAS_CAPTCHA_STEP=false
+  yq '.steps[] | select(.captcha == true and .optional != true) | .action' "$FLOW_YAML" \
+    2>/dev/null | grep -q . && HAS_CAPTCHA_STEP=true
+
+  if [ "$HAS_CAPTCHA_STEP" = "true" ] && [ "$NAVVI_AVAILABLE" = "false" ] \
+     && { [ "$TRIGGER" = "cron" ] || [ "$TRIGGER" = "merge" ]; }; then
+    echo "BLOCKED: ${FLOW} has CAPTCHA step(s) requiring Navvi; Navvi unavailable on trigger=${TRIGGER}"
+    # Record this flow as blocked; continue loop to check remaining flows
+    FLOW_STATUS_${FLOW}="blocked"
+    FLOW_BLOCKED_REASON_${FLOW}="CAPTCHA step requires Navvi; Navvi unavailable"
+    continue
+  fi
+
+  # ... proceed to browser connect and walk (steps 2a onward)
+done
+```
 
 ### 2a. Choose browser & connect (per flow)
 
@@ -89,6 +163,17 @@ For each step in the flow definition:
 
 If step has `optional: true` and fails, record but don't flag as critical.
 
+**CAPTCHA step failure rules:**
+
+A step with `captcha: true` and NO `optional: true` is a **required** assertion.
+
+- If the CAPTCHA widget fails to render (e.g., site key missing, malformed key, widget
+  container empty) → record step status as **`fail`** (NOT `skip`).
+- Propagate immediately to flow-level **`fail`** — do not continue to submit step.
+- Log: "CAPTCHA widget did not render at step N — marking flow FAIL (non-optional captcha step)"
+
+If `optional: true` is present on the CAPTCHA step, treat as before (record but don't fail).
+
 **CAPTCHA auto-detection and Navvi escalation:**
 
 If a step fails and the error or screenshot indicates a CAPTCHA challenge (Cloudflare
@@ -102,8 +187,12 @@ Turnstile, reCAPTCHA, Arkose, or similar bot detection):
    - Navigate to the current page URL via `navvi_open(url)`
    - **Retry the failed step** using Navvi tools
    - **Continue remaining steps** with Navvi (don't switch back mid-flow)
-2. If `navvi_available=false`:
-   - Record status as `skipped` with note "CAPTCHA detected — Navvi not available"
+2. If `navvi_available=false` AND step has `captcha: true` AND step is NOT `optional`:
+   - Record step status as **`fail`** (not `skipped`)
+   - Propagate to flow-level **`fail`**
+   - Log: "CAPTCHA step N failed — Navvi not available, step is required"
+3. If `navvi_available=false` AND step is `optional`:
+   - Record status as `skipped` with note "CAPTCHA detected — Navvi not available (optional step)"
    - Continue to next step
 
 CAPTCHA detection patterns (check error message AND screenshot):
@@ -149,11 +238,17 @@ Path: `.procedure-output/flowchad-runner/03-walk-flows/handoff.md`
 flows_walked: N
 flows_passed: N
 flows_failed: N
+flows_blocked: N
 
 ## Per-flow results
 | Flow | Status | Steps (pass/total) | Browser | CAPTCHA switch | Snapshot dir | results.json |
 |------|--------|--------------------|---------|----------------|--------------|--------------|
-| {name} | pass/fail | M/N | playwright/navvi | yes@step K / no | .flowchad/snapshots/{date}-{slug}/ | {path} |
+| {name} | pass/fail/blocked | M/N | playwright/navvi/none | yes@step K / no | .flowchad/snapshots/{date}-{slug}/ | {path} |
+
+## Per-flow blocked reasons (only present when status=blocked)
+| Flow | Blocked reason |
+|------|---------------|
+| {name} | {e.g. "CAPTCHA step requires Navvi; Navvi unavailable" or "no browser available"} |
 
 ## Step-level detail (per flow)
 {for each flow: a table of step | status | timing | browser | error/note}
@@ -166,11 +261,12 @@ path: {transcript_path}
 ```
 
 ## Success criteria
-- Every flow in the walk order was attempted, sequentially, one at a time.
-- Each flow has a snapshot dir, results.json, and a flow-level pass/fail verdict.
-- Transcript appended for every step.
+- Every flow in the walk order was attempted or explicitly blocked, sequentially, one at a time.
+- Each walked flow has a snapshot dir, results.json, and a flow-level pass/fail/blocked verdict.
+- Transcript appended for every step of every walked flow.
+- `flows_blocked` count written (may be 0).
 
 ## Failure
 - A flow that errors mid-walk is still recorded (broken step = finding). The stage itself
-  only "fails" if it cannot drive any browser at all — in that case set every flow `fail`
-  with the connection error and still write the handoff so stage 05 can report.
+  only "fails" if it cannot drive any browser at all — in that case step 0 (pre-check) fires,
+  marks all flows `blocked`, writes handoff, and exits cleanly so stage 05 can report.

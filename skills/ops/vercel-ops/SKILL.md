@@ -207,7 +207,7 @@ Do not use `vercel env pull` to inspect sensitive values; it writes plaintext to
 (cd "$DEPLOY_DIR" && npx vercel env run --environment="$TARGET" \
   --token="$VERCEL_TOKEN" -- node -e '
     const crypto = require("node:crypto");
-    const key = process.argv[1];
+    const key = process.argv[2];
     const value = process.env[key];
     if (value === undefined) process.exit(2);
     const bytes = Buffer.byteLength(value);

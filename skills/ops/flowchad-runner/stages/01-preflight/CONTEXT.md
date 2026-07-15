@@ -267,13 +267,25 @@ echo "NAVVI_PERSONA: ${NAVVI_PERSONA:-<none>}"
 
 ### 5. Smoketest Config Resolution (build FLOWS_TO_RUN)
 ```bash
-ALL_FLOWS=$(yq '.smoke.flows[]' .flowchad/config.yml 2>/dev/null)
+ALL_FLOWS=$(yq '.smoke.flows[].name // .smoke.flows[]' .flowchad/config.yml 2>/dev/null)
 SKIP_PRODUCTION=$(yq '.smoke.skip_production[]' .flowchad/config.yml 2>/dev/null)
 
 if [ "$FLOW_NAME" = "all" ]; then
   FLOWS_TO_RUN="$ALL_FLOWS"
 else
   FLOWS_TO_RUN="$FLOW_NAME"
+fi
+
+# On cron trigger, run ONLY flows marked critical: true.
+# Non-critical (optional/P2) flows are excluded regardless of skip_production.
+if [ "$TRIGGER" = "cron" ] && [ "$FLOW_NAME" = "all" ]; then
+  CRITICAL_FLOWS=$(yq '.smoke.flows[] | select(.critical == true) | .name' .flowchad/config.yml 2>/dev/null)
+  if [ -n "$CRITICAL_FLOWS" ]; then
+    FLOWS_TO_RUN="$CRITICAL_FLOWS"
+    echo "Cron trigger: reduced to critical flows only: ${FLOWS_TO_RUN}"
+  else
+    echo "Cron trigger: no critical: true flows found — falling back to all smoke flows"
+  fi
 fi
 
 # On cron/production trigger, skip production-excluded flows (unless persona available)

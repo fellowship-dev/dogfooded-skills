@@ -65,10 +65,10 @@ upgrading `.flowchad/config.yml` and flow definitions.
 
 ## Handoff locations
 
-All handoffs live in the repo working directory:
+All handoffs live in the resolved repo workspace (`$WORKDIR`, see Workspace resolution):
 
 ```text
-.procedure-output/flowchad-runner/{stage}/handoff.md
+$WORKDIR/.procedure-output/flowchad-runner/{stage}/handoff.md
 ```
 
 Stage 01 writes the resolved run context (URL, persona, flow list). Each subagent stage
@@ -78,6 +78,50 @@ receives ONLY the handoff paths its CONTEXT.md lists as inputs — never orchest
 
 Run stages **strictly sequentially, one after another**. There are NO parallel Task launches
 in this procedure. Spawn exactly one Task per subagent stage and await it before the next.
+
+### Workspace resolution (ALWAYS run this first)
+
+The contract, flows, handoffs, and reports all live inside a checkout of the target repo.
+Missions run in a workspace that does NOT contain that checkout — never assume the current
+directory is the repo. Resolve it deterministically before anything else:
+
+```bash
+SKILL_DIR="$HOME/.claude/skills/flowchad-runner"
+[ -d "$SKILL_DIR" ] || SKILL_DIR="$(pwd)/.claude/skills/flowchad-runner"
+
+if [ -f .flowchad/config.yml ]; then
+  # Already inside a checkout (local/manual runs)
+  WORKDIR="$(pwd)"
+else
+  REPO_NAME="${REPO##*/}"
+  REPO_DIR="/tmp/flowchad-${REPO_NAME}"
+  if [ ! -d "$REPO_DIR/.git" ]; then
+    git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$REPO_DIR" 2>/dev/null \
+      || gh repo clone "$REPO" "$REPO_DIR"
+  fi
+  cd "$REPO_DIR"
+  git fetch origin --prune
+  if [ "$TRIGGER" = pr ] && [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != none ]; then
+    # Validate the PR's OWN contract — flows/config may change in the PR itself
+    git fetch origin "pull/${PR_NUMBER}/head:flowchad-pr-${PR_NUMBER}" --force
+    git checkout -f "flowchad-pr-${PR_NUMBER}"
+  else
+    DEFAULT_BRANCH=$(gh repo view "$REPO" --json defaultBranchRef -q .defaultBranchRef.name)
+    git checkout -f "$DEFAULT_BRANCH"
+    git reset --hard "origin/${DEFAULT_BRANCH}"
+  fi
+  WORKDIR="$REPO_DIR"
+fi
+[ -f "$WORKDIR/.flowchad/config.yml" ] || {
+  echo "[pylot] outcome=\"flowchad blocked: $REPO has no .flowchad/config.yml at the resolved ref\" status=blocked"
+  exit 0
+}
+```
+
+Every subsequent command (validator, stage handoffs, reports) runs with `cd "$WORKDIR"`.
+Because subagent Tasks do NOT inherit the orchestrator's `cd`, stage prompts must carry
+ABSOLUTE paths: substitute the literal values of `$WORKDIR` and `$SKILL_DIR` into the
+template below — never pass `.claude/...` or `.procedure-output/...` relative forms.
 
 ### Stages 01 → 04 (sequential subagents)
 
@@ -92,30 +136,36 @@ Task prompt template:
 ```text
 You are running stage {NN}-{name} of the flowchad-runner procedure.
 
+Workspace: cd {WORKDIR} before any step (absolute path — all relative paths resolve there).
+
 Read your stage instructions:
-  .claude/skills/flowchad-runner/stages/{NN}-{name}/CONTEXT.md
+  {SKILL_DIR}/stages/{NN}-{name}/CONTEXT.md
 
 Your inputs:
-  {list each input handoff path this stage needs}
+  {list each input handoff path this stage needs — absolute, under {WORKDIR}}
 
 Write your output to:
-  .procedure-output/flowchad-runner/{NN}-{name}/handoff.md
+  {WORKDIR}/.procedure-output/flowchad-runner/{NN}-{name}/handoff.md
 
 Execute all steps in CONTEXT.md. Write handoff.md before exiting.
 ```
+
+`{WORKDIR}` and `{SKILL_DIR}` are the absolute values resolved in Workspace resolution.
 
 Do not start the next stage until the current one completes. If stage 01 cannot resolve a
 TARGET_URL, or stage 01's deploy-wait fails, or stage 02 finds the flow file missing, emit
 the matching outcome marker and stop (those stages also create GitHub issues themselves).
 
-Before stage 01, verify the checked-in contract deterministically:
+Before stage 01, verify the checked-in contract deterministically (from `$WORKDIR`):
 
 ```bash
+cd "$WORKDIR"
+mkdir -p .procedure-output/flowchad-runner
 MODE="$TRIGGER"
 [ "$MODE" = merge ] && MODE=production
 [ "$MODE" = pr ] && MODE=preview
 [ "$MODE" = manual ] && MODE=local
-python3 .claude/skills/flowchad-runner/scripts/validate_contract.py \
+python3 "$SKILL_DIR/scripts/validate_contract.py" \
   --mode "$MODE" --repo "$REPO" --format json \
   > .procedure-output/flowchad-runner/contract.json
 ```

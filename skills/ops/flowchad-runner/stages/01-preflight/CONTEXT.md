@@ -3,7 +3,9 @@
 ## Inputs
 
 - Parsed `$ARGUMENTS`: `flow-name`, `repo`, `pr-number`, `trigger`
-- `.flowchad/config.yml` and `.flowchad/flows/`
+- `{WORKDIR}` — absolute path to the resolved repo checkout (from the orchestrator's
+  Workspace resolution). `cd` there first; `.flowchad/config.yml` and `.flowchad/flows/`
+  are read relative to it. Never assume the mission's starting directory is the repo.
 
 ## Task
 
@@ -16,6 +18,9 @@ run context. Never certify an interactive run from curl or static HTML.
 ### 1. Setup and contract validation
 
 ```bash
+cd "$WORKDIR"   # absolute checkout path from the orchestrator prompt
+SKILL_DIR="${SKILL_DIR:-$HOME/.claude/skills/flowchad-runner}"
+
 FLOW_NAME="$1"
 REPO="$2"
 PR_NUMBER="${3:-}"
@@ -34,7 +39,7 @@ MODE="$TRIGGER"
 [ "$MODE" = merge ] && MODE=production
 [ "$MODE" = pr ] && MODE=preview
 [ "$MODE" = manual ] && MODE=local
-python3 .claude/skills/flowchad-runner/scripts/validate_contract.py \
+python3 "$SKILL_DIR/scripts/validate_contract.py" \
   --mode "$MODE" --repo "$REPO" --format json \
   > .procedure-output/flowchad-runner/contract.json
 ```

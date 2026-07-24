@@ -50,7 +50,7 @@ import sys, json
 requestors = json.loads(sys.argv[1])
 lines = []
 for r in requestors:
-    name  = (r.get('display_name') or '').strip() or r.get('slack_user_id', 'Unknown')
+    name  = ((r.get('display_name') or '').strip() or r.get('slack_user_id', 'Unknown')).replace('<', '').replace('>', '')
     gh    = r.get('github_username')
     email = (r.get('email') or '').strip() or None
     slack = r.get('slack_user_id', 'unknown')

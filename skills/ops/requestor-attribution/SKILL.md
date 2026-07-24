@@ -62,7 +62,7 @@ for r in requestors:
         addr = slack + '@users.noreply.fellowship.dev'
     lines.append('Co-authored-by: ' + name + ' <' + addr + '>')
 print('\n'.join(lines))
-" "$REQUESTORS")
+" "$REQUESTORS") || HUMAN_TRAILERS=''
 ```
 
 `$HUMAN_TRAILERS` is an empty string when `REQUESTORS='[]'`.

@@ -32,7 +32,7 @@ try:
 except Exception as e:
     print('[requestor-attribution] WARNING: PYLOT_REQUESTORS parse failed — ' + str(e), file=sys.stderr)
     print('[]')
-" "$REQUESTORS_JSON" 2>/dev/null) || REQUESTORS='[]'
+" "$REQUESTORS_JSON") || REQUESTORS='[]'
 fi
 ```
 

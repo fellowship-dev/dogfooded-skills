@@ -63,3 +63,41 @@ The executor caps the array at 10 requestors. Skills must not assume a maximum l
 ---
 
 See `requestor-attribution` skill for commit and PR attribution implementation using `$PYLOT_REQUESTORS`.
+
+---
+
+## Linking a user's GitHub identity (conversational ask)
+
+When a user asks to **link their GitHub** (any phrasing: "link my github", "connect my account", "why am I not attributed"), do NOT probe auth routes or guess — mint a self-service link URL with ONE call and hand it back (#2604, shipped in #2598).
+
+### In chat sessions
+
+The env gives you everything: `$CONVERSATION_ID` (this conversation), `$PYLOT_API_TOKEN` (session JWT, `org:member`-capable), `$PYLOT_GATEWAY_URL`.
+
+```bash
+curl -sS -X POST "$PYLOT_GATEWAY_URL/users/link-request" \
+  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"conversation_id\":\"$CONVERSATION_ID\"}"
+```
+
+Equivalent CLI (where the `pylot` CLI is installed, e.g. worker sessions):
+
+```bash
+pylot users link slack github --conversation "$CONVERSATION_ID"
+```
+
+### How it works
+
+- The gateway derives WHO from the conversation's own recorded Slack senders (#2537) — you never pass identity claims. An explicit `slack_user_id` must be a recorded sender of the conversation, else 403.
+- The response contains a **personal URL** that walks the human through GitHub OAuth (#2538). The URL grants nothing by itself and **expires in 10 minutes**.
+- Post the URL back to the requester — ephemeral/DM preferred, it is personal.
+- Org-scoped: the request is fenced to the conversation's org.
+
+### Error cases (handle, don't retry blindly)
+
+| Response | Meaning | What to tell the user |
+|---|---|---|
+| 404 `no Slack senders recorded` | conversation predates sender stamping | ask them to send a fresh message and retry |
+| `already_linked` | identity already connected | confirm their `github_login` via `GET /users?org=<org>` |
+| 403 on `slack_user_id` | identity injection blocked | only recorded senders can be linked — drop the override |

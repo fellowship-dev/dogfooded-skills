@@ -112,11 +112,13 @@ Append to the handoff, after the PR metadata section:
 gh pr view $PR --repo $REPO --json body --jq '.body' | grep -oE '(Closes|Fixes|Resolves) #[0-9]+' | grep -oE '[0-9]+'
 ```
 
-For each linked issue number found with a `Closes`/`Fixes`/`Resolves` keyword, capture its
-unchecked-acceptance-criteria count so stage 01 can apply the check without re-fetching:
+For each linked issue number found with a `Closes`/`Fixes`/`Resolves` keyword, capture the
+TEXT of its acceptance-criteria items — both `- [ ]` and `- [x]`; checkbox state is
+auto-generated and meaningless (pylot#2583) — so stage 01 can assess them against the diff
+without re-fetching:
 
 ```bash
-gh issue view ISSUE_N --repo $REPO --json body --jq '.body' | grep -c '- \[ \]' || echo 0
+gh issue view ISSUE_N --repo $REPO --json body --jq '.body' | grep -E '^\s*- \[[ x]\]' || echo "NO_AC_ITEMS"
 ```
 
 ### Step 4: Write handoff
@@ -157,7 +159,7 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 ```
 
 ## Closes vs Refs — Raw Data
-{for each linked issue: ISSUE_N → unchecked acceptance-criteria count}
+{for each linked issue: ISSUE_N → its acceptance-criteria item lines verbatim, or NO_AC_ITEMS}
 {or "No Closes/Fixes/Resolves keywords found"}
 ```
 

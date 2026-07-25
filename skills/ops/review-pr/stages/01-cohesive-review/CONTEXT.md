@@ -85,9 +85,15 @@ says. If no CLAUDE.md exists, skip this section.
 
 ### Step 4: Closes vs Refs Check (MANDATORY)
 Use the Closes-vs-Refs raw data in the handoff. For each linked issue with a `Closes`/`Fixes`/
-`Resolves` keyword whose unchecked acceptance-criteria count > 0 → add a finding as **Bug**
-(confidence 100): PR uses `Closes #N` but issue has unchecked acceptance criteria. Must change to
-`Refs #N`.
+`Resolves` keyword, read the TEXT of each acceptance-criteria item and IGNORE checkbox state
+(`- [ ]` vs `- [x]`) — the checkboxes are auto-generated task lists nobody clicks (pylot#2583).
+Assess each item against the actual diff:
+
+- ALL items plausibly satisfied by this diff → `Closes #N` is appropriate; generate NO finding.
+- Some items NOT addressed by this diff → add a finding recommending `Refs #N` that NAMES the
+  specific unaddressed items. Severity: **Bug**. Confidence is a calibrated judgment on the
+  same 80–100 scale as every other finding — never a hardcoded 100.
+- Issue has no acceptance-criteria items (`NO_AC_ITEMS`) → skip the check for that issue.
 
 If no Closes keywords were found, record "No Closes keywords found".
 

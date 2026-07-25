@@ -1,42 +1,107 @@
 ---
 name: pylot-api
-description: Reference for Pylot executor environment variables injected at worker spawn — covers $PYLOT_REQUESTORS and related env vars available inside worker sessions.
+description: Use when looking up Pylot gateway API endpoints for dispatch, status monitoring, or crew management.
 user-invocable: false
+allowed-tools: Bash, Read
 ---
 
-# pylot-api — Pylot Executor Environment Reference
+## Role & Mission
 
-Documents the environment variables that the Pylot executor injects at worker spawn. Skills running inside worker sessions can read these vars to integrate with the Pylot platform.
+The chat agent is the resident Pylot expert — dispatch tasks, monitor missions, keep the platform healthy:
 
----
+- **Dev environment stewardship**: worker images, system libs, devcontainer config — workers should run what they need without runtime installs
+- **Visual evidence pipeline**: every UI-changing PR should include a GIF or screenshot — upload via the [assets backend](docs/assets.md) (presign → PUT → publish → embed `public_url`)
+- **Skills maintenance**: read logs after missions, spot struggles, improve skills or open follow-up issues
+- **PR stewardship**: dispatch → monitor → review → merge → verify; no PRs left stale
 
-## `$PYLOT_REQUESTORS`
+## Auth
 
-### What it is
+```bash
+curl -sS -H "Authorization: Bearer $PYLOT_API_TOKEN" "$PYLOT_GATEWAY_URL/<endpoint>"
+```
 
-A JSON-encoded array of the human participants who triggered the current mission. Injected by the Pylot executor at worker spawn (see fellowship-dev/pylot#2539) when the dispatching conversation includes human participants.
+`PYLOT_GATEWAY_URL` and `PYLOT_API_TOKEN` are in env.
 
-### When it is absent
+## Quick Start: Dispatch
 
-`$PYLOT_REQUESTORS` is **not set** (or empty) when the mission was dispatched without a human conversation context:
+**Always pass `context.conversation_id`** — enables auto-wake on mission completion and PR lifecycle events:
 
-- Cron-triggered missions
-- Direct API calls that do not carry a conversation ID
-- Automated pipelines without a linked Slack or UI session
+```bash
+CONV_ID=$(ls /tmp/claude-home/.claude/session-env/ | head -1)
+curl -sS -X POST -H "Authorization: Bearer $PYLOT_API_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"agent\":\"<team>.<op>\",\"task\":\"<task>\",\"context\":{\"conversation_id\":\"$CONV_ID\"}}" \
+  "$PYLOT_GATEWAY_URL/dispatch"
+```
 
-All skills that consume this var must treat absent/empty as a valid no-op case.
+## API Reference
 
-### JSON shape
+Full reference lives in `docs/` — read the relevant file before making calls:
 
-Array of up to **10** objects. When there are more than 10 requestors, the array is capped at 10 entries.
+- [Dispatch](docs/dispatch.md) — send missions, context.conversation_id, prompt limits, examples
+- [Monitoring](docs/monitoring.md) — check status, stream CloudWatch logs, filter by team/status
+- [Wakes](docs/wakes.md) — self-wake, auto-wake on completion, wake event payloads, timing guide
+- [Resources](docs/resources.md) — load/unload keychains and skills
+- [Secrets](docs/secrets.md) — discover keychains, fingerprints, key descriptions
+- [Crew](docs/crew.md) — roster, stats, costs, config
+- [Fleet](docs/fleet.md) — Fargate projects and task definitions
+- [SDLC](docs/sdlc.md) — PR review pipeline, merge strategies, what to do on wakes
+- [Deploy](docs/deploy.md) — staging/prod deploy lanes, POST /admin/deploy, release PR promotion — read before any "ship to prod" request
+- [Automations](docs/automations.md) — GET /automations schema, SDLC automation chain, suppression semantics
+- [Assets](docs/assets.md) — upload images/GIFs/video (presign → PUT → publish) for PR/issue visual evidence; conversation attach pending Stage E
+- [Welcome](docs/welcome.md) — turn-1 guided welcome for orgs with incomplete activation milestones
+
+## Startup / Orient
+
+On turn 1, fetch live automations and render one line per automation (`event [label?] → rule-name excl:[labels_exclude] repos:[only_repos] skip:[skip_repos]`). On failure, warn and continue — never block startup. See [docs/automations.md](docs/automations.md) for field definitions and SDLC chain.
+
+```bash
+curl -sS -H "Authorization: Bearer $PYLOT_API_TOKEN" "$PYLOT_GATEWAY_URL/automations" \
+  | jq -r '.automations[] | "\(.trigger.event) [\(.trigger.match.label // "-")] → \(.name) excl:[\(.trigger.match.labels_exclude // [] | join(","))] repos:[\(.trigger.match.only_repos // [] | join(","))] skip:[\(.trigger.match.skip_repos // [] | join(","))]"' \
+  2>/dev/null || echo "[warn] GET /automations unavailable — continuing without live automation summary"
+```
+
+### Welcome check (turn 1)
+
+Also on turn 1, if `$CONV_ORG` is set, check the org's activation ladder:
+
+```bash
+curl -sS -H "Authorization: Bearer $PYLOT_API_TOKEN" "$PYLOT_GATEWAY_URL/orgs/$CONV_ORG/activation"
+```
+
+If any milestone **before `automations_on`** is not done, read [docs/welcome.md](docs/welcome.md) and follow the welcome protocol before anything else. If all of them are done, or `$CONV_ORG` is unset: skip — normal behavior, no greeting. On 404/error (endpoint may not be deployed yet), use the fallback heuristic in docs/welcome.md — never mention this failure to the user.
+
+## Worker Environment Variables
+
+Key env vars injected into worker containers at spawn. Read from env directly — never query the gateway for these.
+
+| Var | Type | Purpose |
+|-----|------|---------|
+| `PYLOT_JOB_ID` | string | Mission ID — used in all worker API calls |
+| `PYLOT_TASK` | string | The task prompt the worker received |
+| `PYLOT_REPO` | string | `org/repo` the worker is running against |
+| `PYLOT_REQUESTORS` | JSON string \| unset | Human requestors who triggered the mission (see below) |
+| `PYLOT_GATEWAY_URL` | string | Gateway base URL |
+| `PYLOT_DISPATCH_TOKEN` | string | Bearer token for worker → gateway calls |
+
+### `$PYLOT_REQUESTORS`
+
+Set by the executor (#2539) when the dispatching conversation has human participants. Absent on cron, webhook, or direct API dispatches with no conversation context.
+
+**Shape** — a JSON-encoded array of up to 10 objects:
 
 ```json
 [
   {
-    "slack_user_id":   "U01234ABCDE",
+    "slack_user_id":   "U012AB3CD",
     "github_username": "maxfindel",
     "display_name":    "Max F. Findel",
     "email":           "max@fellowship.dev"
+  },
+  {
+    "slack_user_id":   "U456EF7GH",
+    "github_username": null,
+    "display_name":    "Bedo",
+    "email":           null
   }
 ]
 ```
@@ -44,35 +109,41 @@ Array of up to **10** objects. When there are more than 10 requestors, the array
 | Field | Type | Notes |
 |-------|------|-------|
 | `slack_user_id` | `string` | Always present. Stable Slack user identifier. |
-| `github_username` | `string \| null` | `null` when the Slack account is not linked to a GitHub account. |
-| `display_name` | `string` | Slack display name or GitHub login. Always a non-empty string. |
-| `email` | `string \| null` | `null` when the user's email is not available to the platform. |
+| `github_username` | `string \| null` | `null` when the Slack account is not linked to GitHub (#2538). |
+| `display_name` | `string` | Slack display name or GitHub login. Always non-empty. |
+| `email` | `string \| null` | `null` when not resolvable by the platform. |
 
-### Email address fallback precedence
+The executor caps the array at **10** requestors — iterate over whatever it contains, assume no other bound. Parse defensively: absent, empty, or malformed JSON all mean `[]` (no attribution, no error).
 
-When constructing an email address for git trailers or other attribution contexts, use this three-case fallback (in order):
+**Email fallback precedence** — when constructing an email for git trailers or other attribution (in order):
 
-1. `email` is non-null and non-empty → use `email` directly
-2. `github_username` is non-null, `email` is null → use `github_username@users.noreply.github.com`
-3. `github_username` is null → use `slack_user_id@users.noreply.fellowship.dev`
+1. `email` non-null and non-empty → use `email`
+2. `github_username` non-null, `email` null → `github_username@users.noreply.github.com`
+3. `github_username` null → `slack_user_id@users.noreply.fellowship.dev`
 
-### 10-object cap
+**Worker usage** — the `requestor-attribution` skill (pylot#2540, shipped in dogfooded-skills `skills/ops/requestor-attribution`) reads this var and:
+- Appends `Co-authored-by:` trailers to every commit (above the Claude trailer)
+- Prepends `> Requested by @username, Name (Slack)` to the PR body
+- Adds linked users as PR assignees via `gh pr edit --add-assignee` — skip this step when `github_username` is `null`
 
-The executor caps the array at 10 requestors. Skills must not assume a maximum length smaller or larger than 10; iterate over whatever the array contains.
 
----
+## When to Dispatch vs. Do Locally
 
-See `requestor-attribution` skill for commit and PR attribution implementation using `$PYLOT_REQUESTORS`.
-
----
+| Task | Local | Dispatch |
+|------|-------|----------|
+| Answer questions, explain code | ✓ | — |
+| Check mission status, read logs | ✓ | — |
+| Query the API | ✓ | — |
+| Code changes, PRs, reviews | — | ✓ |
+| Docker builds, deploys | — | ✓ |
+| Run test suites | — | ✓ |
+| Anything > 10 min | — | ✓ |
 
 ## Linking a user's GitHub identity (conversational ask)
 
-When a user asks to **link their GitHub** (any phrasing: "link my github", "connect my account", "why am I not attributed"), do NOT probe auth routes or guess — mint a self-service link URL with ONE call and hand it back (#2604, shipped in #2598).
+When a user asks to **link their GitHub** (any phrasing: "link my github", "connect my account", "why am I not attributed"), do NOT probe auth routes or guess — mint a self-service link URL with ONE call and hand it back (#2604, shipped in #2598). This is a LOCAL action (no dispatch).
 
-### In chat sessions
-
-The env gives you everything: `$CONVERSATION_ID` (this conversation), `$PYLOT_API_TOKEN` (session JWT, `org:member`-capable), `$PYLOT_GATEWAY_URL`.
+In chat sessions the env gives you everything: `$CONVERSATION_ID` (this conversation), `$PYLOT_API_TOKEN` (session JWT), `$PYLOT_GATEWAY_URL`.
 
 ```bash
 curl -sS -X POST "$PYLOT_GATEWAY_URL/users/link-request" \
@@ -81,20 +152,15 @@ curl -sS -X POST "$PYLOT_GATEWAY_URL/users/link-request" \
   -d "{\"conversation_id\":\"$CONVERSATION_ID\"}"
 ```
 
-Equivalent CLI (where the `pylot` CLI is installed, e.g. worker sessions):
+Equivalent CLI where the `pylot` CLI is installed (worker sessions): `pylot users link slack github --conversation "$CONVERSATION_ID"`.
 
-```bash
-pylot users link slack github --conversation "$CONVERSATION_ID"
-```
+How it works:
+- The gateway derives WHO from the conversation's recorded Slack senders (#2537) — you never pass identity claims. An explicit `slack_user_id` must be a recorded sender, else 403.
+- The response contains a **personal URL** that walks the human through GitHub OAuth (#2538). It grants nothing by itself and **expires in 10 minutes**.
+- Post the URL back to the requester (ephemeral/DM preferred — it is personal).
+- Org-scoped: fenced to the conversation's org.
 
-### How it works
-
-- The gateway derives WHO from the conversation's own recorded Slack senders (#2537) — you never pass identity claims. An explicit `slack_user_id` must be a recorded sender of the conversation, else 403.
-- The response contains a **personal URL** that walks the human through GitHub OAuth (#2538). The URL grants nothing by itself and **expires in 10 minutes**.
-- Post the URL back to the requester — ephemeral/DM preferred, it is personal.
-- Org-scoped: the request is fenced to the conversation's org.
-
-### Error cases (handle, don't retry blindly)
+Error cases (handle, don't retry blindly):
 
 | Response | Meaning | What to tell the user |
 |---|---|---|

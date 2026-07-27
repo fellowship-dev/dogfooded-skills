@@ -106,8 +106,7 @@ fi
 
 if [ -z "$REBASE_FAILED" ]; then
   # Push the rebased branch so the PR reflects the conflict resolution
-  # --no-verify: pod pushes skip the local husky gate; staging CodeBuild is the gate authority
-  git push origin $PR_BRANCH --force-with-lease --no-verify
+  git push origin $PR_BRANCH --force-with-lease
   echo "Rebased $PR_BRANCH onto origin/$BASE_BRANCH and pushed — PR conflict cleared"
 fi
 ```

@@ -16,8 +16,7 @@ conflict/skip log. Never force-push. Never merge the release PR — Max reviews 
 
 1. Push the release branch (never force):
 ```bash
-# --no-verify: pod pushes skip the local husky gate; staging CodeBuild is the gate authority
-$REMOTE_EXEC "cd $REPO_DIR && git push origin $RELEASE_BRANCH --no-verify"
+$REMOTE_EXEC "cd $REPO_DIR && git push origin $RELEASE_BRANCH"
 ```
 
 2. Create the release PR against the default branch using `shared/release-pr-template.md`.

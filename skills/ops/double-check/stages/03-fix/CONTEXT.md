@@ -62,7 +62,8 @@ If you made fix commits:
 
 ```bash
 cd "$REPO_DIR"
-git push origin $PR_BRANCH
+# --no-verify: pod pushes skip the local husky gate; staging CodeBuild is the gate authority
+git push origin $PR_BRANCH --no-verify
 ```
 
 If you couldn't push (permission denied): note that fixes need to be applied by the repo owner —

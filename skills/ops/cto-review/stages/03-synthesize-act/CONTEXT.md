@@ -91,7 +91,8 @@ conflict is NOT a hold reason — finish it now, in this order:
 2. **Otherwise rebase and resolve semantically.** `gh pr checkout $PR && git fetch
    origin $BASE && git rebase origin/$BASE` — read both sides of each conflict,
    write the resolution that preserves both intents, verify zero leftover conflict
-   markers AND the repo's test gate passes, then `git push --force-with-lease`.
+   markers AND the repo's test gate passes, then `git push --force-with-lease --no-verify`
+   (`--no-verify`: pod pushes skip the local husky gate; staging CodeBuild is the gate authority).
    Your LGTM verdict already covers the content; the rebase only replays it onto
    current base. Then merge below.
 3. If the two sides genuinely contradict and the issue doesn't say which behavior

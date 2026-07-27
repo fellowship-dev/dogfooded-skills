@@ -25,7 +25,9 @@ judgement step is not polluted by the orchestrator's history.
 | `repo` | yes | — | `org/repo`, e.g. `fellowship-dev/booster-pack` |
 
 Parse from `$ARGUMENTS`: first token is `pr`, second is `repo`.
-`GH_TOKEN` must be set in the environment before running (the team's `token_var` for Pylot crews).
+GitHub auth is ambient — no token env var. The pod's `git-credential-pylot` helper and the `gh`
+shim mint short-lived App installation tokens per operation, so git URLs must stay plain
+(`https://github.com/<org>/<repo>.git`); inline credentials bypass the helper and expire mid-run.
 
 ## What it does
 

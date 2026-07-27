@@ -10,13 +10,13 @@ the review stage is skipped. Also gate on staging evidence for infra/backend PRs
 
 ## Steps
 
-1. Set up environment and token:
+1. Set up environment:
 ```bash
 export PR=$PR_NUMBER
 export REPO=$REPO
-export GH_TOKEN=$(grep 'GH_PAT_FELLOWSHIP' $HOME/projects/fellowship-dev/claude-buddy/.env | cut -d= -f2)
 ```
-(For a specific team, use the team's `token_var` from crew config instead.)
+(No token export. GitHub auth is ambient — the pod's `git-credential-pylot` helper and the `gh`
+shim mint short-lived App installation tokens per operation.)
 
 2. Verify prerequisites:
 ```bash

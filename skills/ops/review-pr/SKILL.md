@@ -34,8 +34,8 @@ together in ONE review stage. There is NO per-file fan-out and NO parallel subag
 
 Parse from `$ARGUMENTS`: `PR=$1`, `REPO=$2`. Both required.
 
-**Token:** set `GH_TOKEN` in the environment before running. For Pylot crews, the team's
-`token_var` is used automatically.
+**Token:** none needed. GitHub auth is ambient — the pod's `git-credential-pylot` helper and the
+`gh` shim mint short-lived App installation tokens per operation.
 
 ## What it does
 

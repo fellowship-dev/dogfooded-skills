@@ -2,7 +2,8 @@
 
 ## Inputs
 - PR number + `org/repo` (from invocation: `PR=$1`, `REPO=$2`)
-- `GH_TOKEN` in the environment
+- GitHub auth is ambient — the pod's `git-credential-pylot` helper and the `gh` shim mint
+  short-lived App installation tokens per operation. No token env var is needed or set.
 
 ## Task
 Run the dedup gate, then gather all PR context and the full diff that the review subagent will

@@ -34,13 +34,12 @@ npx skills add fellowship-dev/dogfooded-skills/skills/ops/agent-readiness
 
 ### 0. Access + clone
 
-Mint repo credentials through the gateway (never require a personal PAT):
+Auth is ambient (never require a personal PAT): the pod's `git-credential-pylot` helper mints a
+short-lived App installation token per git operation. Clone with a plain https URL — inline
+credentials bypass the helper.
 
 ```bash
-TOKEN_JSON=$(curl -fsS "$PYLOT_GATEWAY_URL/git-token?repo=$REPO" \
-  -H "Authorization: Bearer ${PYLOT_BROKER_TOKEN:-$PYLOT_DISPATCH_TOKEN}")
-GH_TOKEN=$(echo "$TOKEN_JSON" | jq -r .token)
-git clone --depth 50 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" /tmp/assess-repo
+git clone --depth 50 "https://github.com/${REPO}.git" /tmp/assess-repo
 ```
 
 Shallow (depth 50) is enough — you need the tree + recent history, not archaeology.

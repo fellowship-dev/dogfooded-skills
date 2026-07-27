@@ -96,7 +96,8 @@ else
   REPO_NAME="${REPO##*/}"
   REPO_DIR="/tmp/flowchad-${REPO_NAME}"
   if [ ! -d "$REPO_DIR/.git" ]; then
-    git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$REPO_DIR" 2>/dev/null \
+    # Plain https URL — inline credentials would bypass git-credential-pylot
+    git clone "https://github.com/${REPO}.git" "$REPO_DIR" 2>/dev/null \
       || gh repo clone "$REPO" "$REPO_DIR"
   fi
   cd "$REPO_DIR"

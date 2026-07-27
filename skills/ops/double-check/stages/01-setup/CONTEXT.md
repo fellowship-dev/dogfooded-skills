@@ -2,7 +2,8 @@
 
 ## Inputs
 - `pr` and `repo` (passed in the Task prompt)
-- `GH_TOKEN` in the environment
+- GitHub auth is ambient — the pod's `git-credential-pylot` helper and the `gh` shim mint
+  short-lived App installation tokens per operation. No token env var is needed or set.
 
 No upstream handoffs — this is the first stage.
 
@@ -81,7 +82,8 @@ REPO_NAME=$(echo $REPO | cut -d/ -f2)
 REPO_DIR="/tmp/double-check-$REPO_NAME"
 
 if [ ! -d "$REPO_DIR" ]; then
-  git clone "https://x-access-token:${GH_TOKEN}@github.com/$REPO.git" "$REPO_DIR"
+  # Plain https URL — inline credentials would bypass git-credential-pylot
+  git clone "https://github.com/$REPO.git" "$REPO_DIR"
 fi
 
 cd "$REPO_DIR"
@@ -104,7 +106,8 @@ fi
 
 if [ -z "$REBASE_FAILED" ]; then
   # Push the rebased branch so the PR reflects the conflict resolution
-  git push origin $PR_BRANCH --force-with-lease
+  # --no-verify: pod pushes skip the local husky gate; staging CodeBuild is the gate authority
+  git push origin $PR_BRANCH --force-with-lease --no-verify
   echo "Rebased $PR_BRANCH onto origin/$BASE_BRANCH and pushed — PR conflict cleared"
 fi
 ```

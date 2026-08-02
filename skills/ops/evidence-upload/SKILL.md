@@ -2,7 +2,7 @@
 name: evidence-upload
 description: Upload an image/GIF/video to the pylot assets backend and return a stable public URL, optionally attaching it to a chat conversation. Use whenever you need to embed visual evidence in a PR, issue, or report, or to make an image appear in a conversation thread.
 argument-hint: "[--conversation <conversation-id>] [--alt <text>]"
-user-invocable: false
+user-invocable: true
 allowed-tools: Bash
 ---
 

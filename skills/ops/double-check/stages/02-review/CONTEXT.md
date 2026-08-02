@@ -14,6 +14,8 @@ Do NOT request or expect any other context. This handoff is everything.
 Review the PR **in cohesion** — the whole diff together, all dimensions in ONE pass — and produce
 a single consolidated verdict. This is NOT split per-file or per-dimension. In this one review you:
 
+0. **Reconcile the PR's claims against the diff.** The title and body are claims; the diff is the
+   only evidence. Claims with no code behind them are the defect. BLOCKING — see step 2 below.
 1. **Verify the first review's claims.** For each finding in the setup handoff's "First Review",
    judge whether it is accurate against the actual diff.
 2. **Find missed edge cases.** Surface correctness/security/spec issues the first review did NOT
@@ -21,7 +23,7 @@ a single consolidated verdict. This is NOT split per-file or per-dimension. In t
 3. **Check tests and docs.** Does the change include/adjust tests where it should? Are docs,
    types, and deps consistent with the change?
 
-All three are judged together as cross-cutting concerns, yielding ONE verdict.
+All four are judged together as cross-cutting concerns, yielding ONE verdict.
 
 ## Steps
 
@@ -29,7 +31,42 @@ All three are judged together as cross-cutting concerns, yielding ONE verdict.
    verification manifest from review-pr, #2210). Build a mental model of what the diff changes and
    why — the ledger's summary spares you re-deriving intent, but the DIFF remains the ground truth.
 
-2. **Curate the findings — by ledger ID when Review State is present.** Classify EACH finding as:
+2. **Reconcile claims vs diff — BLOCKING, do this before curating anything.**
+   Extract every *concrete, checkable* claim from the PR title and body: named files/modules,
+   endpoints or routes, functions, migrations, config keys, test files and test counts,
+   `Closes`/`Implements`/`Fixes` issue refs, and any staging/deploy evidence (build ids,
+   `deployed_sha`, smoke results). Check each against the setup handoff's **Changed Files**
+   manifest and **Full Diff**. Classify each claim:
+
+   - **backed** — the change is present in this diff.
+   - **elsewhere** — the body explicitly scopes it out, or names the specific other PR / merged
+     SHA that carries it. A bare "already shipped" / "handled previously" assertion with no
+     pointer is NOT `elsewhere`.
+   - **unbacked** — claimed, absent from the diff, no pointer.
+
+   **Any `unbacked` claim ⇒ `claims_reconciled: fail` ⇒ `verdict: needs-work`.** Non-waivable:
+   - "The mismatch is intentional / the commit message explains it" is **not** a waiver. A body
+     that describes code this diff does not contain is itself the defect — the body must be
+     corrected or the code must land. Do not record it as a non-blocking observation.
+   - Risk tier does not exempt it. A LOW-tier docs-only diff under a body claiming N source files
+     and M new tests is precisely the case this gate exists for — a small diff makes the
+     mismatch *more* suspicious, not less.
+   - `Closes`/`Implements` refs count as claims: closing an issue on a diff that does not
+     implement it is unbacked.
+   - Staging evidence attesting to code absent from the diff is unbacked.
+
+   Also note the inverse — substantive changes in the diff the body never mentions
+   (**undisclosed**). Record them; escalate to needs-work only when they are risky or outside the
+   PR's stated scope.
+
+   If the setup handoff flags the diff as TRUNCATED, or the Changed Files manifest is missing, you
+   cannot reconcile: set `claims_reconciled: unknown` and say which claims you could not check.
+   Stage 04 re-checks those against the live PR.
+
+   Be precise, not pedantic: only claims a reader could verify against the diff. Wording, tone,
+   and forward-looking intent ("this unblocks X") are not claims.
+
+3. **Curate the findings — by ledger ID when Review State is present.** Classify EACH finding as:
    - **MUST FIX** — accurate, important for correctness/security/spec compliance
    - **NICE TO HAVE** — accurate but low priority, non-blocking
    - **DISCARD** — inaccurate, irrelevant, overly pedantic, or far-fetched
@@ -39,7 +76,7 @@ All three are judged together as cross-cutting concerns, yielding ONE verdict.
    - Review State `none` + no first-review findings: note "No CI review comments found — reviewed
      diff directly".
 
-3. **Identify new issues not caught by the first review** — correctness, edge cases, security,
+4. **Identify new issues not caught by the first review** — correctness, edge cases, security,
    missing tests, doc/type/dep gaps. List each with the file/line and what's wrong. Give each an
    ID continuing the ledger: `D1`, `D2`, … **Depth scales with the risk tier** (#2210):
    - **LOW** — verify acceptance criteria and tests posture, spot-check the 2-3 riskiest hunks;
@@ -51,18 +88,24 @@ All three are judged together as cross-cutting concerns, yielding ONE verdict.
      manifest lacks the checklist (older review), run it yourself.
    You may ESCALATE the tier (never lower it) — record the new tier + reason in your handoff.
 
-4. **Decide tests posture.** Note whether tests should be run after fixes (and the likely stack),
+5. **Decide tests posture.** Note whether tests should be run after fixes (and the likely stack),
    or whether tests are not applicable (e.g. deps-only / lockfile-only PR — note this explicitly).
 
-5. **Form the consolidated verdict.** One of:
-   - `ready` — ready for CTO review (no MUST-FIX items, no blocking new issues)
+6. **Form the consolidated verdict.** One of:
+   - `ready` — ready for CTO review (no MUST-FIX items, no blocking new issues, and
+     `claims_reconciled` is not `fail`)
    - `needs-work` — list the specific remaining items
 
-6. Set `fixes_needed`:
+   `claims_reconciled: fail` forces `needs-work`. There is no combination of clean findings that
+   overrides it.
+
+7. Set `fixes_needed`:
    - `true` if there is at least one MUST-FIX finding OR a NICE-TO-HAVE you judge worth doing
      OR a new blocking issue to fix.
    - `false` if nothing actionable needs a code change (verdict can still be `ready` or `needs-work`,
      but with no fixes for stage 03 to apply).
+   - An unbacked-claim failure alone does NOT set `fixes_needed: true` — stage 03 fixes code, and
+     the remedy here is the author correcting the body or landing the missing code.
 
 This stage has NO side effects — no code edits, no pushes, no comments. It only judges and records.
 
@@ -75,9 +118,22 @@ Path: `.procedure-output/double-check/02-review/handoff.md`
 
 verdict: {ready | needs-work}
 fixes_needed: {true | false}
+claims_reconciled: {pass | fail | unknown}
+
+## Claims vs Diff
+| Claim (from PR title/body) | Status | Evidence |
+|----|--------|----------|
+| {e.g. "POST /orgs/:org/skills/home handler in skills-api.mts"} | unbacked | not in the 2 changed files |
+| {e.g. "18 new unit tests"} | unbacked | no test file in the diff |
+| {e.g. "T040 GitHub App permission"} | elsewhere | body scopes it out as a follow-on infra PR |
+| {e.g. "T049 marked done in tasks.md"} | backed | tasks.md hunk |
+{one row per concrete claim — or "no checkable claims in the body"}
+
+Undisclosed changes: {diff changes the body never mentions — or "none"}
 
 ## Intent
-{1-2 sentences: does the PR deliver what it's supposed to?}
+{1-2 sentences: does the PR deliver what it's supposed to? If claims_reconciled is fail, say so
+here in one line — this text is what a human reads first.}
 
 ## Implementation
 {2-4 bullets: key approach, files changed grouped by area}
@@ -102,6 +158,7 @@ fixes_needed: {true | false}
 ## Verified (delta this stage adds to the manifest)
 | What | How |
 |------|-----|
+| PR title/body claims reconciled against changed files + diff ({N} claims, {N} unbacked) | read |
 | {e.g. "first-review findings re-judged against diff"} | read |
 | {e.g. "runtime-shape checklist re-confirmed"} | read |
 {stage 03, if it runs, appends its test run as {"what":"test suite after fixes","how":"executed"}}
@@ -117,7 +174,9 @@ fixes_needed: {true | false}
 ```
 
 ## Success criteria
-- `verdict` and `fixes_needed` set explicitly
+- `verdict`, `fixes_needed`, and `claims_reconciled` set explicitly
+- Every concrete PR-body claim classified backed/elsewhere/unbacked in the Claims vs Diff table
+- No `unbacked` claim coexists with `verdict: ready`
 - Every first-review finding classified (or "none found" noted)
 - New issues surfaced (or explicitly "none")
 - Tests posture decided

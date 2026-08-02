@@ -69,11 +69,17 @@ stage curates these in a clean context, so they must be carried over faithfully 
 # Get diff (full)
 gh pr diff $PR --repo $REPO
 
-# Get changed file names
-gh pr diff $PR --repo $REPO --name-only
+# Authoritative changed-file manifest with per-file line counts — stage 02 reconciles the
+# PR body's claims against THIS list, so it must be complete and unedited.
+gh pr view $PR --repo $REPO --json additions,deletions,files \
+  --jq '"TOTAL +\(.additions)/-\(.deletions), \(.files|length) files", (.files[] | "\(.path)  +\(.additions)/-\(.deletions)")'
 ```
 
 Include the full diff text in the handoff. The review stage works only from this handoff.
+
+If the diff is too large to include whole, say so **explicitly** in the handoff
+(`## Full Diff` → `TRUNCATED — first N of M hunks`). Never silently summarise it: stage 02 treats
+a silently-shortened diff as ground truth and will clear claims it never actually saw.
 
 ### Checkout PR branch + rebase onto base
 
@@ -141,7 +147,8 @@ setup_ok: {true|false}
 {gh pr checks output, or "not accessible via token"}
 
 ## PR Body
-{PR body verbatim}
+{PR body verbatim and UNTRUNCATED — this is the claims source stage 02 reconciles against the
+diff. Never summarise, trim, or paraphrase it.}
 
 ## Review State
 {the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
@@ -152,15 +159,19 @@ When Review State is present, findings already in its ledger may be summarized b
 repeated verbatim.}
 
 ## Changed Files
-{name list}
+{TOTAL line, then one row per file with +additions/-deletions — verbatim from the `gh pr view
+--json files` output above. This is the authoritative manifest; if it is empty, say
+"none — PR changes no files".}
 
 ## Full Diff
-{full diff text}
+{full diff text — or "TRUNCATED — first N of M hunks" plus the text you did include}
 ```
 
 ## Success criteria
 - `setup_ok: true`
 - PR metadata, CI status, first review (verbatim), changed files, and full diff all captured
+- PR body captured untruncated; changed-file manifest carries per-file line counts
+- Any diff truncation flagged explicitly (never silent)
 - PR branch checked out in REPO_DIR, rebased onto base, and pushed; REPO_DIR recorded for downstream stages
 
 ## Failure

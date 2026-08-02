@@ -185,14 +185,15 @@ from inside double-check loops the skill onto itself. The withheld label plus th
 signal.
 
 ```bash
-# Branch D: claims not backed by the diff
-echo "[stage-04] CLAIMS=fail — withholding double-checked, PR description does not match its diff"
+if [ "$IS_RECHECK" = "false" ]; then
+  # Branch D: claims not backed by the diff (first-check only)
+  echo "[stage-04] CLAIMS=fail — withholding double-checked, PR description does not match its diff"
 
-MARKER_SEEN=$(gh pr view $PR --repo $REPO --json comments \
-  --jq '.comments[].body | select(contains("pylot:claims-mismatch"))' 2>/dev/null | head -1)
+  MARKER_SEEN=$(gh pr view $PR --repo $REPO --json comments \
+    --jq '.comments[].body | select(contains("pylot:claims-mismatch"))' 2>/dev/null | head -1)
 
-if [ -z "$MARKER_SEEN" ]; then
-  gh pr comment $PR --repo $REPO --body "$(cat <<CLAIMS_EOF
+  if [ -z "$MARKER_SEEN" ]; then
+    gh pr comment $PR --repo $REPO --body "$(cat <<CLAIMS_EOF
 <!-- pylot:claims-mismatch pr=$PR repo=$REPO -->
 ## Blocked: PR description does not match the diff
 
@@ -210,10 +211,12 @@ The following claims in the PR title/body have no corresponding change in this P
 2. Remove and re-add the \`reviewed\` label to re-run the review chain.
 CLAIMS_EOF
 )"
-else
-  echo "[stage-04] claims-mismatch marker already present — skipping duplicate comment"
+  else
+    echo "[stage-04] claims-mismatch marker already present — skipping duplicate comment"
+  fi
+  # Do NOT add double-checked. Do NOT add needs-work. Skip branches A/B/C.
 fi
-# Do NOT add double-checked. Do NOT add needs-work. Skip branches A/B/C.
+# (CLAIMS=fail AND IS_RECHECK=true: falls through to Branch B, which retains needs-work correctly)
 ```
 
 ---

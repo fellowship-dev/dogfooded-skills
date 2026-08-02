@@ -22,6 +22,10 @@ Format:
 
 [PR body verbatim]
 
+## Claims vs Diff
+
+[pass | fail | unknown] — live diff [+A/-D, N files]. Claims table; list any unbacked claims.
+
 ## Intent
 
 [What problem this solves]

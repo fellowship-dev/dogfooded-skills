@@ -9,9 +9,11 @@ emitted from here.
 - `.procedure-output/double-check/03-fix/handoff.md` — fixes applied, tests, push (absent if stage 03 skipped)
 
 ## Task
-Detect whether this is a re-check run (PR has `needs-work`), post the curated review comment,
-apply labels to close the pipeline loop (re-check path) or signal completion (first-check path),
-write the local report file, and emit the outcome marker. NO Quest — the report is a local file only.
+Confirm stage 02's claims-vs-diff verdict against the **live** PR, detect whether this is a
+re-check run (PR has `needs-work`), post the curated review comment, apply labels to close the
+pipeline loop (re-check path) or signal completion (first-check path), verify the side effects
+landed, write the local report file, and emit the outcome marker. NO Quest — the report is a
+local file only.
 
 ## Steps
 
@@ -43,6 +45,38 @@ fi
 
 # Extract verdict from review handoff (format: "verdict: ready" or "verdict: needs-work")
 VERDICT=$(grep "^verdict:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
+CLAIMS=$(grep "^claims_reconciled:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
+[ -n "$CLAIMS" ] || CLAIMS=unknown
+```
+
+### Claims-vs-diff gate against the LIVE PR (BLOCKING — run before posting)
+
+Stage 02 judged a handoff. This step confirms that judgement against GitHub itself: the handoff's
+diff may have been truncated, and the branch may have moved since setup. **Always run it** — it is
+the skill's only orchestrator-level verification of its own subject matter.
+
+```bash
+gh pr view $PR --repo $REPO --json title,body,additions,deletions,files,headRefOid \
+  > /tmp/dc-pr-$PR.json
+LIVE_STAT=$(jq -r '"+\(.additions)/-\(.deletions), \(.files|length) files"' /tmp/dc-pr-$PR.json)
+LIVE_FILES=$(jq -r '.files[].path' /tmp/dc-pr-$PR.json)
+echo "[stage-04] live diff: $LIVE_STAT"
+printf '%s\n' "$LIVE_FILES"
+```
+
+Then:
+
+- **`CLAIMS=unknown`** (stage 02 could not reconcile, e.g. truncated diff) — reconcile now yourself:
+  read the live `.body` and `.files` from `/tmp/dc-pr-$PR.json` and apply the stage-02 rules
+  (backed / elsewhere / unbacked). Set `CLAIMS=pass` or `CLAIMS=fail` from what you find.
+- **`CLAIMS=pass`** — sanity-check that the live changed-file list still matches the manifest
+  stage 02 reviewed. If files were added or removed since setup (the branch moved, or stage 03
+  pushed), re-reconcile the affected claims before continuing.
+- **`CLAIMS=fail`** — force `VERDICT=needs-work` and take **Branch D** below. Do not apply
+  `double-checked`, whatever stage 02's verdict said.
+
+```bash
+if [ "$CLAIMS" = "fail" ]; then VERDICT=needs-work; fi
 ```
 
 ### Post the curated review comment
@@ -61,6 +95,16 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 
 ### Intent
 [1-2 sentences: does the PR deliver what it's supposed to?]
+
+### Claims vs Diff — $CLAIMS
+Live diff: $LIVE_STAT
+
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| [claim from PR title/body] | backed / elsewhere / **unbacked** | [where it is, or that it is absent] |
+
+[On unbacked claims, add: "**This PR's description does not match its diff.** Correct the body to
+describe what actually landed, or land the missing code. `double-checked` withheld until then."]
 
 ### Implementation
 [2-4 bullets: key approach, files changed grouped by area]
@@ -111,12 +155,69 @@ Validate with `jq .` before posting — downstream cto-review parses it.
 - Verdict must be specific: either "ready for CTO review" or list what still needs work
 - If stage 03 was skipped (`fixes_needed: false`): mark all "Fixed?" cells "No (no fix needed)"
 - The `review-state v1` block is ALWAYS present and valid JSON
+- The Claims vs Diff table is ALWAYS present (write "no checkable claims in the body" if the body
+  makes none). Never soften an unbacked claim into an observation.
+
+Also append to the `verified` manifest:
+`{"what": "PR title/body claims reconciled against live changed files", "how": "gh pr view", "by": "double-check"}`
 
 ### Apply labels (re-check vs first-check)
 
 Only after the review comment posts successfully.
 
-**Three branches — run the matching one based on IS_RECHECK and VERDICT:**
+**Four branches — check Branch D FIRST, then match on IS_RECHECK and VERDICT:**
+
+---
+
+#### Branch D — Claims mismatch (CLAIMS=fail AND IS_RECHECK=false) — takes precedence over C
+
+When `CLAIMS=fail` on a **re-check** (IS_RECHECK=true), Branch B already does the right thing:
+`needs-work` stays, `double-checked` is not re-toggled. Branch D covers the first-check case,
+which otherwise applies `double-checked` and promotes the PR.
+
+The PR describes work its diff does not contain. Withhold `double-checked`: that label is what
+fires `cto-review-on-double-checked`, `flowchad-on-double-checked`, and
+`test-in-staging-on-double-checked`, so withholding it stops the promotion chain at this gate
+instead of handing a phantom delivery to the CTO stage.
+
+Do NOT apply `needs-work` here — `rework-on-needs-work` dispatches `/double-check`, so applying it
+from inside double-check loops the skill onto itself. The withheld label plus the comment is the
+signal.
+
+```bash
+if [ "$IS_RECHECK" = "false" ]; then
+  # Branch D: claims not backed by the diff (first-check only)
+  echo "[stage-04] CLAIMS=fail — withholding double-checked, PR description does not match its diff"
+
+  MARKER_SEEN=$(gh pr view $PR --repo $REPO --json comments \
+    --jq '.comments[].body | select(contains("pylot:claims-mismatch"))' 2>/dev/null | head -1)
+
+  if [ -z "$MARKER_SEEN" ]; then
+    gh pr comment $PR --repo $REPO --body "$(cat <<CLAIMS_EOF
+<!-- pylot:claims-mismatch pr=$PR repo=$REPO -->
+## Blocked: PR description does not match the diff
+
+Live diff: $LIVE_STAT
+
+The following claims in the PR title/body have no corresponding change in this PR:
+
+{one bullet per unbacked claim, from the Claims vs Diff table}
+
+\`double-checked\` is withheld, so cto-review / staging / FlowChad will not run.
+
+### To unblock
+1. Land the missing code, **or** rewrite the PR body to describe what this diff actually does
+   (including any \`Closes\`/\`Implements\` refs and staging evidence that no longer apply).
+2. Remove and re-add the \`reviewed\` label to re-run the review chain.
+CLAIMS_EOF
+)"
+  else
+    echo "[stage-04] claims-mismatch marker already present — skipping duplicate comment"
+  fi
+  # Do NOT add double-checked. Do NOT add needs-work. Skip branches A/B/C.
+fi
+# (CLAIMS=fail AND IS_RECHECK=true: falls through to Branch B, which retains needs-work correctly)
+```
 
 ---
 
@@ -196,7 +297,7 @@ fi
 
 ---
 
-#### Branch C — First-check (IS_RECHECK=false, any verdict)
+#### Branch C — First-check (IS_RECHECK=false, CLAIMS != fail, any verdict)
 
 Existing behavior unchanged: apply `double-checked` label. cto-review handles verdict routing.
 
@@ -207,6 +308,31 @@ gh label create "double-checked" --repo $REPO --color "0075ca" \
   --description "Double-checked by agent" 2>/dev/null || true
 gh pr edit $PR --repo $REPO --add-label "double-checked"
 ```
+
+---
+
+### Verify the side effects landed
+
+Run after the branch above completes. The label call can 404 or silently no-op; without this the
+skill reports success on side effects that never happened.
+
+```bash
+gh pr view $PR --repo $REPO --json labels,comments \
+  --jq '{labels: [.labels[].name], comments: (.comments|length)}'
+```
+
+Confirm against the branch you ran:
+
+| Branch | Expect |
+|--------|--------|
+| A (re-check PASS) | `double-checked` present, `needs-work` absent |
+| B (re-check FAIL) | `needs-work` present, `double-checked` unchanged, recheck-fail comment present |
+| C (first-check) | `double-checked` present |
+| D (claims mismatch) | `double-checked` **absent**, claims-mismatch comment present |
+
+Mismatch → log `[stage-04] verification FAIL — {what was expected vs seen}` and emit
+`status=failed` with that reason. Label propagation can lag a second; retry the read once before
+declaring failure.
 
 ---
 
@@ -237,6 +363,11 @@ Emit from the orchestrator (never a subagent). Branch on re-check context:
 [pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success
 ```
 
+**Claims mismatch** (Branch D):
+```
+[pylot] outcome="double-check BLOCKED {repo}#{pr} — {N} PR-body claims unbacked by the diff, double-checked withheld" status=success
+```
+
 **First-check** (IS_RECHECK=false, any verdict):
 ```
 [pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}, {N} findings curated, {N} fixes pushed" status=success
@@ -245,9 +376,12 @@ Emit from the orchestrator (never a subagent). Branch on re-check context:
 If any step failed, emit `status=failed` with the reason instead.
 
 ## Success criteria
-- Curated review comment posted
-- Labels applied per the branch above (re-check PASS: needs-work removed + double-checked re-toggled;
-  re-check FAIL: no label change + structured verdict comment posted; first-check: double-checked applied)
+- Live claims-vs-diff gate run (`gh pr view`) before posting, and its result reflected in `CLAIMS`
+- Curated review comment posted, including the Claims vs Diff table
+- Labels applied per the branch above (claims mismatch: double-checked withheld + mismatch comment;
+  re-check PASS: needs-work removed + double-checked re-toggled; re-check FAIL: no label change +
+  structured verdict comment posted; first-check: double-checked applied)
+- Post-action `gh pr view` confirms the expected labels/comments for the branch taken
 - Report file written to `reports/`
 - NO Quest POST anywhere
 - `[pylot] outcome=...` marker emitted from the orchestrator
@@ -255,4 +389,5 @@ If any step failed, emit `status=failed` with the reason instead.
 ## Failure
 - Comment post fails → emit `status=failed`, do NOT apply labels
 - Label apply fails → log it, report file still written, emit `status=failed` with reason
+- Post-action verification disagrees with the branch taken → emit `status=failed` with the diff
 - Re-check FAIL comment post fails → emit `status=failed` (idempotency guard means next retry is safe)

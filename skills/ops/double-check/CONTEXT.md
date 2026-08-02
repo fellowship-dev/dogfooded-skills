@@ -27,21 +27,26 @@ NOT parallelism. There is no fan-out anywhere in this proc.
   base branch to surface conflicts. Records `REPO_DIR` for the fix stage.
 - **02-review** (subagent, CLEAN CONTEXT): the isolated critical-judgement step. In a context
   containing only the setup handoff (PR + first review + diff), it produces ONE cohesive review —
-  verifying the first review's claims, finding missed edge cases, and checking tests/docs together —
-  and emits a single consolidated verdict + curated findings table. No side effects.
+  reconciling the PR body's claims against the diff, verifying the first review's claims, finding
+  missed edge cases, and checking tests/docs together — and emits a single consolidated verdict +
+  curated findings table. No side effects.
 - **03-fix** (subagent): the only stage with code side effects. Applies MUST-FIX (and worthwhile
   NICE-TO-HAVE) fixes in `REPO_DIR`, re-runs the test suite, and pushes. Skipped entirely if
   stage 02 reported `fixes_needed: false`.
-- **04-post** (inline): posts the curated review comment, applies the `double-checked` label,
-  writes the local report file, and emits the `[pylot] outcome=...` marker. Inline so the marker
-  comes from the orchestrator.
+- **04-post** (inline): re-runs the claims-vs-diff gate against the live PR, posts the curated
+  review comment, applies (or withholds) the `double-checked` label, verifies the side effects
+  landed, writes the local report file, and emits the `[pylot] outcome=...` marker. Inline so the
+  marker comes from the orchestrator.
 
 ## Key invariants
 
 - Stage 02 is the isolated critical-judgement step. It receives only PR + first review + diff.
 - Stage 02 is ONE cohesive review — never split per-file or per-dimension.
+- The PR body is a claim; the diff is the evidence. Unbacked claims ⇒ `needs-work` and
+  `double-checked` is withheld. Never waived by intent, tier, or a clean findings table.
 - Stage 03 is the only stage that mutates code; it is conditional on `fixes_needed: true`.
 - The `double-checked` label is applied only after the comment posts (stage 04).
+- Stage 04 verifies its own side effects with `gh pr view` before reporting success.
 - NO Quest anywhere. Reporting = local report file only.
 - Stage 04 inline. MUST emit `[pylot] outcome=...` from orchestrator, never a subagent.
 
@@ -65,5 +70,6 @@ Written at runtime in the repo working directory (not inside the skill directory
 ## Emit on completion
 
 - Success: `[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}" status=success`
+- Claims mismatch: `[pylot] outcome="double-check BLOCKED {repo}#{pr} — {N} PR-body claims unbacked by the diff, double-checked withheld" status=success`
 - Failure: `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
 - Blocked: `[pylot] outcome="double-check blocked: {reason}" status=blocked`

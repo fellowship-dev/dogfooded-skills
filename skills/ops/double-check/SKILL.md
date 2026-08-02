@@ -36,9 +36,9 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 | Stage | Mode | Description |
 |-------|------|-------------|
 | 01-setup | subagent | Fetch PR metadata, CI status, existing review comments, full diff; checkout PR branch + merge base |
-| 02-review | subagent | ONE cohesive critical review in clean context: verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
+| 02-review | subagent | ONE cohesive critical review in clean context: reconcile the PR's claims against the diff, verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
-| 04-post | inline | Detect re-check context (needs-work in labels), post curated review comment, apply labels to close the pipeline loop (re-check) or signal completion (first-check), write local report file, emit outcome marker |
+| 04-post | inline | Re-check the claims gate against the live PR, detect re-check context (needs-work in labels), post curated review comment, apply labels to close the pipeline loop (re-check) or signal completion (first-check), verify the side effects landed, write local report file, emit outcome marker |
 
 ## Handoff locations
 
@@ -94,8 +94,9 @@ Run stage 04 yourself in the orchestrator context — do NOT spawn a Task. Read 
 ```
 skills/double-check/stages/04-post/CONTEXT.md
 ```
-Post the comment, apply the label, write the report file, and emit the `[pylot] outcome=...`
-marker from the orchestrator (never from a subagent).
+Run the live claims-vs-diff gate (`gh pr view`), post the comment, apply the label, verify the
+labels/comment actually landed, write the report file, and emit the `[pylot] outcome=...` marker
+from the orchestrator (never from a subagent).
 
 ## Stage handoff chain
 
@@ -107,6 +108,10 @@ marker from the orchestrator (never from a subagent).
 
 ## Exit paths
 
+- **Claims mismatch** (first-check, PR body claims code the diff does not contain): stage 04 posts
+  a `<!-- pylot:claims-mismatch -->` comment, **withholds** `double-checked` (which halts
+  cto-review / staging / FlowChad), does not touch `needs-work`, and emits:
+  `[pylot] outcome="double-check BLOCKED {repo}#{pr} — {N} PR-body claims unbacked by the diff, double-checked withheld" status=success`
 - **Re-check PASS** (PR had `needs-work`, verdict=ready): stage 04 removes `needs-work`, re-toggles
   `double-checked` (remove + re-add), and emits:
   `[pylot] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
@@ -137,7 +142,15 @@ marker from the orchestrator (never from a subagent).
 9. **Apply labels only after the comment posts successfully** (stage 04). On re-check PASS,
    remove `needs-work` BEFORE re-adding `double-checked` — this is the structural loop-break.
    On re-check FAIL, do NOT touch labels or re-toggle `double-checked`.
-10. **Extend the review-state ledger, never fork it** (#2210) — setup extracts the LAST
+10. **The diff is the only evidence; the PR body is a claim.** Stage 02 reconciles every concrete
+    claim in the title/body against the changed files, and stage 04 re-checks it against the live
+    PR. A claim with no code behind it and no pointer to where it landed is `needs-work` —
+    "intentional", "the commit message explains it", and a LOW risk tier are NOT waivers.
+    `double-checked` is withheld until the body matches the diff. (pylot#2649, PR pylot#2782.)
+11. **Stage 04 verifies its own side effects** — after labelling, `gh pr view` the PR and confirm
+    the expected labels/comment are actually there. Reporting success on unverified side effects
+    is the failure this skill exists to catch in others.
+12. **Extend the review-state ledger, never fork it** (#2210) — setup extracts the LAST
     `review-state v1` block; stage 02 curates by ledger ID at tier-scaled depth (escalate-only);
     stage 04 re-posts the updated block as valid JSON. No block found → pre-#2210 fallback
     (verbatim first-review curation, full depth).

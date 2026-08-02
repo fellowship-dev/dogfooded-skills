@@ -15,6 +15,13 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 ### Intent
 [1-2 sentences: does the PR deliver what it's supposed to?]
 
+### Claims vs Diff — [pass | fail | unknown]
+Live diff: [+A/-D, N files]
+
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| [claim from PR title/body] | backed / elsewhere / **unbacked** | [where it is, or that it is absent] |
+
 ### Implementation
 [2-4 bullets: key approach, files changed grouped by area]
 
@@ -43,6 +50,8 @@ REVIEW_EOF
 ```
 
 **Rules:**
+- The Claims vs Diff table is always present — write "no checkable claims in the body" if the body
+  makes none. Any `unbacked` row means the verdict is needs-work and `double-checked` is withheld.
 - If no CI findings exist: write "No CI review comments found — reviewed diff directly"
 - If tests weren't run: explain why (e.g., "deps-only change, no test suite applicable")
 - Verdict must be specific: either "ready for CTO review" or list what still needs work

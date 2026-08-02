@@ -141,7 +141,7 @@ Run this before opening or marking a PR ready for review:
 - [ ] **Tests pass?** Ran them yourself right now — not trusting earlier cached output.
 - [ ] **Evidence present?** Screenshots or test output embedded for every meaningful change.
 - [ ] **Policy honored?** The playbook's deployment-evidence block is present, verbatim, in the location it names — or the "no policy in playbook" note is in the body.
-- [ ] **Issue linked?** `Closes #N` in the body — or `Refs #N` if the issue has unchecked acceptance criteria (prevents premature auto-close on multi-phase work).
+- [ ] **Issue linked?** `Closes #N` when this PR delivers the issue — that is the default. `Refs #N` ONLY when the PR is one phase of deliberately multi-PR work; the final phase carries the `Closes`. Do not default to `Refs` out of caution: issues whose work merged but never closed are tracker drift, and premature-close is the close-audit's job to catch, not this checkbox's.
 
 **If the "No manual caveats?" check fails: close the PR and report the blocker instead** — in whatever form the repo playbook names (blocker report, issue, mission report); an issue on the repo if it names none. A PR that punts work back is worse than no PR. Reroute around obstacles — if the UI is the only path, use the API; if the API is missing, script it.
 

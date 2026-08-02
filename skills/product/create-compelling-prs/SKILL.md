@@ -1,6 +1,6 @@
 ---
 name: create-compelling-prs
-description: Use when preparing a PR for review — applies body templates, uploads visual evidence via the assets backend, and runs the self-audit checklist.
+description: Use when preparing a PR for review — applies body templates, attaches the deployment and visual evidence the repo playbook requires, and runs the self-audit checklist.
 user-invocable: true
 trigger-hint: "When creating a PR or preparing to push a branch for review"
 allowed-tools: Read, Write, Bash, Glob, Grep
@@ -102,33 +102,32 @@ Closes #ISSUE
 
 ---
 
+## Deployment Evidence
+
+Whether a PR must prove it ran somewhere before review — and in what form — is **repo policy, not protocol**. Some companies gate infra/backend PRs on a verified staging deploy; some have no staging environment at all.
+
+**Read the repo playbook first** (`GET /admin/playbooks/<org>/<repo>`, falling back to `CONTRIBUTING.md` / `.github/PULL_REQUEST_TEMPLATE.md`) and resolve:
+
+| Question | Why it matters |
+| --- | --- |
+| What deployment evidence does the review gate require, and for which paths? | A gate can reject the PR unreviewed |
+| What is the exact evidence-block format? | Gates parse it — **reproduce the playbook's block verbatim**, do not paraphrase |
+| Body or comment? | Body-scanning gates do not see comments, and vice versa |
+| What waives it? | Docs/test-only PRs are usually exempt; the playbook says how to record the waiver |
+
+> **No deployment-evidence policy in the playbook?** Do not invent one and do not assume a staging environment exists. State what you verified locally and how — the exact commands and their output — and note in the PR body that the playbook defines no deployment-evidence requirement.
+
+---
+
 ## Visual Evidence
 
-For any UI-impacting change, capture before/after screenshots and embed them using the **evidence-upload** skill (`skills/ops/evidence-upload`).
+For any UI-impacting change, capture before/after screenshots (Playwright preferred, manual fallback) and embed them in the PR body.
 
-```bash
-# Capture screenshots (Playwright preferred, manual fallback), then for each file:
-FILE=before.png CONTENT_TYPE=image/png REPO="$ORG/$REPO_NAME"
-BYTES=$(wc -c < "$FILE")
+**Where images are hosted is repo policy.** Check the playbook for an asset-hosting section: if it names an upload path — a skill (e.g. `skills/ops/evidence-upload`), an endpoint, a bucket — follow it exactly, including any visibility step needed to make the URL public.
 
-PRESIGN=$(curl -sS -X POST "$PYLOT_GATEWAY_URL/assets/presign" \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
-  -d "{\"repo\":\"$REPO\",\"content_type\":\"$CONTENT_TYPE\",\"size\":$BYTES}")
-ASSET_ID=$(echo "$PRESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['asset_id'])")
-UPLOAD_URL=$(echo "$PRESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['upload_url'])")
+> **No asset-hosting section?** Attach the images to the PR directly (GitHub hosts images uploaded through the PR editor or the comment API) or link a CI artifact, and say which you used. Never link an image from a host the reviewer cannot reach.
 
-curl -sS -X PUT "$UPLOAD_URL" --data-binary @"$FILE" -H "Content-Type: $CONTENT_TYPE"
-
-PUBLIC_URL=$(curl -sS -X PATCH "$PYLOT_GATEWAY_URL/assets/$ASSET_ID" \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
-  -d '{"visibility":"public"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['public_url'])")
-
-# Embed: ![before]($PUBLIC_URL)
-```
-
-`$PYLOT_GATEWAY_URL` and `$PYLOT_DISPATCH_TOKEN` are already in every operator/worker env. No AWS keys needed. See the evidence-upload skill for full error-handling and the allowlist (PNG/JPEG/GIF/WEBP/MP4, max 25 MB).
-
-**Skip** if: backend-only, CLI-only, config/infra, test-only, or capture exceeds 120s. Visual evidence is a bonus, never a gate.
+**Skip** if: backend-only, CLI-only, config/infra, test-only, or capture exceeds 120s. Visual evidence is a recommendation, never a gate — unless the repo playbook makes it one.
 
 ---
 
@@ -141,9 +140,10 @@ Run this before opening or marking a PR ready for review:
 - [ ] **No manual caveats?** Zero "you'll need to X manually" instructions in the PR body.
 - [ ] **Tests pass?** Ran them yourself right now — not trusting earlier cached output.
 - [ ] **Evidence present?** Screenshots or test output embedded for every meaningful change.
+- [ ] **Policy honored?** The playbook's deployment-evidence block is present, verbatim, in the location it names — or the "no policy in playbook" note is in the body.
 - [ ] **Issue linked?** `Closes #N` in the body — or `Refs #N` if the issue has unchecked acceptance criteria (prevents premature auto-close on multi-phase work).
 
-**If the "No manual caveats?" check fails: close the PR. File a blocker report instead.** A PR that punts work back is worse than no PR. Reroute around obstacles — if the UI is the only path, use the API; if the API is missing, script it.
+**If the "No manual caveats?" check fails: close the PR and report the blocker instead** — in whatever form the repo playbook names (blocker report, issue, mission report); an issue on the repo if it names none. A PR that punts work back is worse than no PR. Reroute around obstacles — if the UI is the only path, use the API; if the API is missing, script it.
 
 ---
 

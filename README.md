@@ -43,6 +43,8 @@ Skills for product development workflows.
 |-------|-------------|
 | [`product/spec-plan`](skills/product/spec-plan/) | Relentless design interview — walk the decision tree one branch at a time until shared understanding |
 | [`product/build-prd`](skills/product/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration |
+| [`product/create-compelling-prs`](skills/product/create-compelling-prs/) | Body templates, visual evidence, and the self-audit checklist for a PR that convinces in 2 minutes |
+| [`product/create-compelling-issues`](skills/product/create-compelling-issues/) | Search open/closed issues and merged PRs first, resolve filing policy from the repo playbook, file evidence-grounded issues |
 
 ### ops
 

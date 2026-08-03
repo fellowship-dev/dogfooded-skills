@@ -39,7 +39,8 @@ Anything else is `blocked`. **Never** substitute a curl/static probe for a walk.
 
 ### Spawn the worker (only when at least one flow prefers `playwright`)
 
-Follow the **pylot-workers** lifecycle (spawn → prompt → poll-to-idle → stop). Spawn once
+Follow the **pylot-cli** § Workers lifecycle (spawn → prompt → poll-to-idle → stop; the
+raw-`curl` form below is its § Workers → Fallback when there is no usable CLI). Spawn once
 and reuse it for every playwright flow; do **not** stop it here — stage 04 uploads from the
 same worker and owns the `stop` call.
 

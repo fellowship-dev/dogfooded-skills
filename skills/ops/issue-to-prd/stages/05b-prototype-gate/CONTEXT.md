@@ -75,9 +75,14 @@ team = os.environ["TEAM"]
 d = json.load(sys.stdin); teams = d.get("teams", d)
 ops = next((t for t in teams if t.get("name") == team), {}).get("operators", {})
 cand = [(r, s.get("skills", [])) for r, s in ops.items() if "prototype" in s.get("skills", [])]
-cand.sort(key=lambda rs: "pylot-workers" not in rs[1])
+cand.sort(key=lambda rs: rs[0])
 print(f"{team}.{cand[0][0]}" if cand else "")')
 ```
+
+This used to tie-break toward whichever candidate also carried `pylot-workers`, i.e. the one
+that could drive a worker devbox. Since pylot #2833 step 3 the injected baseline is `pylot-cli`
+and **every** operator carries it, so worker-driving no longer discriminates — the tie-break
+would always be a no-op. Sorting by role name instead just keeps the pick deterministic.
 
 `$TEAM` is the repo's managing team. Do **not** use `pylot context <org/repo>` for this — it
 returns `team: null` and an empty `operator.skills` for repos whose team binding it cannot

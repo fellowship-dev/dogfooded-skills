@@ -12,7 +12,7 @@ one PR at a time, in order. Run the full test suite after each merge. Produce on
 with conflicts documented and a unified manual test plan, plus a local report.
 
 **This skill runs in the OPERATOR session** and owns its worker lifecycle. It spawns a repo
-worker devbox via the gateway worker API (see `pylot-workers` skill) and drives stages 01-06
+worker devbox via the gateway worker API (see `pylot-cli` skill, § Workers) and drives stages 01-06
 through the worker. Stage 00 (claim compute) and stage 07 (report + outcome marker) run
 inline in the operator.
 
@@ -34,7 +34,8 @@ SPAWN_RESP=$(curl -s --max-time 90 -X POST \
 WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))' 2>/dev/null)
 ```
 
-Drive each stage as a separate prompt using the `pylot-workers` drive loop pattern. Poll to
+Drive each stage as a separate prompt using the `pylot-cli` drive loop (§ Workers → Drive; the
+raw-`curl` form above is § Workers → Fallback when there is no usable CLI). Poll to
 idle between stages. Stop the worker after stage 06 completes, before the inline stage 07
 writes the report and emits the outcome marker:
 

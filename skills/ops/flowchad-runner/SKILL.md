@@ -87,7 +87,8 @@ runs in the operator turn. Attempting `chromium.launch()` in the operator turn f
 carrying no screenshots. The dispatching automation's context already says *"Use qa worker."*
 
 `pylot.qa` and `booster-pack.qa` — the operators that carry `flowchad-runner` — carry
-`pylot-workers` and `evidence-upload`, which is everything the operator side needs. They do
+`pylot-cli` (the injected baseline, so it is on every operator) and `evidence-upload`, which is
+everything the operator side needs. They do
 **not** need `playwright` or `visual-evidence` installed: the browser requirement belongs to the
 worker image, not the operator.
 

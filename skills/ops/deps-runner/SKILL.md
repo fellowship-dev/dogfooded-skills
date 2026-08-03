@@ -15,7 +15,7 @@ to the monolithic `deps-runner` skill, just stage-partitioned.
 
 **This skill runs in the OPERATOR session** and owns its worker lifecycle. Stages that
 require a repo environment (preflight, build-test) spawn and drive a repo devbox worker via
-the gateway worker API (see `pylot-workers` skill). Stages that only need `gh` CLI
+the gateway worker API (see `pylot-cli` skill, § Workers). Stages that only need `gh` CLI
 (scan-context, risk-eval, merge-decision, report) run inline in the operator session.
 
 **This procedure is SEQUENTIAL. There is NO fan-out and NO parallel Task launches.** Risk
@@ -38,7 +38,8 @@ SPAWN_RESP=$(curl -s --max-time 90 -X POST \
 WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))' 2>/dev/null)
 ```
 
-Use the `pylot-workers` drive loop pattern to send each repo-access stage as a prompt and
+Use the `pylot-cli` drive loop (§ Workers → Drive; the raw-`curl` form above is § Workers →
+Fallback when there is no usable CLI) to send each repo-access stage as a prompt and
 poll to idle before proceeding to the next stage. Stop the worker before stage 06-report:
 
 ```bash

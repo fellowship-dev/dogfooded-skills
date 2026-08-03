@@ -23,7 +23,7 @@ that shape.
 
 1. **No browser in this container.** The operator image (`Dockerfile.operator`) ships no chromium,
    no `libnss3`, no ffmpeg. Everything — build, boot, screenshot — runs on a **worker devbox**,
-   driven through the `pylot-workers` API (spawn → prompt → poll-to-idle → stop). Do not try to
+   driven through the `pylot-cli` § Workers API (spawn → prompt → poll-to-idle → stop). Do not try to
    install a browser here.
 2. **Branches only. Do not open pull requests.** Three PRs would fire `review-pr-on-opened` three
    times, then `double-check`, then FlowChad, then CTO review — a full review pipeline spent on

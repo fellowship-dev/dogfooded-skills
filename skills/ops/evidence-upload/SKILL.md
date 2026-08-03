@@ -21,7 +21,7 @@ fatal for anything written into a permanent record.
 | Destination | Flag | URL lifetime | Rendering |
 |---|---|---|---|
 | **PR body, issue body, review/verdict comment, report** | `--evidence-class visual` | **permanent** | served `Content-Disposition: attachment` (see caveat) |
-| Chat/Slack conversation (`--conversation`) | *(omit)* | 30 days | inline |
+| Chat/Slack conversation (`--conversation`) | *(omit)* | 30 days | `Content-Disposition: inline` |
 
 **Rule: anything embedded in a PR, issue, or verdict comment MUST pass
 `--evidence-class visual`.** A receipt that expires in 30 days is not evidence —
@@ -31,6 +31,28 @@ screenshots are already unreadable for exactly this reason.
 Conversely, **do not** pass `--evidence-class` on the `--conversation` path: an
 evidence-classed image is served as an attachment by `GET /assets/:id` too, so it
 would stop rendering inline in the thread — which is the whole point of that path.
+
+Measured on the prod gateway, 2026-08-03, asset `06050daf-…` (unpublished after) —
+unauthenticated `GET /a/<token>` on an **unclassed** PNG:
+
+```
+HTTP/2 302  → location: …&response-content-disposition=inline&response-content-type=image%2Fpng
+HTTP/1.1 200  Content-Type: image/png  Content-Disposition: inline
+```
+
+Same request on an evidence-classed PNG returns `Content-Disposition: attachment`
+(child 6's measurement, asset `919c7786-…`). That single header is the whole fork:
+it decides whether a renderer — the chat UI, or Slack's link unfurler — shows a
+picture or offers a download.
+
+**One image with two destinations is two uploads.** A screenshot that belongs in a
+PR body *and* in the requesting thread cannot be one asset today: the PR copy needs
+the class (permanence) and the thread copy needs the absence of it (inline). Upload
+the file twice — same bytes, two asset ids — rather than trading one requirement for
+the other. This collapses to a single classed upload the moment
+[fellowship-dev/pylot#2834](https://github.com/fellowship-dev/pylot/issues/2834)
+child 14 makes disposition MIME-driven; when it lands, delete the second upload and
+reuse the classed `public_url` in both places.
 
 ### What the flag changes
 
@@ -164,6 +186,103 @@ The gateway idempotently appends a `{"type":"image","asset_id","alt","mime_type"
 
 - `conversation_message_id` — id of the appended (or pre-existing) conversation message
 - `attached` — `True` on a fresh append; `False` means the asset was already attached to this conversation (idempotent re-publish — not an error, don't retry)
+
+## Reaching the requesting owner (`--conversation` + the Slack thread)
+
+When your mission was **requested from a conversation**, the owner is reading that
+thread — not the PR. Put the picture where they are. This is
+[fellowship-dev/pylot#2542](https://github.com/fellowship-dev/pylot/issues/2542)
+Phase 3's delivery half; it never replaces the PR/issue copy, it is in addition to it.
+
+### 1. Find the conversation — do not guess
+
+```bash
+CONV=$(curl -sS "$PYLOT_GATEWAY_URL/missions/$PYLOT_JOB_ID" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("dispatched_by_conv") or "")')
+```
+
+`dispatched_by_conv` is the canonical field and the **only** one an operator can read:
+`mission_conversations` (the back-traced linkage for rule-triggered missions) has no
+HTTP read route. Some dispatchers also echo the same id at
+`context.context.conversation_id`; treat that as a fallback, not the source of truth.
+
+**Empty `CONV` is the normal case and means STOP.** Cron- and automation-dispatched
+missions have no requester in a thread — there is nobody to deliver to, and posting
+anyway is spam. The whole hop below is conditional on a non-empty `CONV`.
+
+(`PYLOT_CONVERSATION_ID` is a *different* thing: it is set only for
+conversation-owned drive workers, never for mission operators. Do not look for it.)
+
+### 2. Attach the unclassed copy — the guaranteed half
+
+Upload the file again **without** `--evidence-class` and publish it with
+`conversation_id` (the `--conversation` flow above). The gateway appends a
+`{"type":"image","asset_id",…}` user block to the conversation, which:
+
+- renders inline in the web UI exactly like a human composer upload, and
+- is resolved to base64 for Claude on the conversation's next turn (#1931), so the
+  assistant can actually *see* what the factory produced.
+
+Both of those are guaranteed by code paths that exist today. No assistant turn is
+triggered by the append.
+
+### 3. Post it into the Slack thread — the best-effort half
+
+The conversation append is a pure DB write: **nothing mirrors it into Slack.** Every
+outbound Slack message in the gateway goes through `chat.postMessage`, and there is
+no `files.upload` call anywhere (the bot's OAuth scopes do not include `files:write`)
+and no Block Kit `image` builder. The only inline rendering available today is
+**Slack's own link unfurl** of the capability URL — which is exactly why this copy
+must be unclassed (`inline`, not `attachment`).
+
+Post the URL through the existing `slack-post` route:
+
+```bash
+curl -sS -X POST "$PYLOT_GATEWAY_URL/conversations/$CONV/slack-post" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
+  -d "$(python3 -c "
+import json,os
+print(json.dumps({'text': 'Empty state after the fix:\n\n' + os.environ['PUBLIC_URL']}))")"
+```
+
+**Put the bare URL on a line of its own. Never use markdown image syntax here.**
+The gateway runs every outbound message through `gfmToMrkdwn`, measured:
+
+| You write | Slack receives |
+|---|---|
+| `<URL>` bare, own line | `<URL>` — byte-identical, unfurlable ✅ |
+| `![alt](URL)` | `<URL\|alt>` — image syntax destroyed, labeled link |
+| `[![alt](URL)](URL)` | `<URL\|<URL\|alt>>` — **nested, malformed mrkdwn** |
+
+That last row matters: `[![alt](URL)](URL)` is the correct form for a *PR comment*
+(it survives the attachment disposition). Copying a PR/verdict body straight into
+`slack-post` produces broken output. Render the Slack message separately.
+
+Responses (from the `slack-post` skill): `{"ok":false,"reason":"no_slack_thread"}`
+means the conversation is web-only — **benign, expected, do not retry**. The step 2
+attach already delivered to the web UI; that is the whole job for a web-only owner.
+
+**Budget: one post, at most one or two images.** `slack-post` is for inflection
+points, not narration. If you produced eight screenshots, post the one that carries
+the finding and link the PR/issue for the rest.
+
+### What is and is not guaranteed
+
+| | Status |
+|---|---|
+| Image inline in the web UI thread | **guaranteed** (#1881 append + existing renderer) |
+| Claude sees the image next turn | **guaranteed** (#1931 `enrichHistoryImages`) |
+| Image inline in the Slack thread | **best-effort** — depends on Slack unfurling the URL; not verified end-to-end |
+| Image as a native Slack file/Block Kit image | **not available** — needs a gateway change + `files:write` scope; tracked on pylot#2550 |
+
+Say which one you got. "Posted to the thread" when the unfurl did not fire is the
+same lie as a swallowed upload error.
+
+> Known edge: a capability token containing **two** `__` sequences is mangled by the
+> mrkdwn bold rule (`…/a/AA__BB__CC` → `…/a/AA*BB*CC`). Rare, but if a Slack URL
+> comes back dead while the same asset works elsewhere, this is why — re-presign to
+> get a different token.
 
 ## Error handling
 

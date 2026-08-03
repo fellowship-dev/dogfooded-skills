@@ -74,8 +74,8 @@ upgrading `.flowchad/config.yml` and flow definitions.
 | 01-preflight | subagent | Validate contract, resolve the flow selector, resolve target/selective preview, deploy-wait, capture-host/persona check |
 | 02-load-flows | subagent | Read `.flowchad/config.yml`, validate each flow file exists, load flow YAML, resolve the evidence backend |
 | 03-walk-flows | subagent | **Spawn a worker devbox** (the operator has no browser), then a **sequential loop**: for each flow one-at-a-time — connect browser, run steps, per-step screenshot, expect-judgement, CAPTCHA→Navvi, transcript |
-| 04-upload-evidence | subagent | Upload screenshots/GIFs with `evidence_class: visual` (permanent URLs), record per-file success/failure, stop the worker |
-| 05-report | inline | Aggregate results, **embed the screenshot URLs per step**, post PR comment, create issues on failure, write local report, emit outcome marker |
+| 04-upload-evidence | subagent | Upload screenshots/GIFs with `evidence_class: visual` (permanent URLs), record per-file success/failure, attach an unclassed copy to the requesting conversation when there is one, stop the worker |
+| 05-report | inline | Aggregate results, **embed the screenshot URLs per step**, post PR comment, post the verdict to the requesting Slack thread when there is one, create issues on failure, write local report, emit outcome marker |
 
 ### Where the browser actually runs
 
@@ -252,7 +252,9 @@ backstop if stage 04 did not.
    (e.g. evidence upload with backend `none` still writes a handoff).
 7. **A broken step is a finding, not a crash** — stage 03 continues collecting evidence after
    a step error; only flow-level pass/fail is judged.
-8. **NO Quest, no external dashboards.** Reporting = the local report file + GitHub only.
+8. **NO Quest, no external dashboards.** Reporting = the local report file + GitHub — plus, *only*
+   when the mission's `dispatched_by_conv` is set, one `slack-post` back to the thread that asked
+   for the walk. An automation-dispatched run posts nowhere but GitHub.
 9. **Interactive PASS requires browser evidence.** Static/curl diagnostics can support a
    `FAILED` or `BLOCKED` result, never `PASSED`.
 10. **Production-critical controls are never optional or skipped.** Missing CAPTCHA/Navvi

@@ -7,7 +7,7 @@
 - `.procedure-output/flowchad-runner/03-walk-flows/handoff.md` (per-flow + step results,
   `worker_id`)
 - `.procedure-output/flowchad-runner/04-upload-evidence/handoff.md` (`upload_ok`, `uploaded`
-  counts, per-step evidence URLs)
+  counts, per-step evidence URLs, `conversation_id` + `conversation_urls`)
 
 ## Task
 Aggregate all flow results, post results to GitHub, create/dedupe issues on failure, write the local
@@ -74,6 +74,42 @@ failure this stage exists to prevent.
 
 If the run is `BLOCKED` on capture host (no worker, no browser), say so plainly and name the
 missing capability rather than implying the UI was inspected.
+
+### 2a. Deliver the verdict to the requesting thread (only when stage 04 recorded a `conversation_id`)
+
+If stage 04's handoff says `conversation_id: none`, skip this entirely — an automation-dispatched
+run has no requester. When it carries a uuid, somebody asked for this walk in a chat thread and is
+waiting there, not on the PR. Post **one** message with the verdict and the screenshot that carries
+it, using the `conversation_urls` from stage 04 (the unclassed copies — the classed ones are served
+`Content-Disposition: attachment` and will not render):
+
+```bash
+CONV=<conversation_id from stage 04>
+python3 - "$CONV" <<'PY' > /tmp/fc-slack.json
+import json, os, sys
+url = os.environ["HERO_URL"]          # one conversation_url — the failing step, or the end state
+text = f"FlowChad {os.environ['STATUS']}: {os.environ['FLOW_NAME']} on {os.environ['REPO']}\n" \
+       f"{os.environ['SUMMARY']}\n\n{url}\n\nFull verdict: {os.environ['PR_URL']}"
+json.dump({"text": text}, sys.stdout)
+PY
+curl -sS -X POST "$PYLOT_GATEWAY_URL/conversations/$CONV/slack-post" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
+  --data-binary @/tmp/fc-slack.json
+```
+
+Three rules, all measured (see evidence-upload, *"Reaching the requesting owner"*):
+
+1. **The URL goes bare, on its own line.** The gateway rewrites outbound markdown to Slack mrkdwn;
+   `![alt](URL)` becomes `<URL|alt>` and the step-2 form `[![alt](URL)](URL)` becomes the malformed
+   `<URL|<URL|alt>>`. Never paste the PR comment body into this call — render it separately.
+2. **One post, one image.** This is the same budget `slack-post` states: inflection points, not
+   narration. Link the PR comment for the remaining steps.
+3. `{"ok":false,"reason":"no_slack_thread"}` means the conversation is web-only. **Benign — do not
+   retry.** The stage 04 conversation attach already put the image inline in the web thread; that
+   is the whole delivery for a web-only owner.
+
+Inline rendering in Slack depends on Slack unfurling the capability URL — it is best-effort and
+unverified end-to-end. Report what you did (`posted to thread`), not what Slack chose to render.
 
 ### 2b. Backstop: stop a leaked worker
 
@@ -169,6 +205,8 @@ Failures: {file → reason, or "none"}
 - If `pr_number` set, PR comment posted.
 - **Every step with an uploaded screenshot has that URL embedded in the PR comment**, and the
   evidence-status line reflects the stage 04 `upload_ok`/counts verbatim.
+- If stage 04 recorded a `conversation_id`, exactly one `slack-post` made with the verdict and one
+  bare conversation URL; if it recorded `none`, no post attempted.
 - On any flow failure, a `ready-to-work` issue created and `status=failed` emitted.
 - Cron failures update a matching open issue instead of creating duplicates.
 - `BLOCKED` and `N/A` are reported explicitly and cannot be converted to `PASSED`.

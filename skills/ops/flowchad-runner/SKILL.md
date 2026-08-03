@@ -30,13 +30,27 @@ would collide. Stage 03 walks flows **one at a time in a sequential loop**.
 
 | Param | Required | Default | Notes |
 | ------- | ---------- | --------- | ------- |
-| `flow-name` | yes | — | Flow name, or `all` (`smoke.critical` for cron; `smoke.flows` otherwise) |
+| `flow-name` | yes | — | A flow name, or one of the **selectors** `affected` / `all` |
 | `repo` | yes | — | Target `org/repo` |
 | `pr-number` | no | (none) | If set, post results comment to this PR |
 | `trigger` | no | `manual` | `pr` \| `merge` \| `cron` \| `manual` — drives URL resolution + deploy-wait |
 
 Parse positionally from `$ARGUMENTS`: `$1=flow-name $2=repo $3=pr-number $4=trigger`.
 Use the literal `none` when a cron/manual invocation has no PR number.
+
+**Selectors are not flow names.** `$1` is a flow name only when it is neither `affected` nor
+`all`:
+
+| `flow-name` | Resolves to |
+| --- | --- |
+| `affected` | the flows whose `affects` globs match the PR's changed files — **the production form**, used by every `flowchad-on-double-checked` dispatch |
+| `all` | `smoke.flows`, falling back to `smoke.critical`, falling back to the files in `.flowchad/flows/` |
+| *(a name)* | that flow, intersected with the affected set |
+| *(any, `trigger=cron`)* | `smoke.critical` |
+
+Never resolve `affected` or `all` to `.flowchad/flows/<selector>.yml`. Intersecting the literal
+string `affected` against real flow names yields the empty set and returns a false `N/A` on a PR
+that genuinely touches a flow.
 
 ## Result Contract
 
@@ -57,11 +71,25 @@ upgrading `.flowchad/config.yml` and flow definitions.
 
 | Stage | Mode | Description |
 | ------- | ------ | ------------- |
-| 01-preflight | subagent | Validate contract, select affected flow, resolve target/selective preview, deploy-wait, browser/persona check |
-| 02-load-flows | subagent | Read `.flowchad/config.yml`, validate each flow file exists, load flow YAML |
-| 03-walk-flows | subagent | **Sequential loop**: for each flow one-at-a-time — connect browser, run steps, per-step screenshot, expect-judgement, CAPTCHA→Navvi, transcript |
-| 04-upload-evidence | subagent | Best-effort: push screenshots/GIFs to evidence backend, collect URLs |
-| 05-report | inline | Aggregate results, post PR comment, create issues on failure, write local report, emit outcome marker |
+| 01-preflight | subagent | Validate contract, resolve the flow selector, resolve target/selective preview, deploy-wait, capture-host/persona check |
+| 02-load-flows | subagent | Read `.flowchad/config.yml`, validate each flow file exists, load flow YAML, resolve the evidence backend |
+| 03-walk-flows | subagent | **Spawn a worker devbox** (the operator has no browser), then a **sequential loop**: for each flow one-at-a-time — connect browser, run steps, per-step screenshot, expect-judgement, CAPTCHA→Navvi, transcript |
+| 04-upload-evidence | subagent | Upload screenshots/GIFs with `evidence_class: visual` (permanent URLs), record per-file success/failure, stop the worker |
+| 05-report | inline | Aggregate results, **embed the screenshot URLs per step**, post PR comment, create issues on failure, write local report, emit outcome marker |
+
+### Where the browser actually runs
+
+`Dockerfile.operator` installs no browser system libraries; `.devcontainer/Dockerfile` (the repo
+devbox/worker image) installs exactly the ones Chromium needs. So **Playwright capture runs on a
+worker devbox that stage 03 spawns**, and Navvi — an MCP tool bound to the operator session —
+runs in the operator turn. Attempting `chromium.launch()` in the operator turn fails with
+*"missing system shared libraries … no sudo/apt-get available"*, which yields a `BLOCKED` verdict
+carrying no screenshots. The dispatching automation's context already says *"Use qa worker."*
+
+`pylot.qa` and `booster-pack.qa` — the operators that carry `flowchad-runner` — carry
+`pylot-workers` and `evidence-upload`, which is everything the operator side needs. They do
+**not** need `playwright` or `visual-evidence` installed: the browser requirement belongs to the
+worker image, not the operator.
 
 ## Handoff locations
 
@@ -189,10 +217,15 @@ report file, and emit the `[pylot] outcome=...` marker from the orchestrator (ne
 
 ```text
 01-preflight ─► 02-load-flows ─► 03-walk-flows ─► 04-upload-evidence ─► 05-report (inline)
-   (URL,            (validated        (sequential        (evidence URLs,        (PR comment,
-   persona,          flow YAML)        per-flow walk,     best-effort)           issues, local
-   FLOWS_TO_RUN)                       results+transcript)                       report, marker)
+   (URL,            (validated        (SPAWN WORKER,     (permanent URLs        (PR comment
+   persona,          flow YAML,        sequential         per step, upload        WITH the
+   capture_host,     evidence          per-flow walk,     accounting,             screenshots,
+   FLOWS_TO_RUN)     backend)          results+transcript) STOP WORKER)           issues, marker)
 ```
+
+The worker devbox spans stages 03→04: stage 03 spawns it and leaves it running so stage 04 can
+upload the evidence sitting on its filesystem; stage 04 stops it. Stage 05 stops it as a
+backstop if stage 04 did not.
 
 ## Exit paths
 
@@ -228,6 +261,17 @@ report file, and emit the `[pylot] outcome=...` marker from the orchestrator (ne
     on-demand preview for an explicitly dispatched relevant PR when no staging target exists.
 12. **Cron uses `smoke.critical`.** Failures create or update a deduplicated issue with browser
     evidence; the public skill does not own the scheduler.
+13. **Never launch a browser in the operator turn.** The operator image has no browser
+    libraries. Playwright capture goes to a worker devbox; Navvi stays operator-side. A missing
+    capture host is `BLOCKED`, never a static-probe pass.
+14. **Every uploaded asset carries `evidence_class: visual`.** Unclassed capability URLs 410
+    after 30 days, so an unclassed receipt is a receipt with an expiry date. Publishing a
+    classed asset additionally requires `override_policy: true`.
+15. **The verdict carries the receipts.** Screenshot URLs are embedded per step in the PR
+    comment. A flow-walk verdict with no images is testimony, not evidence.
+16. **An upload failure is best-effort to deliver and mandatory to disclose.** It never blocks
+    the run and it never disappears — stage 04 counts it, stage 05 prints it. Silence is
+    indistinguishable from "no screenshots were needed".
 
 ## Reference files
 

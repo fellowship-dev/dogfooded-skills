@@ -25,13 +25,18 @@ Stage 05 (report) runs inline in the orchestrator so it can emit the outcome mar
 - Stage 01: validates the environment contract, resolves run context (TARGET_URL via trigger,
   selective on-demand preview, deploy-wait, browser/Navvi/persona, FLOWS_TO_RUN). First gate —
   invalid identity/target, no browser for interactive work, no URL, or failed deploy → blocked.
-- Stage 02: pure read/validate. Flow file missing → blocked (issue created).
-- Stage 03: the only stage that drives a browser. **Sequential per-flow loop** — connect,
-  walk steps, screenshot each step, judge `expect`, CAPTCHA→Navvi escalation, JSONL transcript.
-  Flows never overlap.
-- Stage 04: best-effort evidence upload. Failure here never blocks; it degrades to "no URLs".
-- Stage 05: inline. Aggregates, posts PR comment, creates failure issues, writes the local
-  report file, emits `[pylot] outcome=...` from the orchestrator. NO Quest, no dashboards.
+- Stage 02: pure read/validate. Flow file missing → blocked (issue created). Also resolves the
+  evidence backend, which defaults to `assets` (most checked-in contracts declare none).
+- Stage 03: the only stage that drives a browser — and it does so on a **worker devbox it
+  spawns**, because the operator image has no browser libraries. **Sequential per-flow loop** —
+  connect, walk steps, screenshot each step, judge `expect`, CAPTCHA→Navvi escalation, JSONL
+  transcript. Flows never overlap. Leaves the worker running for stage 04.
+- Stage 04: evidence upload with `evidence_class: visual` so the URLs never expire. Delivery is
+  best-effort and never blocks; **the accounting is not** — every file is uploaded-with-URL or
+  failed-with-reason, and the counts reach the verdict. Stops the worker.
+- Stage 05: inline. Aggregates, **embeds the per-step screenshot URLs in the PR comment**, posts
+  it, creates failure issues, writes the local report file, emits `[pylot] outcome=...` from the
+  orchestrator. NO Quest, no dashboards.
 - Interactive runs have four terminal states: PASSED, FAILED, BLOCKED, and N/A. Static/curl
   diagnostics cannot produce PASSED.
 

@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: Use when performing a CTO-level PR review — includes staging evidence gate for infra/backend PRs.
+description: Use when performing a CTO-level PR review — includes staging evidence gate for infra/backend PRs and visual evidence gate for UI PRs.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---
@@ -33,7 +33,7 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state. Short-circuit if CLOSED-not-merged or if infra/backend PR lacks staging evidence. Evidence is searched in the PR body first, then in comments (newest-first). `*.d.mts` (type-declaration) files are excluded from the infra/backend necessity trigger. Docs/test/type-only PRs are waived with a recorded rationale. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state. Short-circuit if CLOSED-not-merged, if an infra/backend PR lacks staging evidence, or if a UI-surface PR lacks visual evidence. Both gates search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. `*.d.mts` (type-declaration) files are excluded from the infra/backend necessity trigger; `*.d.ts`/`*.test.*`/`*.spec.*`/`*.stories.*`/`*.example.*`/`*.config.*` are excluded from the UI-surface trigger. Docs/test/type-only PRs are waived with a recorded rationale. |
 | 02-review | subagent | ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items. |
 | 03-synthesize-act | inline | Post GH comment, apply label, merge-or-label honoring merge state, write report file, emit outcome marker. |
 
@@ -93,6 +93,50 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
      [pylot] outcome="cto-review blocked: missing staging evidence on PR #{PR}" status=blocked
      ```
   Then stop — no further stages.
+- If `short_circuit: missing-visual-evidence` → **DO NOT run stage 02 or 03**. Run these inline:
+  1. Apply `needs-work` label:
+     ```bash
+     gh pr edit {PR} --repo {org/repo} --add-label "needs-work"
+     ```
+  2. Post the rejection comment. It MUST name the self-serve path — this blocker is fixable by
+     the factory, and a message that only says "add screenshots" is what produced 29 consecutive
+     human-action comments on one PR.
+
+     **The message must NOT contain a literal `Visual Evidence` markdown heading at column 0.**
+     The gate's comment scan selects comments matching `^#{1,4}\s.*[Vv]isual\s+[Ee]vidence`, so a
+     rejection comment carrying that heading would be picked up on the next run and parsed as if
+     it were evidence — the gate would grade its own homework. Describe the heading in prose and
+     show the waiver value indented, as below.
+
+     ```bash
+     cat > /tmp/cto-visual-block.md <<'BODY'
+     Missing visual evidence. This PR changes a user-facing surface, so its Visual Evidence
+     section must carry at least one embedded image — or the waiver.
+
+     **Self-serve — do not wait for a human:**
+
+     1. Run `/evidence-upload` to capture, upload, and embed. Capture must run on a worker
+        devbox; the operator image has no browser.
+     2. Or do nothing — the rework/unstick loop detects this verdict and dispatches a capture
+        mission for this PR head automatically (one per head; a duplicate dispatch is a no-op).
+     3. If this verdict is wrong and there is genuinely no user-facing surface, add a level-2
+        heading reading `Visual Evidence` to the PR body, followed by a line reading:
+
+            N/A — no user-facing surface
+
+     The waiver is the literal token `N/A` within 3 lines of that heading. Embed screenshots as
+     `[![alt](URL)](URL)` using assets-hosted URLs — never a branch `raw.githubusercontent.com`
+     link and never a static S3 key; both rot.
+     BODY
+     gh pr comment {PR} --repo {org/repo} --body-file /tmp/cto-visual-block.md
+     ```
+     (Strip the leading 5-space indentation when writing the file — it is indentation for this
+     document only, and leading whitespace would render the whole comment as a code block.)
+  3. Emit outcome:
+     ```
+     [pylot] outcome="cto-review blocked: missing visual evidence on PR #{PR}" status=blocked
+     ```
+  Then stop — no further stages.
 - Otherwise → continue to stage 02.
 
 ### Stage 02 (subagent)
@@ -133,7 +177,8 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 01-setup ──► 02-review ──► 03-synthesize-act (inline, reads 01 + 02)
    │               ▲
    ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
-   └── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
+   ├── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
+   └── short_circuit: missing-visual-evidence ───► inline rejection (no stages 02/03)
 ```
 
 ## Exit paths
@@ -141,7 +186,8 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 - **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
 - **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- **Blocked (evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked` (fires only when staging IS required AND no valid fresh evidence was found in body or comments)
+- **Blocked (staging evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked` (fires only when staging IS required AND no valid fresh evidence was found in body or comments)
+- **Blocked (visual evidence)**: `[pylot] outcome="cto-review blocked: missing visual evidence on PR #{N}" status=blocked` (fires only when the diff hits a UI surface AND no embedded image and no `N/A` waiver was found in body or comments)
 
 ## Hard Rules
 
@@ -155,7 +201,10 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 8. **Honor merge state** — never merge a CLOSED PR; for an already-merged PR, post the review as a post-merge note and never attempt merge.
 9. **Never merge if CI is red** — even on an LGTM verdict.
 10. **No Quest** — reporting is the local report file only.
-11. **Staging evidence gate fires first** — if `short_circuit: missing-staging-evidence`, skip everything else and post the rejection inline. This gate cannot be bypassed.
+11. **Evidence gates fire first** — staging (step 5.5), then visual (step 5.6), one blocker at a
+    time. On either short-circuit, skip everything else and post that gate's rejection inline.
+    Neither gate can be bypassed. The visual gate's rejection MUST name the self-serve path;
+    a bare "add screenshots" message is the defect it exists to fix.
 12. **Scope by the verification manifest, don't assume** (#2210) — setup extracts the LAST
     `review-state v1` block; the review trusts what the manifest covers, spot-checks what it
     doesn't, treats still-open ledger findings as verdict inputs, and stage 03 re-posts the

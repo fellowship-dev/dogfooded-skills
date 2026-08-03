@@ -81,6 +81,42 @@ done
 GIFs over 25 MB are rejected by presign — convert to `video/mp4` or drop the GIF and keep the
 PNGs. A rejected GIF is a `failed` row, not a reason to abandon the flow's screenshots.
 
+### 2b. If the run was requested from a conversation — a second, unclassed copy
+
+Only when this mission carries a requesting conversation. Resolve it once, up front:
+
+```bash
+CONV=$(curl -sS "$PYLOT_GATEWAY_URL/missions/$PYLOT_JOB_ID" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("dispatched_by_conv") or "")')
+```
+
+**Empty is the normal case — skip this step entirely.** `flowchad-on-double-checked`
+fires the vast majority of runs and is automation-dispatched: no requester, no thread,
+nothing to deliver. Only a run someone asked for ("walk the checkout flow on #123")
+has a `dispatched_by_conv`, and that owner is reading the thread, not the PR.
+
+When `CONV` is set, pick the **one or two** shots that carry the verdict — the failing
+step, or the flow's terminal state on a pass — and upload each a **second** time with
+**no** `evidence_class`, publishing with `conversation_id` instead of `override_policy`:
+
+```bash
+# Same presign/PUT as above but WITHOUT "evidence_class", then:
+curl -sS -X PATCH "$PYLOT_GATEWAY_URL/assets/$AID" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"visibility\":\"public\",\"conversation_id\":\"$CONV\",\"alt\":\"$STEP_NAME\"}"
+```
+
+Two uploads of the same bytes is deliberate, not waste. The classed copy is permanent
+but is served `Content-Disposition: attachment`; the unclassed copy is served `inline`,
+which is what makes it render in the thread at all. See evidence-upload's *"One image
+with two destinations is two uploads"* — and delete this second upload when pylot#2834
+child 14 makes disposition MIME-driven.
+
+Record the resulting `public_url`s under `conversation_urls` in the handoff so stage 05
+can post them into the Slack thread. A failure here is a `failed` row like any other and
+**never** touches the classed URLs the PR comment depends on.
+
 ### 3. Stop the worker
 
 Stage 03 deliberately left the worker running so this stage could upload from it. **Stop it
@@ -115,7 +151,13 @@ backend: {assets|none}
 evidence_class: visual
 uploaded: {N} / {M}
 worker_stopped: {true|false|n/a}
+conversation_id: {uuid or "none"}
 note: {warning/reason if not fully ok, else "none"}
+
+## Conversation copies (unclassed, inline — only when conversation_id is set)
+| Flow | Step | URL | Result |
+|------|------|-----|--------|
+| {name} | {step name} | {url or "—"} | uploaded / failed: {reason} |
 
 ## Per-step evidence URLs
 | Flow | Step | File | URL | Result |
@@ -133,7 +175,10 @@ print it rather than rounding it to success.
 
 ## Success criteria
 - Handoff written for every walked flow, with a row per evidence file (URL or `—` + reason).
-- Every uploaded asset carries `evidence_class: visual`, so its URL does not expire.
+- Every asset destined for the PR comment carries `evidence_class: visual`, so its URL does not
+  expire — and every conversation copy carries **no** class, so it renders inline.
+- `conversation_id` recorded (a uuid, or `none` — never omitted, so stage 05 knows the hop was
+  evaluated rather than forgotten).
 - Each URL is associated with the step it depicts, so stage 05 can embed per-step.
 - The stage 03 worker is stopped.
 - Stage never blocks the chain regardless of upload result.

@@ -34,7 +34,8 @@ that shape.
    `PYLOT_PUBLIC_TOKEN_TTL_DAYS` (30) unless the asset carries an `evidence_class` (pylot #2622
    M7). See step 4 — it is *not* the default upload flow.
 5. **Exactly one comment, at the very end**, whatever the outcome. Not one per variant, not one on
-   start. See step 6.
+   start. See step 6. (A conversation this was dispatched from gets at most one Slack post as well
+   — step 6b — never a substitute for the issue comment.)
 6. **Three variants. Not two, not five.** Two reads as a binary the owner has already implicitly
    made; five is a survey, not a decision.
 
@@ -145,6 +146,41 @@ Errors:
 The screenshots outliving the mission is the point. Historical prototype evidence on PR #2063 is
 already unreadable because it was published without an evidence class; do not repeat that.
 
+## Step 4b — if somebody asked for this in a thread, deliver there too
+
+Options nobody sees are not options. If this mission was dispatched **from a conversation**, the
+owner who has to pick a variant is reading that thread — put the three variants in front of them
+there, not only on the issue.
+
+```bash
+CONV=$(curl -sS "$PYLOT_GATEWAY_URL/missions/$PYLOT_JOB_ID" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("dispatched_by_conv") or "")')
+```
+
+**Empty `CONV` → skip step 4b and the second half of step 6 entirely.** A label-triggered or
+automation-dispatched run has no requester in a thread; posting anyway is spam.
+
+When `CONV` is set, upload each variant's primary screenshot a **second** time with **no**
+`evidence_class`, and publish it with `conversation_id`:
+
+```bash
+# presign exactly as in step 4 but WITHOUT the "evidence_class" field, PUT the same bytes, then:
+CONV_URL=$(curl -sS -X PATCH "$PYLOT_GATEWAY_URL/assets/$ASSET_ID" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"visibility\":\"public\",\"conversation_id\":\"$CONV\",\"alt\":\"variant A\"}" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["public_url"])')
+```
+
+**Do not reuse the step-4 URL for this and do not add `evidence_class` here.** The two copies exist
+because they need opposite things: the issue copy must be permanent (class → served
+`Content-Disposition: attachment`), the thread copy must render (no class → served `inline`).
+Measured on the prod gateway 2026-08-03. The gateway appends the image to the conversation, so it
+renders inline in the web UI and the assistant can see it on the next turn.
+
+Errors here are cosmetic: a failed conversation copy is reported in step 6 and **never** blocks the
+issue comment, which is the real deliverable.
+
 ## Step 5 — push the branches
 
 ```bash
@@ -196,6 +232,34 @@ Tried: <what you built and where you booted it>. Failed at: <the specific step a
 Branches pushed: <list, or none>. What would unblock it: <the concrete missing thing>.
 <!-- pylot:prototype-options issue={number} job=proto-{number} variants=none status=failed -->
 ```
+
+### Step 6b — and one Slack post, only if `CONV` was set in step 4b
+
+One call, after the issue comment lands, never instead of it:
+
+```bash
+python3 - <<'PY' > /tmp/proto-slack.json
+import json, os, sys
+text = (f"Three prototype variants for #{os.environ['N']} are up — reply `variant: B` on the issue "
+        f"to pick.\n\nA — {os.environ['THESIS_A']}\n{os.environ['CONV_URL_A']}\n\n"
+        f"B — {os.environ['THESIS_B']}\n{os.environ['CONV_URL_B']}\n\n"
+        f"C — {os.environ['THESIS_C']}\n{os.environ['CONV_URL_C']}\n\n"
+        f"Boot instructions: {os.environ['ISSUE_URL']}")
+json.dump({"text": text}, sys.stdout)
+PY
+curl -sS -X POST "$PYLOT_GATEWAY_URL/conversations/$CONV/slack-post" \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
+  --data-binary @/tmp/proto-slack.json
+```
+
+**Each URL bare, on its own line.** The gateway rewrites outbound markdown to Slack mrkdwn:
+`![alt](URL)` becomes `<URL|alt>` and `[![alt](URL)](URL)` becomes the malformed `<URL|<URL|alt>>`.
+A bare URL passes through byte-identical, which is the only form Slack can unfurl into a picture.
+Never paste the issue comment's markdown table into this call.
+
+`{"ok":false,"reason":"no_slack_thread"}` means the conversation is web-only — **benign, do not
+retry**; step 4b already attached the images to the web thread. Inline rendering in Slack depends
+on Slack unfurling the URL and is best-effort: report that you posted, not that it rendered.
 
 Stop the worker (`POST /missions/$PYLOT_JOB_ID/workers/<id>/stop`) before emitting the outcome
 marker:

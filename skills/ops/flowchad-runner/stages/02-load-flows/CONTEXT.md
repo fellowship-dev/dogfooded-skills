@@ -54,7 +54,22 @@ For preview, production, and cron, block an interactive flow unless `evidence.br
 For production and cron, block optional CAPTCHA steps or an incomplete CAPTCHA contract. Block
 i18n flows that assert only URL/`<html lang>` or omit any representative visible-copy region.
 
-### 5. Write handoff.
+### 5. Resolve the evidence backend
+
+```bash
+EVIDENCE_BACKEND=$(yq '.evidence.backend // "assets"' .flowchad/config.yml)
+```
+
+`assets` is the **only supported backend** and the default. Most checked-in
+contracts (including `fellowship-dev/pylot` and `fellowship-dev/booster-pack`)
+declare no `evidence:` key at all, so the default is the live path — it must not
+resolve to anything else. If a config explicitly says `git`, record
+`backend_override_ignored: git` in the handoff and still emit
+`evidence_backend: assets`: branch-hosted `raw.githubusercontent.com` links die
+with the branch, which is the durability failure this stage exists to avoid.
+`none` is honoured (stage 04 skips uploading but still writes its handoff).
+
+### 6. Write handoff.
 
 ## Output: handoff.md
 
@@ -69,7 +84,8 @@ block_reason: {reason or "none"}
 
 ## Config
 config_path: .flowchad/config.yml
-evidence_backend: {value of .evidence.backend // "git"}
+evidence_backend: {assets|none — see step 5; never "git"}
+backend_override_ignored: {git, if the config asked for it, else "none"}
 
 ## Validated flows
 | Flow | File | Status | Interactive | Prefers | Browser evidence | Notes |

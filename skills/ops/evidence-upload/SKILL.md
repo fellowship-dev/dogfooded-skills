@@ -1,7 +1,7 @@
 ---
 name: evidence-upload
 description: Upload an image/GIF/video to the pylot assets backend and return a stable public URL, optionally attaching it to a chat conversation. Use whenever you need to embed visual evidence in a PR, issue, or report, or to make an image appear in a conversation thread.
-argument-hint: "[--conversation <conversation-id>] [--alt <text>]"
+argument-hint: "[--evidence-class <class>] [--conversation <conversation-id>] [--alt <text>]"
 user-invocable: true
 allowed-tools: Bash
 ---
@@ -11,6 +11,59 @@ allowed-tools: Bash
 Upload a local file to the pylot assets backend (org-fenced S3) and get a stable, camo-safe public URL. `$PYLOT_GATEWAY_URL` and `$PYLOT_DISPATCH_TOKEN` are already in every operator/worker env — no static AWS keys needed.
 
 Optionally, pass `--conversation <conversation-id>` (and `--alt "<text>"`) to also attach the published asset to a chat conversation — it renders inline in the thread and Claude sees it on the conversation's next turn. See [Attaching to a conversation](#attaching-to-a-conversation---conversation) below; without the flag, the flow is exactly the 4 steps that follow.
+
+## Pick the retention mode FIRST — `--evidence-class`
+
+The default upload produces a capability URL that **410s after 30 days**
+(`PYLOT_PUBLIC_TOKEN_TTL_DAYS`, #2622 M7). That is fine for a chat message and
+fatal for anything written into a permanent record.
+
+| Destination | Flag | URL lifetime | Rendering |
+|---|---|---|---|
+| **PR body, issue body, review/verdict comment, report** | `--evidence-class visual` | **permanent** | served `Content-Disposition: attachment` (see caveat) |
+| Chat/Slack conversation (`--conversation`) | *(omit)* | 30 days | inline |
+
+**Rule: anything embedded in a PR, issue, or verdict comment MUST pass
+`--evidence-class visual`.** A receipt that expires in 30 days is not evidence —
+[fellowship-dev/pylot#2063](https://github.com/fellowship-dev/pylot/pull/2063)'s
+screenshots are already unreadable for exactly this reason.
+
+Conversely, **do not** pass `--evidence-class` on the `--conversation` path: an
+evidence-classed image is served as an attachment by `GET /assets/:id` too, so it
+would stop rendering inline in the thread — which is the whole point of that path.
+
+### What the flag changes
+
+Two request fields, verified live against the prod gateway (2026-08-03, asset
+`919c7786-…`, unpublished after):
+
+- **Step 1** gains `"evidence_class": "visual"`. `image/*` is a *media* MIME type,
+  not an *evidence* MIME type, so `VALID_EVIDENCE_CLASSES` is not enforced against
+  it — `"visual"` is accepted and stored with no schema or gateway change
+  (`assets-api.mts` presign: `isEvidence = ALLOWED_EVIDENCE_TYPES.has(ct)` → false
+  for PNG). At `/a/:public_token` the check is `Boolean(row.evidence_class) || …`,
+  so the row is now evidence and **exempt from the 30-day 410**.
+- **Step 3** gains `"override_policy": true`. `EVIDENCE_PUBLISHABLE_CLASSES` is
+  unset in prod, so publishing *any* evidence-classed asset without it returns
+  **403 `publish_restricted_evidence_class`**. The override is audit-logged, which
+  is the right trail anyway.
+
+> **Caveat — attachment disposition.** The same `isEvidence` flag that grants
+> permanence also forces `response-content-disposition=attachment` on the S3
+> redirect. Measured: `HTTP/1.1 200 / Content-Type: image/png /
+> Content-Disposition: attachment`. Embed the URL as **both** an image and a
+> plain link (`[![alt](URL)](URL)`) so the receipt survives whether or not the
+> renderer honours the disposition. Making disposition MIME-driven instead of
+> evidence-driven is tracked as the gateway-side fix in
+> [fellowship-dev/pylot#2834](https://github.com/fellowship-dev/pylot/issues/2834)
+> (child 14); when it lands, drop the double-link form.
+>
+> Note also that a *revoked* (`visibility: "org"`) asset returns **404**, not 410 —
+> 404 means unpublished/never-published, 410 means TTL-expired. Do not read a 404
+> as evidence of expiry.
+
+The `pylot assets presign|publish` CLI subcommands expose **neither** field, so the
+evidence-class flow must use raw `curl` as written below.
 
 ## Allowlist
 
@@ -28,14 +81,24 @@ Anything outside this list will get a 400 from `/assets/presign`. Capture screen
 # FILE=/path/to/screenshot.png
 # CONTENT_TYPE=image/png          # must match allowlist
 # REPO=org/repo-name              # scopes the org fence
+# EVIDENCE_CLASS=visual           # from --evidence-class; EMPTY for the conversation path
 
 BYTES=$(wc -c < "$FILE")
 
 # 1. Presign — returns asset_id + a short-lived S3 upload URL
+PRESIGN_BODY=$(REPO="$REPO" CONTENT_TYPE="$CONTENT_TYPE" BYTES="$BYTES" \
+  EVIDENCE_CLASS="${EVIDENCE_CLASS:-}" python3 -c "
+import json, os
+b = {'repo': os.environ['REPO'],
+     'content_type': os.environ['CONTENT_TYPE'],
+     'size': int(os.environ['BYTES'])}
+if os.environ.get('EVIDENCE_CLASS'):
+    b['evidence_class'] = os.environ['EVIDENCE_CLASS']
+print(json.dumps(b))")
 PRESIGN=$(curl -sS -X POST "$PYLOT_GATEWAY_URL/assets/presign" \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"repo\":\"$REPO\",\"content_type\":\"$CONTENT_TYPE\",\"size\":$BYTES}")
+  -d "$PRESIGN_BODY")
 ASSET_ID=$(echo "$PRESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['asset_id'])")
 UPLOAD_URL=$(echo "$PRESIGN" | python3 -c "import sys,json; print(json.load(sys.stdin)['upload_url'])")
 
@@ -44,15 +107,22 @@ curl -sS -X PUT "$UPLOAD_URL" \
   --data-binary @"$FILE" \
   -H "Content-Type: $CONTENT_TYPE"
 
-# 3. Publish → stable public URL (camo-proxied, safe to embed in GitHub)
+# 3. Publish → stable public URL (camo-proxied, safe to embed in GitHub).
+#    override_policy is REQUIRED whenever evidence_class is set, else 403.
+PUBLISH_BODY=$(EVIDENCE_CLASS="${EVIDENCE_CLASS:-}" python3 -c "
+import json, os
+b = {'visibility': 'public'}
+if os.environ.get('EVIDENCE_CLASS'):
+    b['override_policy'] = True
+print(json.dumps(b))")
 PUBLIC_URL=$(curl -sS -X PATCH "$PYLOT_GATEWAY_URL/assets/$ASSET_ID" \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"visibility":"public"}' \
+  -d "$PUBLISH_BODY" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['public_url'])")
 
-# 4. Embed in PR / issue / report body:
-echo "![evidence]($PUBLIC_URL)"
+# 4. Embed in PR / issue / report body. Image + link, per the attachment caveat:
+echo "[![evidence]($PUBLIC_URL)]($PUBLIC_URL)"
 
 # Optional — revoke public access when no longer needed:
 # curl -sS -X PATCH "$PYLOT_GATEWAY_URL/assets/$ASSET_ID" \
@@ -100,7 +170,8 @@ The gateway idempotently appends a `{"type":"image","asset_id","alt","mime_type"
 - **400 from presign** → file type or size outside allowlist. Convert or compress before retrying.
 - **403 from presign** → token doesn't have access to this repo's org. Check `$REPO` matches the org the token belongs to.
 - **Non-200 from PUT** → S3 presigned URL expired (valid 15 min). Re-run presign and try again.
-- **Non-200 from publish** → retry once; if it persists, skip evidence (never block the PR on upload failure).
+- **403 `publish_restricted_evidence_class` from publish** → you set `evidence_class` but omitted `override_policy: true`. Add it; do not silently drop the class to get a 200, that trades permanence for a green step.
+- **Non-200 from publish** → retry once; if it persists, skip evidence (never block the PR on upload failure). **Report the failure explicitly** — a swallowed upload error reads as "no screenshots were needed", which is how a missing receipt becomes invisible.
 
 Attach-specific (only when `--conversation` was given — check the response `error` code):
 

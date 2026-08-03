@@ -2,7 +2,8 @@
 
 ## Inputs
 - `.procedure-output/flowchad-runner/01-preflight/handoff.md`
-  (read `target_url`, `navvi_available`, `navvi_persona`, `transcript_path`, `report_date`)
+  (read `target_url`, `capture_host`, `navvi_available`, `navvi_persona`, `transcript_path`,
+  `report_date`, `repo`)
 - `.procedure-output/flowchad-runner/02-load-flows/handoff.md`
   (read the validated `walk order` and per-flow `prefers` hint)
 
@@ -16,6 +17,67 @@ JSONL transcript.
 > This is exactly one subagent. It loops over flows internally. There is NEVER one subagent
 > per flow.
 
+## Step 0 — resolve the browser host (do this FIRST)
+
+**The operator image has no browser.** `Dockerfile.operator` installs no
+`libnss3`/`libgbm1`/`libatk*`, so `chromium.launch()` in the operator turn fails with
+*"missing system shared libraries … no sudo/apt-get available"* — measured on
+[fellowship-dev/pylot#2802](https://github.com/fellowship-dev/pylot/pull/2802)
+(2026-07-31), which is why that run returned `BLOCKED` with zero screenshots and the
+verdict carried no receipts. The repo **devbox/worker** image
+(`.devcontainer/Dockerfile`) carries exactly those libs. The dispatching automation's
+own context already says *"Use qa worker."*
+
+So there are exactly two legal capture hosts:
+
+| `prefers` (stage 02) | Host | Why |
+|---|---|---|
+| `playwright` | **worker devbox** (spawned here) | only place chromium can launch |
+| `navvi` | **operator turn** | Navvi is an MCP tool bound to the operator session; it cannot be reached from a worker |
+
+Anything else is `blocked`. **Never** substitute a curl/static probe for a walk.
+
+### Spawn the worker (only when at least one flow prefers `playwright`)
+
+Follow the **pylot-workers** lifecycle (spawn → prompt → poll-to-idle → stop). Spawn once
+and reuse it for every playwright flow; do **not** stop it here — stage 04 uploads from the
+same worker and owns the `stop` call.
+
+```bash
+SPAWN_RESP=$(curl -s --max-time 90 -X POST \
+  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"repo\": \"$REPO\"}" \
+  "${PYLOT_API:-$PYLOT_GATEWAY_URL}/missions/${PYLOT_JOB_ID}/workers")
+WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))')
+[ -n "$WID" ] || { echo "BLOCKED: could not spawn a capture worker for $REPO"; }
+```
+
+If the spawn fails, every `playwright` flow is `blocked` with
+`capture_host_unavailable` — record it and continue to the handoff so stage 05 still
+reports. A missing browser host is `blocked`, never `pass` and never a silent skip.
+
+### Drive the walk on the worker
+
+Workers do **not** carry operator skills, so the prompt must be entirely self-contained:
+inline the browser/step/screenshot recipe below rather than telling the worker to
+"use flowchad-runner". First prompt provisions the browser, since the image ships the
+system libs but not the browser binaries:
+
+```
+cd <repo checkout> && npx --yes playwright install chromium && npx --yes playwright --version
+```
+
+Then send one prompt per flow carrying: the flow YAML, `TARGET_URL`, the snapshot dir
+(`.flowchad/snapshots/${date}-${flowName}`), and the instruction to write
+`results.json` plus `step-{N}-{action}.png` for every step. Poll to idle between
+prompts and read `last_output` before sending the next — a phase failure must be
+detected before the next flow starts.
+
+Evidence files stay on the worker. Record `evidence_host: worker:${WID}` per flow in the
+handoff so stage 04 knows where to upload from; Navvi-driven flows record
+`evidence_host: operator`.
+
 ## Steps
 
 Iterate the walk order sequentially: `for FLOW in <walk order>; do … done`. Finish one flow
@@ -25,12 +87,12 @@ completely (including stopping its recording) before starting the next.
 
 **Decision logic — per flow:**
 1. Read the stage 02 `interactive`, `captcha`, and `prefers` classification.
-2. If captcha/headed found AND `navvi_available=true` → use Navvi.
-3. Otherwise → use headless Playwright (fast path).
+2. If captcha/headed found AND `navvi_available=true` → use Navvi, **in the operator turn**.
+3. Otherwise → headless Playwright, **on the worker devbox spawned in step 0**.
 4. If the required browser cannot connect, set the flow to `blocked`. Static/curl diagnostics
    may be captured separately but cannot execute or pass the flow.
 
-**Headless Playwright (default):**
+**Headless Playwright (default) — this code runs ON THE WORKER, never in the operator turn:**
 ```javascript
 import { chromium } from 'playwright-core';
 
@@ -155,19 +217,26 @@ flows_passed: N
 flows_failed: N
 flows_blocked: N
 
+## Capture host
+worker_id: {WID or "none"}          # stage 04 uploads from here and owns the stop call
+worker_spawn_ok: {true|false|n/a}
+browser_provisioned: {true|false|n/a}
+
 ## Per-flow results
-| Flow | Status | Steps (pass/total) | Browser | CAPTCHA switch | Snapshot dir | results.json |
-|------|--------|--------------------|---------|----------------|--------------|--------------|
-| {name} | pass/fail/blocked | M/N | playwright/navvi/none | yes@step K / no / blocked | .flowchad/snapshots/{date}-{slug}/ | {path} |
+| Flow | Status | Steps (pass/total) | Browser | Evidence host | CAPTCHA switch | Snapshot dir | results.json |
+|------|--------|--------------------|---------|---------------|----------------|--------------|--------------|
+| {name} | pass/fail/blocked | M/N | playwright/navvi/none | worker:{WID} / operator / none | yes@step K / no / blocked | .flowchad/snapshots/{date}-{slug}/ | {path} |
 
 ## Step-level detail (per flow)
-{for each flow: a table of step | status | timing | browser | error/note}
+{for each flow: a table of step | status | timing | browser | screenshot file | error/note}
 
 ## Transcript
 path: {transcript_path}
 
 ## Evidence to upload
-{list of snapshot dirs + gif/png paths produced, for stage 04}
+{for each flow: evidence_host, then the absolute snapshot dir + every gif/png path produced,
+ each tagged with the step it belongs to so stage 05 can embed per-step. Stage 04 needs the
+ step association — a flat list of files cannot be placed back into the results table.}
 ```
 
 ## Success criteria
@@ -175,6 +244,7 @@ path: {transcript_path}
 - Each attempted flow has results.json and a flow-level pass/fail/blocked verdict. Browser-driven
   attempts also have a snapshot directory; capability blocks record why no snapshot exists.
 - Every `pass` includes real-browser screenshots/video plus a browser identifier in results.json.
+- Every produced evidence file is listed with its `evidence_host` and its owning step.
 - Transcript appended for every step.
 
 ## Failure

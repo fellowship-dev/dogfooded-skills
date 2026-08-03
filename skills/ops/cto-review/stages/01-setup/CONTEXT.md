@@ -373,6 +373,154 @@ fi
 If `short_circuit: missing-staging-evidence` is set, the orchestrator will post the rejection
 comment, apply `needs-work`, and emit the blocked outcome without running stage 02 or 03.
 
+5.6. **Visual evidence gate** — the same shape as 5.5, for user-facing surfaces. Runs only if
+5.5 did not short-circuit (one blocker at a time). Only fires for open PRs.
+
+The rule this encodes: *a PR that changes what a user sees must show what a user sees.* Before
+this gate the requirement existed only as repo prose, so it was enforced by an LLM reading
+CLAUDE.md — which is what produced 29 consecutive "human action required" comments on one PR
+(fellowship-dev/pylot#2802, #2829). The waiver is deliberately generous: on the last 45 PRs in
+that repo, 39 were waived without the gate reading a single body.
+
+```bash
+if [ "${MERGE_STATE:-open}" = "open" ]; then
+  CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
+  PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
+
+  # Per-repo opt-in override: .pylot/ui-paths — one glob per line, '#' comments, leading '!'
+  # excludes. Read at the PR HEAD so a PR that edits the list is judged by its own list; fall
+  # back to the default branch, then to absent. A fetch failure degrades to "absent", which can
+  # only ever NARROW the gate — an API hiccup must never manufacture a block.
+  UI_PATHS=$(gh api "repos/$REPO/contents/.pylot/ui-paths?ref=$PR_HEAD_SHA" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
+          || gh api "repos/$REPO/contents/.pylot/ui-paths" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
+          || true)
+
+  # Trigger: is there a user-facing surface in the diff? Prints "ext:<file>", "glob:<file>",
+  # or "none". Exclusions always win; an explicit .pylot/ui-paths glob overrides the built-in
+  # NOT_UI carve-out (which mirrors the *.d.mts exclusion the staging gate already has).
+  UI_TRIGGER=$(printf '%s\n' "$CHANGED_FILES" | UI_PATHS="$UI_PATHS" python3 -c "
+import sys, os, re
+UI_EXT = re.compile(r'\.(tsx|jsx|vue|svelte|css|scss|sass|less|html|erb)\$', re.I)
+NOT_UI = re.compile(r'(\.d\.m?ts|\.(test|spec|stories|example|config)\.[^/]+)\$', re.I)
+def globre(g):
+    out, i = '', 0
+    while i < len(g):
+        if g[i] == '*':
+            if g[i:i+2] == '**':
+                out += '.*'; i += 2; continue
+            out += '[^/]*'
+        elif g[i] == '?':
+            out += '[^/]'
+        else:
+            out += re.escape(g[i])
+        i += 1
+    return re.compile('^' + out + '\$')
+inc, exc = [], []
+for ln in os.environ.get('UI_PATHS', '').splitlines():
+    ln = ln.strip()
+    if not ln or ln.startswith('#'):
+        continue
+    (exc if ln.startswith('!') else inc).append(globre(ln.lstrip('!')))
+for f in sys.stdin.read().splitlines():
+    f = f.strip()
+    if not f or any(g.match(f) for g in exc):
+        continue
+    if any(g.match(f) for g in inc):
+        print('glob:' + f); break
+    if UI_EXT.search(f) and not NOT_UI.search(f):
+        print('ext:' + f); break
+else:
+    print('none')
+" 2>/dev/null || echo "none")
+
+  if [ "$UI_TRIGGER" = "none" ]; then
+    # Record the waiver rationale, exactly as the staging gate does when it does not fire.
+    echo "[cto-review] visual evidence gate: WAIVED — no user-facing surface in diff"
+  else
+    # Parse the body. VIS_RESULT is PASS:<reason> or BLOCK:<reason>.
+    VIS_PARSE="
+import sys, re
+body = sys.stdin.read()
+# Format-tolerant heading, mirroring the staging gate's: case-insensitive, decoration-tolerant,
+# so '## Visual Evidence', '### 📸 Visual Evidence — after rework', '#### visual evidence' count.
+HEADING = re.compile(r'^#{1,4}\s.*visual\s+evidence', re.I | re.M)
+IMG = re.compile(r'!\[[^\]]*\]\(\s*(https?://[^)\s]+)|<img\b[^>]*\bsrc\s*=\s*[\"\'](https?://[^\"\']+)', re.I)
+m = HEADING.search(body)
+if not m:
+    print('BLOCK:no Visual Evidence section'); sys.exit(0)
+lines = body.splitlines()
+h = next(i for i, ln in enumerate(lines) if HEADING.search(ln))
+# '> pending' within 2 lines is a placeholder, not evidence — same as the staging gate.
+if re.search(r'>\s*pending', '\n'.join(lines[h:h+3]), re.I):
+    print('BLOCK:evidence is pending'); sys.exit(0)
+# Waiver: literal 'N/A' within 3 lines of the heading. Byte-equivalent to the staging gate's
+# 'grep -iA3 \$HEADING | grep -qiF N/A'. The canonical spelling is
+# 'N/A — no user-facing surface'; only the N/A token is parsed, the rationale is for humans.
+if 'n/a' in '\n'.join(lines[h:h+4]).lower():
+    print('PASS:waived — N/A within 3 lines of the heading'); sys.exit(0)
+# Evidence must live INSIDE the section: heading line -> next heading of any level, or EOF.
+end = len(lines)
+for j in range(h + 1, len(lines)):
+    if re.match(r'^#{1,4}\s', lines[j]):
+        end = j; break
+n = len(IMG.findall('\n'.join(lines[h:end])))
+if n:
+    print('PASS:%d embedded image(s) in the section' % n)
+else:
+    print('BLOCK:section present but carries no embedded image and no N/A waiver')
+"
+    PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
+    VIS_RESULT=$(printf '%s' "$PR_BODY" | python3 -c "$VIS_PARSE" 2>/dev/null || echo "BLOCK:visual parse failed (python error)")
+
+    if [ "${VIS_RESULT%%:*}" = "BLOCK" ]; then
+      # Body missed — scan PR comments newest-first, and ONLY comments that themselves carry
+      # the heading (the same containment rule the staging gate uses). This is what lets a
+      # FlowChad verdict or a capture-mission comment satisfy the gate; a stray image in an
+      # unrelated comment cannot.
+      VIS_COMMENT=$(gh pr view $PR --repo $REPO --json comments 2>/dev/null \
+        | jq -r '[.comments[]] | reverse
+                 | map(select(.body | test("^#{1,4}\\s.*[Vv]isual\\s+[Ee]vidence";"im")))
+                 | .[0].body // ""' 2>/dev/null || true)
+      if [ -n "$VIS_COMMENT" ]; then
+        VIS_FROM_COMMENT=$(printf '%s' "$VIS_COMMENT" | python3 -c "$VIS_PARSE" 2>/dev/null || echo "BLOCK:visual parse failed")
+        [ "${VIS_FROM_COMMENT%%:*}" = "PASS" ] && VIS_RESULT="$VIS_FROM_COMMENT (in comment)"
+      fi
+    fi
+
+    if [ "${VIS_RESULT%%:*}" = "PASS" ]; then
+      echo "[cto-review] visual evidence gate: PASSED (${VIS_RESULT#*:})"
+    else
+      echo "[cto-review] visual evidence gate: BLOCKED — ${VIS_RESULT#*:} (trigger: $UI_TRIGGER)"
+      mkdir -p .procedure-output/cto-review/01-setup
+      cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
+# Stage 01: Setup
+
+## PR Identity
+- PR: #${PR}
+- Repo: ${REPO}
+
+## Merge State
+- merge_state: open
+- short_circuit: missing-visual-evidence
+
+## Visual Evidence Gate
+- trigger: ${UI_TRIGGER}
+- result: ${VIS_RESULT}
+
+## Changed Files
+${CHANGED_FILES}
+EOF
+      exit 0
+    fi
+  fi
+fi
+```
+
+If `short_circuit: missing-visual-evidence` is set, the orchestrator posts the rejection comment,
+applies `needs-work`, and emits the blocked outcome without running stage 02 or 03. The rejection
+message MUST name the self-serve path — this block is fixable by the factory, and the whole point
+of the gate is that it stops asking humans for screenshots.
+
 6. Extract the LAST `review-state v1` block from the PR comments (#2210) — the machine ledger the
    earlier pipeline stages accumulated (findings with statuses + verification manifest + risk tier):
 ```bash
@@ -438,9 +586,13 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 - merge_state: {open | merged | closed-no-merge}
 - mergedAt: {timestamp or null}
 - mergeCommit: {oid or null}
-- short_circuit: {none | closed-no-merge | missing-staging-evidence}
+- short_circuit: {none | closed-no-merge | missing-staging-evidence | missing-visual-evidence}
 - ci_status: {passing | failing | pending | unavailable}
 - merge_strategy: {auto | label-only}
+
+## Visual Evidence Gate
+- trigger: {ext:<file> | glob:<file> | none}
+- result: {PASS:<reason> | BLOCK:<reason> | waived}
 
 ## Repo Context
 - CLAUDE.md direction: {summary or "(no CLAUDE.md)"}
@@ -474,8 +626,10 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 ## Success criteria
 - Merge state resolved and recorded BEFORE gathering (gates the short-circuit).
 - Staging evidence gate evaluated before the expensive full-diff fetch.
+- Visual evidence gate evaluated after it, and only if it did not short-circuit — one blocker at a time.
 - For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.
-- For `closed-no-merge` or `missing-staging-evidence`: short_circuit set; remaining gathering skipped.
+- For `closed-no-merge`, `missing-staging-evidence`, or `missing-visual-evidence`: short_circuit set;
+  remaining gathering skipped.
 
 ## Failure
 - PR does not exist or `gh auth` fails → write handoff with `status: error` and the reason; the

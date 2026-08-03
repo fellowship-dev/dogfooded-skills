@@ -18,7 +18,9 @@ over here.
 3 sequential stages. No parallelism.
 
 - **01-setup** (subagent): gather repo context, PR metadata, full diff, and merge state. Pure
-  read. Detects the CLOSED-not-merged case and short-circuits.
+  read. Detects the CLOSED-not-merged case and short-circuits. Also runs the two evidence gates —
+  staging (5.5) for infra/backend diffs, visual (5.6) for user-facing-surface diffs — each of which
+  can short-circuit before the expensive full-diff path.
 - **02-review** (subagent): the isolated critical-judgement step. Reviews the WHOLE diff in
   cohesion across every dimension (docs, deps, downstream/template impact, correctness, security,
   process, merge strategy) and produces verdict + checklist + action items. No side effects.
@@ -34,6 +36,9 @@ over here.
   comes from the orchestrator, never a subagent.
 - Merge state is authoritative: a CLOSED-not-merged PR short-circuits (skip 02); an already-merged
   PR gets a post-merge review note and is never re-merged.
+- Evidence gates fire only on OPEN PRs, and only one blocks per run: staging first, then visual.
+  Both waive generously — a diff that does not hit the gate's paths never reaches its body scan —
+  and both accept `N/A` within 3 lines of their heading as the machine-parsed waiver.
 - Never merge if CI is red, even on LGTM.
 - Reporting is the local report file only. No Quest.
 
@@ -58,4 +63,5 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 - Success: `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
 - Failure: `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- Blocked (closed): `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- Blocked (evidence): `[pylot] outcome="cto-review blocked: missing {staging|visual} evidence on PR #{N}" status=blocked`

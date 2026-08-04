@@ -30,7 +30,7 @@ ANY of the following triggers questions:
    - **Hypothesis**: generate one sentence from the issue goal (e.g. "Implementing this feature will increase pr_merged rate")
    - **Baseline**: copy `Baseline` field from stage 05c handoff verbatim
    - **Target**: copy `Target` field from stage 05c handoff verbatim
-   - **Experiment plan**: `"Monitor via outcomes API post-merge; link to Phase 2 experiment once #2773 ships"`
+   - **Experiment plan**: `"Monitor via outcomes API post-merge; link to relevant Phase 2 experiment if applicable"`
    - **Eval criteria**: copy `Eval Criteria` field from stage 05c handoff verbatim
    - If stage 05c handoff is missing or unreadable: use placeholder values (`"not yet measured"` / `"TBD"`) — do not fail
 7. Write draft to `stages/06-ask-or-structure/output/handoff.md`

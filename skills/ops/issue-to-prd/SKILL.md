@@ -21,7 +21,7 @@ Example: `/issue-to-prd fellowship-dev/pylot 123`
 - Manual invocation to structure a specific issue
 
 ## What it does
-9-stage ICM procedure:
+10-stage ICM procedure:
 
 0. **00-automation-guard** — refuse `no-automation` / `epic` / closed issues, before reading anything
 1. **01-read-issue** — fetch issue data (title, body, labels, comments)
@@ -30,8 +30,9 @@ Example: `/issue-to-prd fellowship-dev/pylot 123`
 4. **04-failure-modes** — predict how an agent can go astray → guardrails for PRD
 5. **05-test-plan** — test strategy + prerequisites (pre-merge and post-merge)
 6. **05b-prototype-gate** — is this UI exploration? → `skip` / `ask` / `dispatch` / `picked`
-7. **06-ask-or-structure** — decision: post questions (exit) OR draft PRD
-8. **07-publish** — rewrite issue body with PRD, apply labels
+7. **05c-outcomes-baseline** — fetch `GET /outcomes/summary` for real metric baselines (fail-open)
+8. **06-ask-or-structure** — decision: post questions (exit) OR draft PRD (includes Measurable Impact)
+9. **07-publish** — rewrite issue body with PRD, apply labels
 
 ## Exit paths
 - **Guard path** (stage 00): no reads, no writes, `status=success`, stops
@@ -53,11 +54,13 @@ All output directories at `stages/{stage}/output/`.
 ## Execution
 Run stages sequentially. Read the CONTEXT.md for each stage before executing it.
 Stage 00 is a hard gate — if it aborts, run nothing else.
+Stage 05c always runs (fail-open) — it never gates stage 06.
 After stage 06, skip stage 07 if questions were posted.
 
 ## Reference files
-- `shared/prd-template.md` — PRD structure (used by stage 06)
+- `shared/prd-template.md` — PRD structure (used by stage 06); includes `## Measurable Impact` section
 - `shared/failure-modes.md` — common agent pitfall catalog (used by stage 04)
 - `shared/prototype-mission-brief.md` — self-contained brief for the variant mission (stage 05b)
 - `stages/03-assess-clarity/references/gap-checklist.md` — 8-section checklist
 - `stages/05b-prototype-gate/references/gate-checklist.md` — prototype gate + worked classifications
+- `stages/05c-outcomes-baseline/CONTEXT.md` — outcomes API call + fail-open baseline formatting

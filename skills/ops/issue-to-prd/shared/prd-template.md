@@ -9,6 +9,14 @@
 ## Success Metrics
 - [Metric]: [specific target or measurement approach]
 
+## Measurable Impact
+
+- **Hypothesis:** [One sentence: "Implementing this feature will <improve/reduce> <metric>"]
+- **Baseline:** [Value from `GET /outcomes/summary` — or "not yet measured" if API unavailable]
+- **Target:** [Agent-suggested target based on baseline, e.g. "pr_merged ≥ 85% within 30d post-ship"]
+- **Experiment plan:** Monitor via outcomes API post-merge; link to relevant Phase 2 experiment if applicable
+- **Eval criteria:** [Auto-regression threshold, e.g. "Regression triggers auto-issue if metric drops >5pp"]
+
 ## Scope
 
 ### In Scope

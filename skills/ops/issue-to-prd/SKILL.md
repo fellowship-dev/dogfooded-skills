@@ -21,7 +21,7 @@ Example: `/issue-to-prd fellowship-dev/pylot 123`
 - Manual invocation to structure a specific issue
 
 ## What it does
-9-stage ICM procedure:
+10-stage ICM procedure:
 
 0. **00-automation-guard** — refuse `no-automation` / `epic` / closed issues, before reading anything
 1. **01-read-issue** — fetch issue data (title, body, labels, comments)

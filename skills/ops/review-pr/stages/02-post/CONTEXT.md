@@ -114,8 +114,8 @@ Read from the handoffs:
 - `has_security_findings` from stage 01 handoff (`true` or `false`)
 
 ```bash
-AUTH_SURFACE=$(grep -m1 'auth_surface:' .procedure-output/review-pr/00-context/handoff.md | awk '{print $2}' || echo "none")
-HAS_SEC=$(grep -m1 'has_security_findings:' .procedure-output/review-pr/01-cohesive-review/handoff.md | awk '{print $2}' || echo "false")
+AUTH_SURFACE=$(grep -m1 'auth_surface:' .procedure-output/review-pr/00-context/handoff.md | awk '{print $3}' || echo "none")
+HAS_SEC=$(grep -m1 'has_security_findings:' .procedure-output/review-pr/01-cohesive-review/handoff.md | awk '{print $3}' || echo "false")
 
 APPLY_SECURITY="false"
 if [ "$AUTH_SURFACE" = "new-auth-surface" ] || [ "$HAS_SEC" = "true" ]; then

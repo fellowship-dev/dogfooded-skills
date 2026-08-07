@@ -8,9 +8,14 @@ cohesion, with every dimension weighed against the same full diff at once.
 - `.procedure-output/cto-review/01-setup/handoff.md`
 
 ## Task
-Read the setup handoff — the full diff, PR metadata, repo context, merge state, CI status. Form ONE
-strategic CTO verdict covering all dimensions together. Produce the verdict, the filled checklist,
-and the numbered action items. No GH side effects in this stage.
+Read the setup handoff — the full diff, PR metadata, repo context, merge state, CI status, ALL PR
+comments, and the label snapshot. Before forming a verdict:
+1. Run the **judgement layer** (step 0 below) — read all labels and all comments, identify every
+   blocker, determine resolved/unresolved with evidence.
+2. Then form ONE strategic CTO verdict covering all dimensions together.
+
+Produce the verdict, the filled checklist, the numbered action items, and the **receipts block**
+(labels seen, comments checked, blockers → status). No GH side effects in this stage.
 
 If the setup handoff has `merge_state: merged`, frame the output as a **post-merge review note**
 (findings + follow-ups), not a merge gate. If `short_circuit: closed-no-merge` is present this stage
@@ -35,6 +40,42 @@ diff in one pass.
 **Skip tooling-enforced findings**: Do not surface lint errors, formatting violations, or type errors
 that the project's CI/CD pipeline already catches. Reserve judgement for logic bugs, design issues,
 missing requirements, and scope problems that static analysis cannot detect.
+
+## Step 0: Judgement Layer — Labels and Comment Analysis (#2918)
+
+Run this BEFORE any dimension review. It produces the receipts block that goes into the verdict
+comment and influences the verdict.
+
+**Read from the setup handoff:**
+- `## Label Snapshot` — every label present at stage-01 time
+- `## Comment Thread Summary` — count + last author
+- `## All PR Comments` — full bodies
+
+**For each label, classify its status:**
+
+| Label | Meaning | Status |
+|-------|---------|--------|
+| `needs-work` | Changes requested | Check if follow-up commits or comments show the issues were addressed; if yes → resolved; if no → unresolved blocker |
+| `waiting-on-owner` | Owner hold | Unresolved unless the owner has since commented with approval or label was removed; machine cannot clear this |
+| `security` | Auth/security hold | Unresolved unless owner has explicitly cleared it; machine cannot clear this |
+| `chad-rejects` | FlowChad QA failure | Unresolved unless a subsequent FlowChad comment shows PASS; look for it in comments |
+| `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
+
+**For each comment thread, identify blockers:**
+- Explicit hold comments (e.g. "do not merge", "waiting for owner") — resolved only if a subsequent comment or commit addresses them
+- Unresolved review threads (action items named but not addressed) — resolved if a commit or comment after them explains they were fixed
+- CI failure comments — resolved if CI checks subsequently passed
+
+**Evidence standard:** "resolved" means a commit AFTER the blocker, OR a comment AFTER the blocker
+from the author/team that explains how it was addressed. A comment saying "I'll fix this later" is
+NOT resolved. A commit SHA cited in a follow-up is evidence; "should be fine" is not.
+
+**Produce:** a receipts block for the handoff and verdict comment. This is NOT a judgement on the
+code — it is a factual read of the process state.
+
+**NOT jumpy:** a `needs-work` label whose issues were clearly addressed → note it as resolved and
+proceed normally. Do not escalate resolved blockers. A label alone is never a permanent hold unless
+it is `security` or `waiting-on-owner` (those require human removal).
 
 ## Dimensions to weigh (all against the same full diff)
 
@@ -176,6 +217,15 @@ Wrong-but-plausible: {none | list of findings}
 - open findings from review-state: {IDs still open + how each affected the verdict, or "none open" / "no review-state"}
 - executed-vs-read: {e.g. "tests executed by double-check; all else read-only" — or "nothing executed (read-only pipeline)"}
 
+## Receipts (#2918)
+Labels seen: {comma-separated list, or "none"}
+Comments checked: {N} (last author: {login})
+Blockers found:
+| Blocker | Type | Status | Evidence |
+|---------|------|--------|----------|
+| {description} | {label/comment/CI} | {resolved/unresolved/escalated} | {commit SHA or comment excerpt, or "none"} |
+{... or "No blockers found"}
+
 ## Action Items
 1. **`path/to/file`** — specific change needed
 {... or "_None — ready to merge_"}
@@ -183,6 +233,8 @@ Wrong-but-plausible: {none | list of findings}
 
 ## Success criteria
 - A single verdict reached across ALL dimensions from the one full diff.
+- Judgement layer (Step 0) ran: labels read, all comments processed, each blocker classified.
+- Receipts block populated — labels seen, comment count, blockers → status.
 - Checklist tables and action items populated with no unresolved TBD/TODO.
 - CI-red forces a non-merge verdict.
 

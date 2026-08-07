@@ -101,6 +101,28 @@ fi
 [ -z "$SPEC_BODY" ] && { SPEC_BODY="No spec available — skipping conformance check"; SPEC_SOURCE="none"; SPEC_REF="none"; }
 ```
 
+5.2. **Fetch all PR comments and label snapshot for receipts (#2918)** — run immediately after
+step 5.1. The receipts data feeds stage 02's judgement layer and stage 03's verdict comment.
+
+```bash
+# Fetch all comments — capture count, last author, and each body for blocker analysis.
+# This is a snapshot at stage 01 time; stage 03 does a fresh label read at merge time.
+ALL_COMMENTS=$(gh pr view $PR --repo $REPO --json comments 2>/dev/null || echo '{"comments":[]}')
+COMMENT_COUNT=$(echo "$ALL_COMMENTS" | jq '.comments | length')
+LAST_COMMENT_AUTHOR=$(echo "$ALL_COMMENTS" | jq -r '.comments | last | .author.login // "none"')
+ALL_COMMENT_BODIES=$(echo "$ALL_COMMENTS" | jq -r '.comments[].body' 2>/dev/null || echo "")
+
+# Current label snapshot
+CURRENT_LABELS=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name] | join(", ")' 2>/dev/null || echo "")
+echo "[cto-review] labels at setup: $CURRENT_LABELS"
+echo "[cto-review] comment count: $COMMENT_COUNT, last author: $LAST_COMMENT_AUTHOR"
+```
+
+Record in the handoff:
+- `comment_count: {N}`
+- `last_comment_author: {login | none}`
+- Full list of all comment bodies (stage 02 reads them to identify unresolved blockers)
+
 5.5. **Staging evidence gate** — check BEFORE proceeding to the expensive diff/full-review path.
 Only fires for open PRs; merged/closed PRs skip this gate entirely.
 
@@ -582,6 +604,17 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 - Labels: {comma-separated current labels}
 - Additions/Deletions: +{N} / -{N}
 
+## Label Snapshot
+Labels present at stage-01 time: {comma-separated list, or "none"}
+(Note: stage 03 re-reads labels fresh from GitHub at merge time — this snapshot is for stage 02 judgement only.)
+
+## Comment Thread Summary
+- comment_count: {N}
+- last_comment_author: {login | none}
+
+## All PR Comments (for stage 02 blocker analysis)
+{each comment body verbatim, separated by --- dividers, or "(no comments)"}
+
 ## Merge State
 - merge_state: {open | merged | closed-no-merge}
 - mergedAt: {timestamp or null}
@@ -625,6 +658,7 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 
 ## Success criteria
 - Merge state resolved and recorded BEFORE gathering (gates the short-circuit).
+- Label snapshot and all comment bodies captured (step 5.2) — feeds stage 02 judgement layer.
 - Staging evidence gate evaluated before the expensive full-diff fetch.
 - Visual evidence gate evaluated after it, and only if it did not short-circuit — one blocker at a time.
 - For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.

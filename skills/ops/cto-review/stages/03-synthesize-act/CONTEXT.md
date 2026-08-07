@@ -32,11 +32,22 @@ stage runs inline in the orchestrator — do NOT spawn a Task. All GH side effec
 
 ### Step 1: Post the review comment
 Use the exact template in `shared/review-comment-format.md`. Populate from the stage 01 and stage 02
-handoffs:
+handoffs. The comment MUST include a `## Checked / Found` receipts section (see below) — this is
+mandatory for every verdict comment, not optional (#2918).
+
 ```bash
 gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 # CTO Review: $REPO PR #$PR — $PR_TITLE
 ... (see shared/review-comment-format.md — verbatim) ...
+
+## Checked / Found
+**Labels seen:** {comma-separated list from stage 02 Receipts, or "none"}
+**Comments checked:** {N} (last author: {login})
+**Blockers found:**
+| Blocker | Type | Status |
+|---------|------|--------|
+| {description} | {label/comment/CI} | {resolved/unresolved/escalated} |
+{... or "_No blockers found_"}
 
 <!-- review-state v1
 {REVIEW_STATE_JSON}
@@ -67,10 +78,74 @@ fi
 ```
 
 ### Step 3: Merge or label (OPEN PRs only — skip entirely if merge_state is `merged`)
+
+#### Step 3.0: Security / Owner Gate — LAST CHECK BEFORE MERGE (#2918)
+
+This check is **deterministic code, not judgement**. It runs immediately before the merge call,
+using a FRESH label read from GitHub (not from the stage 01 handoff cache). If the PR carries
+`security` OR `waiting-on-owner`, cto-review MUST NOT merge — full stop.
+
+```bash
+# Fresh label read at merge time — must NOT use the cached handoff from stage 01
+LIVE_LABELS=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name]' 2>/dev/null || echo '[]')
+GATE_FIRED=false
+
+if echo "$LIVE_LABELS" | grep -qE '"security"'; then
+  GATE_FIRED=true
+  GATE_REASON="security"
+elif echo "$LIVE_LABELS" | grep -qE '"waiting-on-owner"'; then
+  GATE_FIRED=true
+  GATE_REASON="waiting-on-owner"
+fi
+
+if [ "$GATE_FIRED" = "true" ]; then
+  # Ensure waiting-on-owner is applied (it may only be security right now)
+  gh label create "waiting-on-owner" --repo $REPO --color "e99695" --description "Waiting for owner decision before merge" 2>/dev/null || true
+  gh pr edit $PR --repo $REPO --add-label "waiting-on-owner"
+
+  # Post the park comment — include receipts so the owner has full context
+  RECEIPTS=$(grep -A20 '## Receipts' .procedure-output/cto-review/02-review/handoff.md 2>/dev/null \
+    | head -20 || echo "Labels seen: $LIVE_LABELS")
+
+  cat > /tmp/cto-owner-gate.md <<PARK_EOF
+## cto-review: Parked — Owner Gate (#2918)
+
+This PR carries label(s) **${GATE_REASON}** that require a human decision before automation may merge.
+
+**Why this gate exists:** the \`security\` and \`waiting-on-owner\` labels are explicit holds set by
+the pipeline or by a human reviewer to flag that a decision is beyond the automation's jurisdiction.
+An LLM reading context cannot override this — the gate is unconditional.
+
+**To unpark:** remove the \`${GATE_REASON}\` label (and \`waiting-on-owner\` if present) after the
+human review is complete, then re-trigger cto-review.
+
+${RECEIPTS}
+PARK_EOF
+  gh pr comment $PR --repo $REPO --body-file /tmp/cto-owner-gate.md
+
+  echo "[cto-review] owner gate fired: $GATE_REASON — PR parked, NOT merged"
+  echo "[pylot] outcome=\"cto-review parked: PR #${PR} carries ${GATE_REASON} — owner review required\" status=blocked"
+  exit 0
+fi
+echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS"
+```
+
+**Rules that are absolute:**
+- This check fires EVEN IF stage 02 gave LGTM verdict — verdict cannot override the gate.
+- This check fires EVEN IF the labels were applied by mistake — label removal is the human's action.
+- `security` and `waiting-on-owner` are the ONLY two trigger labels; no other label blocks merge.
+- The gate reads labels from GitHub live, NOT from the stage 01 handoff. A label applied AFTER
+  stage 01 started (e.g. by a concurrent automation) will still trigger the gate.
+- `waiting-on-owner` is applied if not already present, so the PR is always clearly parked for
+  humans to find via label filter.
+- The park comment MUST include the receipts block from stage 02 so the owner has full context.
+- After firing, emit `status=blocked` and STOP — no merge, no further steps.
+
 Only proceed to a merge if ALL hold:
 1. Stage 02 `merge_decision` is `merge` (verdict LGTM / "merge immediately").
 2. Required labels present (`reviewed`, `double-checked`).
 3. CI is green.
+4. Step 3.0 gate did NOT fire.
 
 ```bash
 # Verify CI is green
@@ -128,6 +203,10 @@ report ends at the file write; operators surface it via the mission report.
 [pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
 ```
 On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
+On the owner gate fire (step 3.0), emit the parked marker and STOP:
+```
+[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
+```
 If a side effect failed hard (comment post errored), emit:
 ```
 [pylot] outcome="cto-review failed at stage 03: {reason}" status=failed
@@ -142,9 +221,10 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 
 ## Actions Taken
 - merge_state: {open | merged | closed-no-merge}
-- comment_posted: {url or "skipped (closed-no-merge)"}
-- label_applied: {approved | needs-work | ready-to-merge | none}
-- merge_action: {merged | labeled-ready-to-merge | closed-superseded | held (CI-red only) | skipped (already merged) | skipped (closed)}
+- owner_gate_fired: {true (label: security|waiting-on-owner) | false}
+- comment_posted: {url or "skipped (closed-no-merge)" or "park comment (owner gate)"}
+- label_applied: {approved | needs-work | ready-to-merge | waiting-on-owner (gate) | none}
+- merge_action: {merged | labeled-ready-to-merge | closed-superseded | held (CI-red only) | parked (owner gate) | skipped (already merged) | skipped (closed)}
 - report_path: {path}
 
 ## Outcome
@@ -152,8 +232,9 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 ```
 
 ## Success criteria
-- Comment posted (unless closed-no-merge), label applied per verdict, merge/label honoring merge
-  state and CI, report file written (no Quest), outcome marker emitted from the orchestrator.
+- Owner gate (Step 3.0) ran using a FRESH GitHub label read, not the cached handoff.
+- If gate fired: park comment posted (with receipts), `waiting-on-owner` applied, `status=blocked` emitted. STOP.
+- If gate clear: comment posted (with `## Checked / Found` receipts section), label applied per verdict, merge/label honoring merge state and CI, report file written (no Quest), outcome marker emitted from the orchestrator.
 
 ## Failure
 - Comment post or label edit errors → emit the stage-03 failure marker; still write whatever report

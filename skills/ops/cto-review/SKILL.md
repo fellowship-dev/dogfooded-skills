@@ -33,9 +33,9 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state. Short-circuit if CLOSED-not-merged, if an infra/backend PR lacks staging evidence, or if a UI-surface PR lacks visual evidence. Both gates search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. `*.d.mts` (type-declaration) files are excluded from the infra/backend necessity trigger; `*.d.ts`/`*.test.*`/`*.spec.*`/`*.stories.*`/`*.example.*`/`*.config.*` are excluded from the UI-surface trigger. Docs/test/type-only PRs are waived with a recorded rationale. |
-| 02-review | subagent | ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items. |
-| 03-synthesize-act | inline | Post GH comment, apply label, merge-or-label honoring merge state, write report file, emit outcome marker. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918). Short-circuit if CLOSED-not-merged, if an infra/backend PR lacks staging evidence, or if a UI-surface PR lacks visual evidence. Both gates search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
+| 02-review | subagent | **Judgement layer first** (#2918): read all labels + all comments, identify and classify every blocker (resolved/unresolved). Then ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items + **receipts block**. |
+| 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918) — read labels fresh from GitHub; if `security` or `waiting-on-owner` present: post park comment, apply `waiting-on-owner`, emit `status=blocked`, STOP. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
 
 Stage 02 is the isolated critical-judgement step — it receives only the setup handoff and its own
 CONTEXT.md, never orchestrator history.
@@ -175,7 +175,14 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 
 ```
 01-setup ──► 02-review ──► 03-synthesize-act (inline, reads 01 + 02)
-   │               ▲
+   │   (labels+comments│    (judgement layer: labels/comments/blockers → receipts)
+   │   captured here)  │         │
+   │                   ▼         ▼
+   │                        Step 3.0: Owner Gate (fresh label read)
+   │                              │
+   │                              ├── security OR waiting-on-owner ──► park + status=blocked
+   │                              └── clear ──► normal merge/label flow
+   │
    ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
    ├── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
    └── short_circuit: missing-visual-evidence ───► inline rejection (no stages 02/03)
@@ -186,6 +193,7 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 - **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
 - **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- **Blocked (owner gate)**: `[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked` (#2918 — fires when `security` OR `waiting-on-owner` is present at merge time; park comment + `waiting-on-owner` label applied)
 - **Blocked (staging evidence)**: `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked` (fires only when staging IS required AND no valid fresh evidence was found in body or comments)
 - **Blocked (visual evidence)**: `[pylot] outcome="cto-review blocked: missing visual evidence on PR #{N}" status=blocked` (fires only when the diff hits a UI surface AND no embedded image and no `N/A` waiver was found in body or comments)
 
@@ -210,6 +218,14 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     doesn't, treats still-open ledger findings as verdict inputs, and stage 03 re-posts the
     finalized block as valid JSON. No block found → pre-#2210 fallback (assume earlier phases
     covered code quality).
+13. **Owner gate is unconditional (#2918)** — stage 03 step 3.0 reads labels fresh from GitHub
+    at merge time. If `security` OR `waiting-on-owner` is present, the gate fires regardless of
+    verdict, CI status, or any prose in the PR. LGTM verdict cannot override the gate. The labels
+    come off only by human action. Two consecutive live bypasses (#2912, #2935) are why this rule
+    exists; the model talked itself into merging both times, so the check is code, not prompt.
+14. **Every verdict comment includes receipts (#2918)** — the `## Checked / Found` section (labels
+    seen, comment count + last author, blockers → status) is mandatory in every comment stage 03
+    posts. No silent LGTM without an enumeration of what was checked.
 
 ## Reference files
 

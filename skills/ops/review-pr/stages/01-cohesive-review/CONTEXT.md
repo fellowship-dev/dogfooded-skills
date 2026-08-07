@@ -74,6 +74,16 @@ For each potential issue, assess:
 - Pedantic style preferences with no functional impact
 - Moved/renamed code flagged as "new" (detect refactors)
 
+**Security classification (#2918):** For each finding that survives the threshold, classify
+whether it belongs to the auth/security class. A finding is `security_class: true` if its
+root cause is ANY of:
+- **Authentication / authorization** — wrong principal check, missing auth guard, privilege
+  escalation, IDOR (insecure direct object reference), broken access control
+- **Injection** — SQL injection, command injection, SSTI, path traversal, XSS
+- **Credential / secret exposure** — leaked token, secret in log, unencrypted credential
+
+Record this classification in the handoff — stage 02 uses it to apply the `security` label.
+
 **Verification step:** For each finding, actively try to disprove it. Check if the "bug" is
 actually handled elsewhere in the diff, if the "missing check" exists in a caller, if the "edge
 case" is prevented by the type system. Only findings that survive this check make the final list.
@@ -118,15 +128,19 @@ Path: `.procedure-output/review-pr/01-cohesive-review/handoff.md`
 - tier: {tier from handoff, or the ESCALATED tier + reason}
 
 ## Findings
-| ID | Severity | Location | Finding | Confidence |
-|----|----------|----------|---------|------------|
-| R1 | 🔴 Bug | `path/file.ts#L67-72` | [description] | 95 |
-| R2 | 🟡 Warning | `path/other.ts#L23` | [description] | 85 |
-| R3 | ℹ️ Info | `path/util.ts#L45` | [description] | 80 |
+| ID | Severity | Location | Finding | Confidence | Security Class |
+|----|----------|----------|---------|------------|---------------|
+| R1 | 🔴 Bug | `path/file.ts#L67-72` | [description] | 95 | yes |
+| R2 | 🟡 Warning | `path/other.ts#L23` | [description] | 85 | no |
+| R3 | ℹ️ Info | `path/util.ts#L45` | [description] | 80 | no |
 
 [IDs are `R{n}` — they persist into the review-state ledger that double-check and cto-review
 update, so never renumber. If no findings ≥ 80 confidence: "No issues found above confidence
 threshold."]
+
+## Security Classification
+- has_security_findings: {true|false} — true if ANY finding above has Security Class = yes
+- security_finding_ids: {comma-separated R-IDs, or "none"}
 
 ## Verified
 [What you actually checked and how — this feeds the review-state manifest that tells later

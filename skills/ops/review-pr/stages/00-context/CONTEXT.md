@@ -72,6 +72,27 @@ HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 Capture the FULL diff into the handoff — the entire diff is reviewed together in stage 01, so the
 subagent needs all of it.
 
+### Step 2.5: New Auth Surface Detection (#2918)
+
+Check whether this PR introduces a new auth surface. The rule is deterministic — no judgement.
+A new auth surface triggers the `security` label in stage 02 regardless of whether any finding is raised.
+
+```bash
+CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
+AUTH_SURFACE="none"
+while IFS= read -r f; do
+  case "$f" in
+    *route-capability.mts) AUTH_SURFACE="new-auth-surface"; break ;;
+    modules/auth/*) AUTH_SURFACE="new-auth-surface"; break ;;
+    */modules/auth/*) AUTH_SURFACE="new-auth-surface"; break ;;
+  esac
+done <<< "$CHANGED_FILES"
+echo "[review-pr] auth surface: $AUTH_SURFACE"
+```
+
+Record `auth_surface: {none|new-auth-surface}` in the handoff. A `new-auth-surface` value means
+stage 02 MUST apply the `security` label, even if stage 01 raises zero findings.
+
 ### Step 3: Compute the Risk Tier (mechanical — #2210)
 
 Evaluate this rubric against the diff/file list you just fetched. It is deterministic — no
@@ -138,6 +159,7 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 - Author: {author}
 - Size: +{ADDITIONS} / -{DELETIONS} across {FILE_COUNT} files
 - Labels: {labels}
+- auth_surface: {none|new-auth-surface}
 
 ## PR Body
 {full PR body}
@@ -168,6 +190,7 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 - Dedup gate ran first; if `reviewed` already present, procedure stopped here
 - PR metadata, body, conventions, existing comments, CI status all captured
 - The FULL diff captured in the handoff (not truncated)
+- Auth surface detection ran; `auth_surface` recorded in handoff
 - Closes-vs-Refs raw data captured
 - handoff.md written before the stage 01 Task is spawned
 

@@ -7,7 +7,8 @@
 - PR number + `org/repo`
 
 ## Task
-Post the structured review comment, apply the `reviewed` label, and write the local report file.
+Post the structured review comment, apply the `reviewed` label, apply the `security` label if
+warranted (security-class findings or new auth surface), and write the local report file.
 This stage runs inline in the orchestrator — do NOT spawn a Task. It is the only side-effecting
 stage. The `[pylot] outcome=...` marker MUST come from the orchestrator here, never from a
 subagent. NO Quest — write the local report file only.
@@ -67,8 +68,10 @@ everything cold. Shape:
   "head_sha": "{from stage 00 Risk Tier section}",
   "tier": "{HIGH|MEDIUM|LOW — the FINAL tier (post-escalation if stage 01 escalated)}",
   "tier_reasons": ["{reason}", "..."],
+  "auth_surface": "{none|new-auth-surface}",
+  "security_label_applied": "{true|false}",
   "findings": [
-    {"id": "R1", "severity": "bug", "loc": "path/file.ts#L67-72", "desc": "{short}", "confidence": 95, "status": "open"}
+    {"id": "R1", "severity": "bug", "loc": "path/file.ts#L67-72", "desc": "{short}", "confidence": 95, "status": "open", "security_class": true}
   ],
   "verified": [
     {"what": "whole diff, cross-file cohesion", "how": "read", "by": "review-pr"},
@@ -100,6 +103,42 @@ gh pr edit $PR --repo $REPO --add-label "reviewed"
 
 This label triggers the `review-pr-on-reviewed` event rule, which dispatches double-check. Never
 apply `double-checked` — that's a different skill entirely.
+
+### Step 2.5: Apply security Label (deterministic — #2918)
+
+The `security` label is a machine-readable hold signal consumed by cto-review's merge gate.
+Apply it NOW, in the same mission as the review, so the gate is set before any merge attempt.
+
+Read from the handoffs:
+- `auth_surface` field from stage 00 handoff (`new-auth-surface` or `none`)
+- `has_security_findings` from stage 01 handoff (`true` or `false`)
+
+```bash
+AUTH_SURFACE=$(grep -m1 'auth_surface:' .procedure-output/review-pr/00-context/handoff.md | awk '{print $2}' || echo "none")
+HAS_SEC=$(grep -m1 'has_security_findings:' .procedure-output/review-pr/01-cohesive-review/handoff.md | awk '{print $2}' || echo "false")
+
+APPLY_SECURITY="false"
+if [ "$AUTH_SURFACE" = "new-auth-surface" ] || [ "$HAS_SEC" = "true" ]; then
+  APPLY_SECURITY="true"
+fi
+
+if [ "$APPLY_SECURITY" = "true" ]; then
+  gh label create "security" --repo $REPO --color "e11d48" --description "Security-sensitive — requires owner review before merge" 2>/dev/null || true
+  gh pr edit $PR --repo $REPO --add-label "security"
+  echo "[review-pr] security label applied (auth_surface=$AUTH_SURFACE, has_security_findings=$HAS_SEC)"
+else
+  echo "[review-pr] security label NOT applied (auth_surface=$AUTH_SURFACE, has_security_findings=$HAS_SEC)"
+fi
+```
+
+**Rules:**
+- Apply `security` if ANY finding is security-class (auth/privilege/IDOR/injection) — even if the
+  overall verdict is "clean" after disproof (a surviving IDOR finding is a hard trigger).
+- Apply `security` if `auth_surface: new-auth-surface` (PR touches `route-capability.mts` or
+  `modules/auth/`) — even with zero findings. New auth surface is owner-gated by default.
+- Do NOT apply `security` for non-auth findings (perf, docs, style, etc.).
+- The `security` label does NOT change the review-pr outcome — proceed to double-check as normal.
+- The cto-review merge gate reads the label at merge time; this step is just the setter.
 
 ### Step 3: Write Report (local file only — NO Quest)
 
@@ -156,6 +195,7 @@ Posted
 ## Actions taken
 - Review comment posted to $PR_URL
 - `reviewed` label applied
+- `security` label applied: {yes — reason: auth_surface|security_findings | no}
 - Report written to {REPORT_FILE}
 
 ## Outcome
@@ -165,6 +205,7 @@ Posted
 ## Success criteria
 - Review comment posted (Summary always present)
 - `reviewed` label applied AFTER the comment posted
+- `security` label applied if auth-surface or security-class findings detected
 - `double-checked` label NOT applied
 - Local report file written; NO Quest POST performed
 - `[pylot] outcome=...` marker emitted from the orchestrator

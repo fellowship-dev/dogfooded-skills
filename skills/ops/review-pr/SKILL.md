@@ -43,9 +43,9 @@ Parse from `$ARGUMENTS`: `PR=$1`, `REPO=$2`. Both required.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 00-context | inline | Dedup gate (exit if already `reviewed`) + gather PR metadata, conventions, existing comments, CI status, the full diff, and the **mechanical risk tier** (#2210) |
-| 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion at tier-scaled depth (LOW bounded / MEDIUM full / HIGH full + runtime-shape checklist): analyze, confidence-score findings (≥80), convention compliance, Closes-vs-Refs. Clean isolated context. |
-| 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** (findings ledger + verification manifest consumed by double-check/cto-review, #2210) + apply `reviewed` label + write local report + emit outcome marker |
+| 00-context | inline | Dedup gate (exit if already `reviewed`) + gather PR metadata, conventions, existing comments, CI status, the full diff, the **mechanical risk tier** (#2210), and **new auth surface detection** (#2918) |
+| 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion at tier-scaled depth (LOW bounded / MEDIUM full / HIGH full + runtime-shape checklist): analyze, confidence-score findings (≥80), **security-classify each finding** (#2918), convention compliance, Closes-vs-Refs. Clean isolated context. |
+| 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** + apply `reviewed` label + **apply `security` label if auth-surface or security-class findings** (#2918) + write local report + emit outcome marker |
 
 There is exactly one subagent stage (01). It is NOT split per-file or per-dimension.
 
@@ -102,17 +102,18 @@ Run stage 02 yourself (orchestrator context). Read CONTEXT.md:
 ```
 skills/review-pr/stages/02-post/CONTEXT.md
 ```
-Post the comment, apply the `reviewed` label, write the local report file, and emit the
-`[pylot] outcome=...` marker from the orchestrator (never from a subagent).
+Post the comment, apply the `reviewed` label, apply the `security` label if warranted (Step 2.5),
+write the local report file, and emit the `[pylot] outcome=...` marker from the orchestrator
+(never from a subagent).
 
 ## Stage handoff chain
 
 ```
-00-context (inline: dedup gate + context + full diff)
+00-context (inline: dedup gate + context + full diff + auth surface detection)
    │
-   └─► 01-cohesive-review (single subagent, clean context, whole diff)
+   └─► 01-cohesive-review (single subagent, clean context, whole diff + security classification)
           │
-          └─► 02-post (inline: comment + reviewed label + report + outcome marker)
+          └─► 02-post (inline: comment + reviewed label + security label if warranted + report + outcome marker)
 ```
 
 ## Exit paths
@@ -143,6 +144,9 @@ Post the comment, apply the `reviewed` label, write the local report file, and e
     do not "be thorough" past the tier; the saved depth is reallocated to HIGH-tier PRs.
 13. **The `review-state v1` block is always posted and must be valid JSON** — it is the ledger
     double-check and cto-review extend. Findings keep their `R{n}` IDs downstream; never renumber.
+14. **Security label is deterministic (#2918)** — stage 02 applies `security` if any finding is
+    security-class OR if `auth_surface: new-auth-surface`. No judgement: if the condition is met,
+    the label is applied, period. The label is set in the same mission as the review.
 
 ## Reference files
 

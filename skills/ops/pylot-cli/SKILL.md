@@ -120,7 +120,22 @@ so only spawn a second when both repos genuinely need code or log access.
 The capability gate fires **only** on the operator JWT a mission container runs on
 (`PYLOT_OPERATOR_TOKEN`, aliased to `PYLOT_DISPATCH_TOKEN`). Operators hold every
 operator capability, so the gate reduces to one question: is the route mapped at
-all? Mission-scoped worker routes are; unscoped and conversation-scoped ones are not.
+all? Mission-scoped worker routes are; unscoped ones are not.
+
+**Exception — session JWT (`$PYLOT_API_TOKEN`)**: the following conversation-scoped routes
+ARE mapped at `org:member` tier (`route-capability.mts:224-229`) and ARE reachable
+with a session JWT — the capability gate passes them through, and each handler enforces
+its own authorization server-side:
+
+| Route | Since | Auth boundary |
+|---|---|---|
+| `POST /conversations/:id/slack-post` | #2622 | handler: org member |
+| `POST /conversations/:id/slack-pickup` | #2622 | handler: org member |
+| `POST /conversations/:id/admin-action` | #2891 | handler: org-admin check via turn-trigger |
+| `POST /conversations/:id/admin-action/confirm` | #2891 | handler: org-admin check via turn-trigger |
+
+These are the only conversation-scoped routes that accept a session JWT. All other
+conversation-scoped routes and all `/admin/*` routes remain 403 for session JWTs — by design.
 
 | Call | Mission operator | Devbox worker · local `pylot auth login` |
 |---|---|---|
@@ -157,6 +172,100 @@ curl -s --max-time 30 -X POST "${AUTH[@]}" "$BASE/$WID/stop" >/dev/null 2>&1 || 
 
 Same routes, same semantics as §2–4. Prefer the CLI wherever it exists — one
 transport, one source of truth.
+
+## Org Setup From a Conversation (admin-action)
+
+> **Requires [pylot#2978](https://github.com/fellowship-dev/pylot/issues/2978)** —
+> `pylot convo admin-action` must be present in the worker image before workers are
+> directed here. Verify: `pylot convo admin-action --help` must succeed in the container.
+
+Session JWTs carry scopes `[dispatch, missions:read, heartbeat]` — `/admin/*` routes
+always 403 by design. `/conversations/:id/admin-action` is a separate authorization
+boundary (see §6 exception table) that accepts session JWTs; the endpoint enforces
+org-admin authorization server-side via the turn's triggering message sender.
+
+### Primary path
+
+```bash
+# auto-detects $CONVERSATION_ID from environment
+pylot convo admin-action <op> [key=value ...]
+
+# explicit conversation id override
+pylot convo admin-action <op> --conversation <id> [key=value ...]
+
+# confirm a staged (confirm-tier) operation after org admin replies
+pylot convo admin-confirm <code>
+
+# reject a pending confirm-tier operation
+pylot convo admin-confirm <code> --reject
+```
+
+### Operations
+
+Op list is **closed** — any value not in this table returns 400.
+**Never pass credentials or API keys in op args** — the gateway returns 400 and
+nothing is stored (hard boundary: credential-looking args are explicitly rejected).
+
+| op | tier | effect |
+|---|---|---|
+| `setup-status` | read (any conversation member) | onboarding state: App install, teams, repo bindings + worker-image presence, goals, operators/skills, provider chain, budget |
+| `team-create` | immediate (org admin requester) | create a team in this org |
+| `team-rename` | immediate (org admin requester) | rename a team |
+| `repos-add` | immediate (org admin requester) | bind a repo to a team; response includes worker-image presence |
+| `goals-set` | immediate (org admin requester) | set team goals (the store auto-pylot stage 00 reads) |
+| `operator-add` | immediate (org admin requester) | create an operator on a team |
+| `skill-assign` | immediate (org admin requester) | assign a skill to an operator |
+| `instructions-set` | immediate (org admin requester) | set operator instructions |
+| `org-update` | **confirm** | org settings (Slack default team, max_concurrent, …) |
+| `budget-set` | **confirm** (spend) | team daily budget cap |
+| `provider-assign` | **confirm** (model/spend routing) | attach an existing platform provider chain to org/team |
+
+### Confirm-tier flow
+
+Confirm-tier ops (`org-update`, `budget-set`, `provider-assign`) are staged first,
+then approved by an org admin's reply — the approver's identity is proven by their
+own conversation turn, not supplied by the worker.
+
+1. `pylot convo admin-action <confirm-op> [args]` → gateway returns `202 {code, summary}`
+2. Worker relays to the user: *"An org admin must reply `confirm <CODE>` within 10 minutes."*
+   (`summary` describes exactly what will change — relay it verbatim.)
+3. The org admin sends a reply; the approval turn's own message sender proves their identity.
+4. `pylot convo admin-confirm <CODE>` (called in the approval turn) → `200`, executed.
+5. Rejected or expired: `pylot convo admin-confirm <CODE> --reject` kills the pending action;
+   an expired code (>10 min) returns `410` and never executes.
+
+### Errors
+
+| error | meaning | user-facing guidance |
+|---|---|---|
+| `no_human_trigger` | Turn has no human sender (scheduled wake-up, automation) | Retry from a conversation turn triggered by a human message |
+| `unlinked_slack` | Sender's Slack account is not linked to a GitHub account | Ask the user to link their GitHub account in the Slack app settings |
+| `not_org_admin` | Linked GitHub account is not an admin of this org | Immediate ops need an org admin in the thread; confirm-tier: anyone can stage, an org admin must confirm |
+| `terminal_only` | Op would require a credential or secret value | Use the terminal CLI — credentials cannot transit the conversation |
+| `code_expired` | Confirm code is older than 10 minutes | Re-run the original op to get a fresh code |
+
+### Transition-window curl fallback (pre-#2978 images only)
+
+Use this only if the container image predates `pylot convo admin-action`.
+`$CONVERSATION_ID` is set in chat-worker containers. **Use `$PYLOT_API_TOKEN`
+(session JWT) — NOT `$PYLOT_DISPATCH_TOKEN`** (operator token 403s this endpoint
+by design; using it here is the exact mis-behavior pylot#2979 corrects).
+
+```bash
+# immediate op
+curl -s -X POST \
+  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"op\":\"$OP\"}" \
+  "${PYLOT_API:-$PYLOT_GATEWAY_URL}/conversations/$CONVERSATION_ID/admin-action"
+
+# confirm a staged op (after org admin replies with the code)
+curl -s -X POST \
+  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"code\":\"$CODE\"}" \
+  "${PYLOT_API:-$PYLOT_GATEWAY_URL}/conversations/$CONVERSATION_ID/admin-action/confirm"
+```
 
 ## Automations
 

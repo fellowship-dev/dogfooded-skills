@@ -123,10 +123,29 @@ Record in the handoff:
 - `last_comment_author: {login | none}`
 - Full list of all comment bodies (stage 02 reads them to identify unresolved blockers)
 
+5.3. **Resolve the pipeline lane (#2996)** — one variable, read straight off the label snapshot
+from 5.2. It changes the staging-evidence gate (5.5) and the merge bar (stage 03), and nothing
+else. It never changes the review's depth or standards.
+
+```bash
+LANE="none"
+case ",$(echo "$CURRENT_LABELS" | tr -d ' ')," in
+  *,lane:fast,*)    LANE="fast" ;;
+  *,lane:staging,*) LANE="staging" ;;
+esac
+echo "[cto-review] lane: $LANE"
+```
+
+Record `lane: {fast | staging | none}` in the handoff.
+
+`none` means the PR predates #2996 or its lane label never landed — treat it exactly as
+`staging`. Fast is opt-in and requires the explicit `lane:fast` label; there is no inference.
+
 5.5. **Staging evidence gate** — check BEFORE proceeding to the expensive diff/full-review path.
 Only fires for open PRs; merged/closed PRs skip this gate entirely.
 
-Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3):
+Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3 and `LANE` set
+in step 5.3):
 
 ```bash
 # Gate only fires for open PRs — merged/closed PRs skip evidence check
@@ -145,6 +164,23 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
       */migrations/*.sql) NEEDS_EVIDENCE=true; break ;;
     esac
   done <<< "$CHANGED_FILES"
+
+  # ── FAST-LANE WAIVER (#2996) ────────────────────────────────────────────────
+  # WHY THIS IS NOT A HOLE: this gate's `gateway/*` trigger is a whole-directory
+  # approximation of "deployable surface". The #2996 lane classifier answers the same
+  # question with a precise path list (infra, CI, migrations, gateway/modules/auth/**,
+  # gateway/shared/route-capability.mts, secrets, Dockerfile*, harness-versions.json) —
+  # anything it puts on lane:fast provably touches none of them. Without this waiver the
+  # fast lane is dead on arrival: nearly every pylot PR touches gateway/*, so every fast-lane
+  # PR would arrive here, find no staging evidence (test-in-staging never ran, by design),
+  # and get bounced to needs-work — a rework loop that can never terminate.
+  # It is a WAIVER OF THE EVIDENCE REQUIREMENT ONLY. The #2918 owner gate, the visual-evidence
+  # gate, CI, the review findings and the in-deploy full corpus gate are all untouched.
+  if [ "$NEEDS_EVIDENCE" = "true" ] && [ "${LANE:-none}" = "fast" ]; then
+    NEEDS_EVIDENCE=false
+    echo "[cto-review] staging evidence gate: WAIVED — lane:fast (#2996); the lane classifier already proved the diff touches no infra/CI/migration/auth/secrets/Dockerfile/harness path, and test-in-staging is not expected to have run"
+  fi
+
   # Record waiver rationale when the gate is not triggered (pylot#1861 fix 3).
   if [ "$NEEDS_EVIDENCE" = "false" ] && [ -n "$CHANGED_FILES" ]; then
     echo "[cto-review] staging evidence gate: WAIVED — no infra/gateway/migration paths in diff — staging not required"
@@ -608,6 +644,11 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 Labels present at stage-01 time: {comma-separated list, or "none"}
 (Note: stage 03 re-reads labels fresh from GitHub at merge time — this snapshot is for stage 02 judgement only.)
 
+## Lane (#2996)
+- lane: {fast | staging | none}
+- staging_evidence_waived_by_lane: {true | false}
+(`none` is treated as `staging` everywhere. Stage 03 re-reads the lane fresh at merge time.)
+
 ## Comment Thread Summary
 - comment_count: {N}
 - last_comment_author: {login | none}
@@ -659,7 +700,9 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 ## Success criteria
 - Merge state resolved and recorded BEFORE gathering (gates the short-circuit).
 - Label snapshot and all comment bodies captured (step 5.2) — feeds stage 02 judgement layer.
-- Staging evidence gate evaluated before the expensive full-diff fetch.
+- Lane resolved from the label snapshot (step 5.3) and recorded; absent label recorded as `none`.
+- Staging evidence gate evaluated before the expensive full-diff fetch, with the `lane:fast`
+  waiver applied and its rationale echoed when it fires.
 - Visual evidence gate evaluated after it, and only if it did not short-circuit — one blocker at a time.
 - For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.
 - For `closed-no-merge`, `missing-staging-evidence`, or `missing-visual-evidence`: short_circuit set;

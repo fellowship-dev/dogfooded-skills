@@ -172,6 +172,7 @@ else
     CLASSIFIER="scripts/classify-pr-surface.mts"
   else
     mkdir -p /tmp/lane-2996
+    # BASE_BRANCH is set in stage 00 context (e.g. "main"). Required for the fallback fetch.
     if gh api "repos/$REPO/contents/scripts/classify-pr-surface.mts?ref=$BASE_BRANCH" \
          --jq '.content' 2>/dev/null | base64 -d > /tmp/lane-2996/classify-pr-surface.mts \
        && [ -s /tmp/lane-2996/classify-pr-surface.mts ]; then
@@ -188,8 +189,10 @@ else
     # $APPLY_SECURITY comes from Step 2: a security PR is never fast-laned.
     LANE_LABELS=""
     [ "$APPLY_SECURITY" = "true" ] && LANE_LABELS="security"
+    LANE_ARGS=""
+    [ -n "$LANE_LABELS" ] && LANE_ARGS="--labels $LANE_LABELS"
     LANE=$(gh pr diff "$PR" --repo "$REPO" --name-only 2>/dev/null \
-            | node --import=tsx "$CLASSIFIER" --lane --labels "$LANE_LABELS" - 2>/tmp/lane-2996-reasons.txt)
+            | node --import=tsx "$CLASSIFIER" --lane $LANE_ARGS - 2>/tmp/lane-2996-reasons.txt)
     LANE=$(printf '%s' "$LANE" | tr -d '[:space:]')
     # Belt-and-suspenders: anything that is not exactly "fast" is staging.
     [ "$LANE" = "fast" ] || LANE="staging"
@@ -198,6 +201,12 @@ else
 
   gh label create "lane:fast"    --repo $REPO --color "0e8a16" --description "#2996 fast lane — review + cto-review merge, no double-check/staging" 2>/dev/null || true
   gh label create "lane:staging" --repo $REPO --color "5319e7" --description "#2996 staging lane — full pipeline (double-check, flowchad, test-in-staging)" 2>/dev/null || true
+  # Remove the opposite lane label if present (rework re-entry guard)
+  if [ "$LANE" = "fast" ]; then
+    gh pr edit $PR --repo $REPO --remove-label "lane:staging" 2>/dev/null || true
+  else
+    gh pr edit $PR --repo $REPO --remove-label "lane:fast" 2>/dev/null || true
+  fi
   gh pr edit $PR --repo $REPO --add-label "lane:$LANE"
   echo "[review-pr] lane label applied: lane:$LANE"
 fi

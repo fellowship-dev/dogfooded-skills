@@ -7,8 +7,9 @@
 - PR number + `org/repo`
 
 ## Task
-Post the structured review comment, apply the `reviewed` label, apply the `security` label if
-warranted (security-class findings or new auth surface), and write the local report file.
+Post the structured review comment, apply the `security` label if warranted (security-class
+findings or new auth surface), apply the deterministic `lane:*` label, apply the `reviewed` label
+LAST, and write the local report file.
 This stage runs inline in the orchestrator — do NOT spawn a Task. It is the only side-effecting
 stage. The `[pylot] outcome=...` marker MUST come from the orchestrator here, never from a
 subagent. NO Quest — write the local report file only.
@@ -92,19 +93,15 @@ with `jq . <<< "$REVIEW_STATE_JSON"` before posting.
 - Location must reference file path and line numbers from the diff
 - Verdict is always "proceed to double-check" — this skill never blocks
 
-### Step 2: Apply reviewed Label
+> **Label ORDER is load-bearing (#2996).** `reviewed` is the TRIGGER label — the automations that
+> react to it read the PR's label set as it appears in the `pull_request.labeled` webhook payload,
+> which is a snapshot at delivery time. Any label that a rule needs to see must therefore be on the
+> PR *before* `reviewed` is applied. So: **Step 2 (`security`) → Step 2.5 (`lane:*`) → Step 3
+> (`reviewed`, LAST).** Applying `reviewed` first re-opens the exact race #2996 exists to close: the
+> `reviewed` event would carry no lane label, `review-pr-on-reviewed` would not be excluded, and a
+> fast-lane PR would silently pay for a double-check + staging deploy anyway.
 
-Only AFTER the comment posts successfully.
-
-```bash
-gh label create "reviewed" --repo $REPO --color "bfd4f2" --description "First-pass review complete" 2>/dev/null || true
-gh pr edit $PR --repo $REPO --add-label "reviewed"
-```
-
-This label triggers the `review-pr-on-reviewed` event rule, which dispatches double-check. Never
-apply `double-checked` — that's a different skill entirely.
-
-### Step 2.5: Apply security Label (deterministic — #2918)
+### Step 2: Apply security Label (deterministic — #2918)
 
 The `security` label is a machine-readable hold signal consumed by cto-review's merge gate.
 Apply it NOW, in the same mission as the review, so the gate is set before any merge attempt.
@@ -139,8 +136,115 @@ fi
 - Do NOT apply `security` for non-auth findings (perf, docs, style, etc.).
 - The `security` label does NOT change the review-pr outcome — proceed to double-check as normal.
 - The cto-review merge gate reads the label at merge time; this step is just the setter.
+- `APPLY_SECURITY` is consumed by Step 2.5 — it is an INPUT to the lane classifier, so this step
+  must stay ahead of it.
 
-### Step 3: Write Report (local file only — NO Quest)
+### Step 2.5: Apply lane Label (deterministic — #2996)
+
+The `lane:*` label routes the PR through one of two pipelines. It is computed by a script, never by
+judgement — the same posture as Step 2.
+
+- `lane:staging` → today's full pipeline: double-check → flowchad → test-in-staging → cto-review.
+- `lane:fast` → review → cto-review-with-merge-authority. No double-check, no staging deploy.
+
+The classifier is `scripts/classify-pr-surface.mts --lane` **in the repo under review**. It prints
+exactly one bare word on stdout (`fast` | `staging`), reasons on stderr, and **always exits 0** —
+on any internal failure it prints `staging`, so a broken classifier costs latency, never safety.
+
+```bash
+# Rollout dial (#2996): only these repos get a lane label at all. A repo not in this list
+# gets NO lane label, which is the fail-closed default — every automation behaves exactly as it
+# did before #2996. Widen this list one repo at a time; see ROLLOUT.md.
+LANE_ENABLED_REPOS="fellowship-dev/pylot"
+
+APPLY_LANE="false"
+for r in $LANE_ENABLED_REPOS; do [ "$r" = "$REPO" ] && APPLY_LANE="true"; done
+
+if [ "$APPLY_LANE" != "true" ]; then
+  echo "[review-pr] lane label NOT applied — $REPO is not lane-enabled (pre-#2996 pipeline)"
+  LANE="n/a"
+else
+  # The classifier lives in the repo under review. review-pr is read-only (Hard Rule 7) and
+  # never checks out code, so resolve it from the pod's working copy if present; otherwise
+  # fetch just that one file at the PR's base. If neither works, fail closed to staging.
+  CLASSIFIER=""
+  if [ -f "scripts/classify-pr-surface.mts" ]; then
+    CLASSIFIER="scripts/classify-pr-surface.mts"
+  else
+    mkdir -p /tmp/lane-2996
+    # BASE_BRANCH is set in stage 00 context (e.g. "main"). Required for the fallback fetch.
+    if gh api "repos/$REPO/contents/scripts/classify-pr-surface.mts?ref=$BASE_BRANCH" \
+         --jq '.content' 2>/dev/null | base64 -d > /tmp/lane-2996/classify-pr-surface.mts \
+       && [ -s /tmp/lane-2996/classify-pr-surface.mts ]; then
+      CLASSIFIER="/tmp/lane-2996/classify-pr-surface.mts"
+    fi
+  fi
+
+  if [ -z "$CLASSIFIER" ]; then
+    LANE="staging"
+    echo "[review-pr] lane classifier unavailable in $REPO — failing closed to lane:staging"
+  else
+    # `gh pr diff --name-only` is the same changed-file producer cto-review's staging-evidence
+    # gate uses, so the two gates can never disagree about what changed.
+    # $APPLY_SECURITY comes from Step 2: a security PR is never fast-laned.
+    LANE_LABELS=""
+    [ "$APPLY_SECURITY" = "true" ] && LANE_LABELS="security"
+    LANE_ARGS=""
+    [ -n "$LANE_LABELS" ] && LANE_ARGS="--labels $LANE_LABELS"
+    LANE=$(gh pr diff "$PR" --repo "$REPO" --name-only 2>/dev/null \
+            | node --import=tsx "$CLASSIFIER" --lane $LANE_ARGS - 2>/tmp/lane-2996-reasons.txt)
+    LANE=$(printf '%s' "$LANE" | tr -d '[:space:]')
+    # Belt-and-suspenders: anything that is not exactly "fast" is staging.
+    [ "$LANE" = "fast" ] || LANE="staging"
+    sed 's/^/[review-pr] /' /tmp/lane-2996-reasons.txt 2>/dev/null || true
+  fi
+
+  gh label create "lane:fast"    --repo $REPO --color "0e8a16" --description "#2996 fast lane — review + cto-review merge, no double-check/staging" 2>/dev/null || true
+  gh label create "lane:staging" --repo $REPO --color "5319e7" --description "#2996 staging lane — full pipeline (double-check, flowchad, test-in-staging)" 2>/dev/null || true
+  # Remove the opposite lane label if present (rework re-entry guard)
+  if [ "$LANE" = "fast" ]; then
+    gh pr edit $PR --repo $REPO --remove-label "lane:staging" 2>/dev/null || true
+  else
+    gh pr edit $PR --repo $REPO --remove-label "lane:fast" 2>/dev/null || true
+  fi
+  gh pr edit $PR --repo $REPO --add-label "lane:$LANE"
+  echo "[review-pr] lane label applied: lane:$LANE"
+fi
+```
+
+**Rules:**
+- The lane is whatever the script says. Do **not** reason about it, do **not** override it, do
+  **not** "it's only a small gateway change" your way to `fast`. If the classification looks wrong,
+  the fix is a PR against `LANE_STAGING_GLOBS`, not a judgement call in this mission.
+- Anything that is not exactly the string `fast` becomes `staging`. Empty output, a crash, a
+  missing classifier, a repo that has no classifier — all resolve to `lane:staging`.
+- A PR that got `security` in Step 2 always lands on `lane:staging` (the classifier's own
+  `LANE_STAGING_LABELS` rule). #2918 and #2996 reinforce each other; neither replaces the other.
+- Apply exactly ONE lane label. If the PR already carries the other one from a previous run, remove
+  it first: `gh pr edit $PR --repo $REPO --remove-label "lane:fast"` (or `lane:staging`).
+- This step runs BEFORE Step 3. See the ordering note above — it is the whole point.
+
+### Step 3: Apply reviewed Label — LAST
+
+Only AFTER the comment posts successfully **and** after Steps 2 and 2.5 have applied their labels.
+
+```bash
+gh label create "reviewed" --repo $REPO --color "bfd4f2" --description "First-pass review complete" 2>/dev/null || true
+gh pr edit $PR --repo $REPO --add-label "reviewed"
+```
+
+This label is the pipeline TRIGGER. Which rule it fires now depends on the lane label already on
+the PR:
+
+| labels at this moment | rule that fires | pipeline |
+|---|---|---|
+| `lane:fast` + `reviewed` | `cto-review-on-reviewed-fast` | review → cto-review (merge authority) |
+| `lane:staging` + `reviewed` | `review-pr-on-reviewed` | double-check → flowchad → test-in-staging → cto-review |
+| no lane label + `reviewed` | `review-pr-on-reviewed` | pre-#2996 behaviour (fail-closed default) |
+
+Never apply `double-checked` — that's a different skill entirely.
+
+### Step 4: Write Report (local file only — NO Quest)
 
 ```bash
 REPORT_FILE="reports/$(date +%Y-%m-%d)-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
@@ -168,18 +272,22 @@ Report format:
 
 [CLAUDE.md check results]
 
+## Lane
+
+`lane:{fast|staging|n/a}` — {the classifier's first stderr reason, verbatim}
+
 ## Verdict
 
-[Clean / N findings — handed off to double-check]
+[Clean / N findings — handed off to {double-check (lane:staging) | cto-review (lane:fast)}]
 ```
 
 Write the report file and stop. Do NOT POST anywhere — operators surface the report via the mission
 report. (There is no Quest step.)
 
-### Step 4: Emit outcome marker (orchestrator, inline)
+### Step 5: Emit outcome marker (orchestrator, inline)
 
 ```bash
-echo "[pylot] outcome=\"review-pr complete — reviewed label applied\" status=success"
+echo "[pylot] outcome=\"review-pr complete — reviewed label applied, lane:$LANE\" status=success"
 ```
 
 ## Output: handoff.md
@@ -194,18 +302,23 @@ Posted
 
 ## Actions taken
 - Review comment posted to $PR_URL
-- `reviewed` label applied
 - `security` label applied: {yes — reason: auth_surface|security_findings | no}
+- `lane` label applied: {lane:fast | lane:staging | none — repo not lane-enabled}
+- lane reason: {classifier's first stderr reason, verbatim | "repo not lane-enabled"}
+- `reviewed` label applied (LAST, after security + lane)
 - Report written to {REPORT_FILE}
 
 ## Outcome
-[pylot] outcome="review-pr complete — reviewed label applied" status=success
+[pylot] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success
 ```
 
 ## Success criteria
 - Review comment posted (Summary always present)
-- `reviewed` label applied AFTER the comment posted
 - `security` label applied if auth-surface or security-class findings detected
+- Exactly one `lane:*` label applied on a lane-enabled repo, or none at all on a repo that is not
+  lane-enabled — never both, never a lane other than `fast`/`staging`
+- `reviewed` label applied AFTER the comment posted **and after the security + lane labels**
+  (the ordering is what makes the lane gate work — see the note above Step 2)
 - `double-checked` label NOT applied
 - Local report file written; NO Quest POST performed
 - `[pylot] outcome=...` marker emitted from the orchestrator
@@ -213,3 +326,6 @@ Posted
 ## Failure
 - Comment post fails → do NOT apply the label; emit
   `[pylot] outcome="review-pr failed at stage 02: comment post failed" status=failed`
+- Lane classification fails (classifier missing, crash, empty output) → this is NOT a stage
+  failure. Apply `lane:staging` and continue; the PR takes the pre-#2996 pipeline, which is
+  correct-but-slow. Record the reason in the handoff.

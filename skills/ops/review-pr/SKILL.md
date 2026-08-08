@@ -9,9 +9,9 @@ allowed-tools: Read, Bash, Glob, Grep, Task
 
 Read-only first-pass PR review, partitioned into 3 sequential stages. Gather PR context and the
 full diff (inline) → review the **whole diff in cohesion** as a single isolated-context subagent
-(the critical-judgement step) → post the review comment, apply the `reviewed` label, write the
-local report (inline). Never checks out code, never fixes issues, never pushes commits — that's
-double-check's job.
+(the critical-judgement step) → post the review comment, apply the deterministic `security` and
+`lane:*` labels, apply the `reviewed` label last, write the local report (inline). Never checks out
+code, never fixes issues, never pushes commits — that's double-check's job.
 
 ## Purpose
 
@@ -45,7 +45,7 @@ Parse from `$ARGUMENTS`: `PR=$1`, `REPO=$2`. Both required.
 |-------|------|-------------|
 | 00-context | inline | Dedup gate (exit if already `reviewed`) + gather PR metadata, conventions, existing comments, CI status, the full diff, the **mechanical risk tier** (#2210), and **new auth surface detection** (#2918) |
 | 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion at tier-scaled depth (LOW bounded / MEDIUM full / HIGH full + runtime-shape checklist): analyze, confidence-score findings (≥80), **security-classify each finding** (#2918), convention compliance, Closes-vs-Refs. Clean isolated context. |
-| 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** + apply `reviewed` label + **apply `security` label if auth-surface or security-class findings** (#2918) + write local report + emit outcome marker |
+| 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** + **apply `security` label if auth-surface or security-class findings** (#2918) + **apply the deterministic `lane:fast`/`lane:staging` label** (#2996) + apply `reviewed` label **LAST** + write local report + emit outcome marker |
 
 There is exactly one subagent stage (01). It is NOT split per-file or per-dimension.
 
@@ -102,9 +102,9 @@ Run stage 02 yourself (orchestrator context). Read CONTEXT.md:
 ```
 skills/review-pr/stages/02-post/CONTEXT.md
 ```
-Post the comment, apply the `reviewed` label, apply the `security` label if warranted (Step 2.5),
-write the local report file, and emit the `[pylot] outcome=...` marker from the orchestrator
-(never from a subagent).
+Post the comment, apply the `security` label if warranted (Step 2), apply the `lane:*` label
+(Step 2.5), apply the `reviewed` label LAST (Step 3), write the local report file, and emit the
+`[pylot] outcome=...` marker from the orchestrator (never from a subagent).
 
 ## Stage handoff chain
 
@@ -113,13 +113,17 @@ write the local report file, and emit the `[pylot] outcome=...` marker from the 
    │
    └─► 01-cohesive-review (single subagent, clean context, whole diff + security classification)
           │
-          └─► 02-post (inline: comment + reviewed label + security label if warranted + report + outcome marker)
+          └─► 02-post (inline: comment → security label → lane label → reviewed label → report → outcome marker)
+                         │
+                         ├── lane:fast    ──► cto-review-on-reviewed-fast  (review + cto merge)
+                         ├── lane:staging ──► review-pr-on-reviewed        (full pipeline)
+                         └── no lane      ──► review-pr-on-reviewed        (pre-#2996 default)
 ```
 
 ## Exit paths
 
 - **Already complete**: stage 00 dedup gate hits → `[pylot] outcome="already complete — reviewed label already applied" status=success` (orchestrator, inline)
-- **Success**: stage 02 emits `[pylot] outcome="review-pr complete — reviewed label applied" status=success`
+- **Success**: stage 02 emits `[pylot] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`
 
 ## Hard Rules
@@ -147,6 +151,17 @@ write the local report file, and emit the `[pylot] outcome=...` marker from the 
 14. **Security label is deterministic (#2918)** — stage 02 applies `security` if any finding is
     security-class OR if `auth_surface: new-auth-surface`. No judgement: if the condition is met,
     the label is applied, period. The label is set in the same mission as the review.
+15. **Lane label is a SCRIPT's answer, not yours (#2996)** — stage 02 runs
+    `scripts/classify-pr-surface.mts --lane` and applies whatever it prints. Never reason about the
+    lane, never override it, never talk yourself into `fast` because the diff "looks small". The
+    classifier is the single source of truth; disagreeing with it is a PR against
+    `LANE_STAGING_GLOBS`, not a decision in this mission. Anything other than the exact string
+    `fast` — a crash, empty output, a missing classifier, a repo that is not lane-enabled —
+    resolves to `lane:staging` / no label, i.e. the pre-#2996 pipeline. Fast is opt-in, always.
+16. **Label ORDER: `security` → `lane:*` → `reviewed`, and `reviewed` is LAST (#2996)** — the
+    automations that react to `reviewed` read the label set carried in that webhook payload, so a
+    lane label applied after `reviewed` is invisible to them and the PR silently pays for the full
+    pipeline. This ordering is the mechanism, not a style preference.
 
 ## Reference files
 

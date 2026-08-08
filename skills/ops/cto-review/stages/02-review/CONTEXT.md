@@ -48,6 +48,7 @@ comment and influences the verdict.
 
 **Read from the setup handoff:**
 - `## Label Snapshot` — every label present at stage-01 time
+- `## Lane (#2996)` — `fast`, `staging`, or `none` (treat `none` as `staging`)
 - `## Comment Thread Summary` — count + last author
 - `## All PR Comments` — full bodies
 
@@ -60,6 +61,7 @@ comment and influences the verdict.
 | `security` | Auth/security hold | Unresolved unless owner has explicitly cleared it; machine cannot clear this |
 | `chad-rejects` | FlowChad QA failure | Unresolved unless a subsequent FlowChad comment shows PASS; look for it in comments |
 | `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
+| `lane:fast`, `lane:staging` | #2996 pipeline lane | Not blockers. `lane:fast` means double-check, flowchad and test-in-staging were deliberately NOT dispatched. Their **absence is expected**, not an unresolved blocker — do not record "missing double-check" or "no staging evidence" as a blocker on a `lane:fast` PR, and do not let it lower the verdict. |
 
 **For each comment thread, identify blockers:**
 - Explicit hold comments (e.g. "do not merge", "waiting for owner") — resolved only if a subsequent comment or commit addresses them
@@ -219,6 +221,12 @@ Wrong-but-plausible: {none | list of findings}
 
 ## Receipts (#2918)
 Labels seen: {comma-separated list, or "none"}
+Lane: {fast | staging | none — from the setup handoff}
+{If lane is `fast`, add verbatim — the trade must be stated, never assumed:}
+Fast lane (#2996): double-check and the pre-merge staging deploy did not run. Compensating
+controls in force: review-pr findings + review-state ledger, this cohesive review, the #2918
+owner hard-stop (lane-independent), CI green, and the in-deploy full corpus gate that still
+guards prod on every release train. A missing `double-checked` label is expected here.
 Comments checked: {N} (last author: {login})
 Blockers found:
 | Blocker | Type | Status | Evidence |

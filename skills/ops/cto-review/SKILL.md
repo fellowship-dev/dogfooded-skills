@@ -33,9 +33,9 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918). Short-circuit if CLOSED-not-merged, if an infra/backend PR lacks staging evidence, or if a UI-surface PR lacks visual evidence. Both gates search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
-| 02-review | subagent | **Judgement layer first** (#2918): read all labels + all comments, identify and classify every blocker (resolved/unresolved). Then ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items + **receipts block**. |
-| 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918) — read labels fresh from GitHub; if `security` or `waiting-on-owner` present: post park comment, apply `waiting-on-owner`, emit `status=blocked`, STOP. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918), **resolve the pipeline lane** (#2996, step 5.3). Short-circuit if CLOSED-not-merged, if an infra/backend PR lacks staging evidence, or if a UI-surface PR lacks visual evidence. The staging gate is **waived on `lane:fast`** (#2996) — the lane classifier already proved the diff touches no deployable surface and test-in-staging deliberately never ran. Both gates search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
+| 02-review | subagent | **Judgement layer first** (#2918): read all labels + all comments, identify and classify every blocker (resolved/unresolved). Then ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items + **receipts block**. Review depth is identical in both lanes. |
+| 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918) — read labels fresh from GitHub; if `security` or `waiting-on-owner` present: post park comment, apply `waiting-on-owner`, emit `status=blocked`, STOP. **Step 3.1: lane merge bar** (#2996) — from the same fresh read: `lane:fast` requires `reviewed` only; everything else requires `reviewed` + `double-checked`. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
 
 Stage 02 is the isolated critical-judgement step — it receives only the setup handoff and its own
 CONTEXT.md, never orchestrator history.
@@ -176,12 +176,14 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 ```
 01-setup ──► 02-review ──► 03-synthesize-act (inline, reads 01 + 02)
    │   (labels+comments│    (judgement layer: labels/comments/blockers → receipts)
-   │   captured here)  │         │
+   │   +lane captured) │         │
    │                   ▼         ▼
-   │                        Step 3.0: Owner Gate (fresh label read)
+   │                        Step 3.0: Owner Gate (fresh label read) — LANE-INDEPENDENT
    │                              │
    │                              ├── security OR waiting-on-owner ──► park + status=blocked
-   │                              └── clear ──► normal merge/label flow
+   │                              └── clear ──► Step 3.1: lane merge bar
+   │                                              ├── lane:fast ──► require `reviewed`
+   │                                              └── else      ──► require `reviewed` + `double-checked`
    │
    ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
    ├── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
@@ -211,8 +213,10 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 10. **No Quest** — reporting is the local report file only.
 11. **Evidence gates fire first** — staging (step 5.5), then visual (step 5.6), one blocker at a
     time. On either short-circuit, skip everything else and post that gate's rejection inline.
-    Neither gate can be bypassed. The visual gate's rejection MUST name the self-serve path;
-    a bare "add screenshots" message is the defect it exists to fix.
+    Neither gate can be bypassed by prose or by verdict. The staging gate has exactly ONE
+    mechanical waiver beyond its own path check: `lane:fast` (#2996), applied by the label, not by
+    argument. The visual gate has no lane waiver at all. The visual gate's rejection MUST name the
+    self-serve path; a bare "add screenshots" message is the defect it exists to fix.
 12. **Scope by the verification manifest, don't assume** (#2210) — setup extracts the LAST
     `review-state v1` block; the review trusts what the manifest covers, spot-checks what it
     doesn't, treats still-open ledger findings as verdict inputs, and stage 03 re-posts the
@@ -225,7 +229,19 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     exists; the model talked itself into merging both times, so the check is code, not prompt.
 14. **Every verdict comment includes receipts (#2918)** — the `## Checked / Found` section (labels
     seen, comment count + last author, blockers → status) is mandatory in every comment stage 03
-    posts. No silent LGTM without an enumeration of what was checked.
+    posts. No silent LGTM without an enumeration of what was checked. On a fast-lane PR the
+    receipts must also name the lane and the compensating controls (Step 3.1 list) — the whole
+    point of the trade is that it is stated, not assumed.
+15. **The lane changes the merge BAR, never the review BAR (#2996)** — `lane:fast` removes exactly
+    two things: the `double-checked` label requirement, and the staging-evidence requirement. It
+    removes nothing from stage 02's depth, nothing from CI, and nothing from the #2918 owner gate,
+    which is lane-independent and fires identically in both lanes. A missing `double-checked` on a
+    `lane:fast` PR is the expected state — never `needs-work` it, never ask for a double-check,
+    never dispatch one. The lane is read from a FRESH GitHub label read at merge time; a PR with no
+    lane label is treated as `lane:staging`. Fast is opt-in, never inferred.
+16. **The fast lane does not touch prod's gate (#2996)** — it skips the PRE-MERGE staging deploy,
+    not the release train. `scripts/ci-release-gate.sh` still runs the unscoped full corpus before
+    anything reaches production. A fast-lane merge is a merge to develop; prod is still gated.
 
 ## Reference files
 

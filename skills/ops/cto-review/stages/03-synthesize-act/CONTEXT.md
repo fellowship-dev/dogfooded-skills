@@ -140,10 +140,56 @@ echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS"
   humans to find via label filter.
 - The park comment MUST include the receipts block from stage 02 so the owner has full context.
 - After firing, emit `status=blocked` and STOP — no merge, no further steps.
+- **The gate is LANE-INDEPENDENT (#2996).** It fires identically on `lane:fast` and `lane:staging`
+  and on a PR with no lane label. The fast lane removes double-check and the staging deploy; it
+  removes nothing from this gate. A fast-lane PR carrying `security` parks here exactly as it does
+  today — that is the #2918 acceptance criterion, replayed.
+
+#### Step 3.1: Resolve the merge bar for this lane (#2996)
+
+The required-label set is the ONLY thing the lane changes. Read the lane from the SAME fresh
+`$LIVE_LABELS` string that Step 3.0 just fetched — never from the stage 01 handoff, and never from
+the lane recorded at review time.
+
+```bash
+LANE="staging"                                             # default; also covers "no lane label"
+echo "$LIVE_LABELS" | grep -qE '"lane:fast"' && LANE="fast"
+echo "[cto-review] merge bar lane: $LANE"
+
+case "$LANE" in
+  fast)    REQUIRED_LABELS="reviewed" ;;                   # double-check never ran, by design
+  *)       REQUIRED_LABELS="reviewed double-checked" ;;
+esac
+
+MISSING=""
+for l in $REQUIRED_LABELS; do
+  echo "$LIVE_LABELS" | grep -qE "\"$l\"" || MISSING="$MISSING $l"
+done
+echo "[cto-review] required labels ($LANE lane): $REQUIRED_LABELS | missing:${MISSING:- none}"
+```
+
+**Why the fast lane drops `double-checked`:** on `lane:fast` the `review-pr-on-reviewed`
+automation is suppressed, so double-check is never dispatched and `double-checked` can never
+appear. Leaving it in the required set would make every fast-lane PR unmergeable — the merge bar
+would be waiting on a mission that the pipeline deliberately did not run. **A missing
+`double-checked` on a `lane:fast` PR is the expected state, not a defect. Do not apply
+`needs-work` for it, do not comment asking for a double-check, and do not dispatch one.**
+
+**What still guards a fast-lane merge** — name these in the receipts, they are the compensating
+controls the owner traded the staging net for:
+1. review-pr's findings and the `review-state v1` ledger (still-open findings are verdict inputs).
+2. This stage's own cohesive whole-diff judgement.
+3. The #2918 owner hard-stop at Step 3.0 — lane-independent, above.
+4. CI green — unchanged, and never merged red (Hard Rule 9).
+5. **The in-deploy full corpus gate.** The fast lane skips the *pre-merge staging deploy*; it does
+   not touch the release train. `scripts/ci-release-gate.sh` still runs the unscoped corpus before
+   anything reaches production, on every train, for every commit that lands on develop. A fast-lane
+   merge is a merge to develop, not a deploy to prod.
+6. Post-deploy journeys and evals (#2788) as the behavioural net after the fact.
 
 Only proceed to a merge if ALL hold:
 1. Stage 02 `merge_decision` is `merge` (verdict LGTM / "merge immediately").
-2. Required labels present (`reviewed`, `double-checked`).
+2. `MISSING` is empty — i.e. the lane's required labels from Step 3.1 are all present.
 3. CI is green.
 4. Step 3.0 gate did NOT fire.
 
@@ -221,6 +267,8 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 
 ## Actions Taken
 - merge_state: {open | merged | closed-no-merge}
+- lane: {fast | staging} (from the fresh label read at merge time)
+- required_labels: {reviewed | reviewed double-checked}
 - owner_gate_fired: {true (label: security|waiting-on-owner) | false}
 - comment_posted: {url or "skipped (closed-no-merge)" or "park comment (owner gate)"}
 - label_applied: {approved | needs-work | ready-to-merge | waiting-on-owner (gate) | none}
@@ -233,6 +281,10 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 
 ## Success criteria
 - Owner gate (Step 3.0) ran using a FRESH GitHub label read, not the cached handoff.
+- Merge bar (Step 3.1) resolved from that SAME fresh label read: `reviewed` on `lane:fast`,
+  `reviewed` + `double-checked` on `lane:staging` or no lane label.
+- On `lane:fast`, a missing `double-checked` was NOT treated as a blocker and did NOT produce
+  `needs-work` or a request for a double-check.
 - If gate fired: park comment posted (with receipts), `waiting-on-owner` applied, `status=blocked` emitted. STOP.
 - If gate clear: comment posted (with `## Checked / Found` receipts section), label applied per verdict, merge/label honoring merge state and CI, report file written (no Quest), outcome marker emitted from the orchestrator.
 

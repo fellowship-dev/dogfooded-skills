@@ -7,7 +7,7 @@ Last updated: 2026-05-26
 | Domain | Grade | Last audit | Notes |
 |--------|-------|------------|-------|
 | meta | B | 2026-05-26 | S3 ✅ (last commit 2026-05-07, 19d); S4 ✅ (3 open: measurement, benchmarking, hyperskills); S6 ❌ (hookshot not configured) |
-| ops | C | 2026-05-26 | S3 ✅ (last commit 2026-05-23, 3d); S4 ⚠️ (5 open: cto-heartbeat, hookshot, pii-check, distill, spec-kit); S6 ❌ (hookshot not configured) |
+| ops | C | 2026-05-26 | S3 ✅ (last commit 2026-05-23, 3d); S4 ⚠️ (4 open: hookshot, pii-check, distill, spec-kit); S6 ❌ (hookshot not configured) |
 | product | C | 2026-05-26 | S3 ⚠️ (last commit 2026-04-25, 31d — crossed 30d threshold); S4 ✅ (0 open); S6 ❌ (hookshot not configured) |
 
 ## Signal Matrix

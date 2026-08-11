@@ -509,7 +509,7 @@ resolve_identities() {
   if [ -s "$covall" ]; then
     dxm_coverage_batch "$RUN_ID" <"$covall"
     ID_RESOLVED="$(awk -F'\t' '$3=="script"{n++} END{print n+0}' "$covall")"
-    ID_UNRESOLVED="$(awk -F'\t' '$3=="script-with-fallback"{n++} END{print n+0}' "$covall")"
+    ID_UNRESOLVED="$(awk -F'\t' '$3=="llm"{n++} END{print n+0}' "$covall")"
   fi
   if [ "$rcb" -eq 3 ]; then return 3; fi
   if [ "$rcb" -ne 0 ]; then return 4; fi

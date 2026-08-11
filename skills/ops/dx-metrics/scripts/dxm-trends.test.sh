@@ -116,7 +116,7 @@ sqlite3 "$DXM_DB" < "$SKILL_DIR/schema.sql" >/dev/null
   done
   # One AI trailer, on the commit that carries it, so precision/recall has data.
   echo "INSERT INTO ai_agents(agent_key,label,match_email,is_ai) VALUES ('claude','Claude','noreply@anthropic.com',1);"
-  echo "INSERT INTO ai_trailers(repo_id,sha,trailer_name,trailer_email,agent_key,is_ai)
+  echo "INSERT INTO ai_trailers(repo_id,sha,raw_name,raw_email,agent_key,is_ai)
         VALUES (1,'${EXPECT_SHA[1]}','Claude','noreply@anthropic.com','claude',1),
                (1,'${EXPECT_SHA[3]}','Claude','noreply@anthropic.com','claude',1);"
   echo "COMMIT;"

@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>DX &amp; AI adoption report</title>
+<style>
+/* ---------------------------------------------------------------------------
+   dx-metrics dashboard — single self-contained file.
+   No external fonts, no CDN, no chart library. Opens by double-click.
+   Charts are hand-rolled inline SVG built from the inlined JSON.
+   --------------------------------------------------------------------------- */
+
+/* Light palette is defined on bare :root so a viewer with no explicit choice
+   still gets a complete set of tokens. Dark only redefines tokens. */
+:root {
+  --bg:        #faf9f7;
+  --panel:     #ffffff;
+  --panel-2:   #f4f2ee;
+  --ink:       #17160f;
+  --ink-2:     #45433a;
+  --muted:     #6f6d63;
+  --line:      #e3e0d8;
+  --line-2:    #cfcbc0;
+  --accent:    #2f5fd0;
+  --accent-2:  #7d93c8;
+  --ai:        #6b3fa0;
+  --ok:        #14684a;
+  --warn-ink:  #7a4f00;
+  --warn-bg:   #fff5e0;
+  --warn-line: #e8c877;
+  --alert-ink: #8f1d1d;
+  --alert-bg:  #fdecec;
+  --alert-line:#eab4b4;
+  --shadow:    0 1px 2px rgba(20,18,10,.06), 0 4px 14px rgba(20,18,10,.05);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #14150f;
+    --panel:     #1c1e17;
+    --panel-2:   #23261d;
+    --ink:       #eeeade;
+    --ink-2:     #c6c2b4;
+    --muted:     #8f8c80;
+    --line:      #2f3228;
+    --line-2:    #414534;
+    --accent:    #8fb0ff;
+    --accent-2:  #5b6f9e;
+    --ai:        #c4a2ec;
+    --ok:        #5fd0a4;
+    --warn-ink:  #f0c979;
+    --warn-bg:   #2c2413;
+    --warn-line: #5c4a1e;
+    --alert-ink: #f3a3a3;
+    --alert-bg:  #2e1717;
+    --alert-line:#5f2a2a;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#14150f; --panel:#1c1e17; --panel-2:#23261d; --ink:#eeeade; --ink-2:#c6c2b4;
+  --muted:#8f8c80; --line:#2f3228; --line-2:#414534; --accent:#8fb0ff; --accent-2:#5b6f9e;
+  --ai:#c4a2ec; --ok:#5fd0a4; --warn-ink:#f0c979; --warn-bg:#2c2413; --warn-line:#5c4a1e;
+  --alert-ink:#f3a3a3; --alert-bg:#2e1717; --alert-line:#5f2a2a;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+}
+
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 80px; }
+
+a { color: var(--accent); }
+
+/* ---- header ---- */
+.head { display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+.head h1 { font-size: 26px; line-height:1.2; margin:0 0 6px; letter-spacing:-.01em; }
+.head .sub { color: var(--muted); font-size:13px; font-family:var(--mono); }
+.head .spacer { flex:1 1 auto; }
+button.theme {
+  font: inherit; font-size:13px; cursor:pointer;
+  background: var(--panel); color: var(--ink-2);
+  border:1px solid var(--line-2); border-radius:8px; padding:6px 12px;
+}
+button.theme:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- banners ---- */
+.banner {
+  border-radius: 10px; padding: 14px 16px; margin: 0 0 14px;
+  border:1px solid var(--alert-line); background: var(--alert-bg); color: var(--alert-ink);
+}
+.banner.warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
+.banner .t { font-weight:700; letter-spacing:.02em; text-transform:uppercase; font-size:12px; margin-bottom:5px; }
+.banner p { margin:0 0 6px; font-size:13.5px; }
+.banner p:last-child { margin-bottom:0; }
+.banner ul { margin:6px 0 0; padding-left:20px; font-size:13.5px; }
+
+/* ---- sections ---- */
+section { margin-top: 34px; }
+h2 { font-size: 13px; text-transform:uppercase; letter-spacing:.09em; color: var(--muted);
+     margin:0 0 12px; font-weight:700; }
+h2 .pillar-note { text-transform:none; letter-spacing:0; font-weight:400; color:var(--muted); }
+
+/* ---- headline numbers ---- */
+.headline { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:12px; }
+.big {
+  background: var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:16px; box-shadow: var(--shadow);
+}
+.big .lab { font-size:12px; color:var(--muted); line-height:1.35; min-height:2.7em; }
+.big .num { font-size:34px; font-weight:650; letter-spacing:-.02em; margin-top:6px; font-variant-numeric: tabular-nums; }
+.big .num.na { font-size:19px; font-weight:600; color:var(--muted); }
+.big .delta { font-size:12px; font-family:var(--mono); color:var(--muted); margin-top:2px; }
+
+/* ---- metric cards ---- */
+.cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); gap:14px; }
+.card {
+  background: var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:16px 16px 14px; box-shadow: var(--shadow); display:flex; flex-direction:column;
+}
+.card .title { font-size:14.5px; font-weight:650; line-height:1.3; }
+.card .valrow { display:flex; align-items:flex-end; gap:14px; margin:10px 0 2px; flex-wrap:wrap; }
+.card .val { font-size:32px; font-weight:650; letter-spacing:-.02em; font-variant-numeric: tabular-nums;
+             line-height:1.05; white-space:nowrap; }
+.card .val.na { font-size:16px; font-weight:600; color:var(--muted); letter-spacing:0; white-space:normal; }
+.card .spark { margin-left:auto; max-width:100%; }
+.card .frac { font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:8px; }
+.card .foot { margin-top:auto; padding-top:12px; }
+
+/* proxy disclosure — always visible, never a tooltip. This is the hard rule. */
+.disc { border-top:1px dashed var(--line-2); margin-top:12px; padding-top:10px; font-size:12px; line-height:1.45; }
+.disc .k { font-weight:700; color:var(--ink-2); }
+.disc p { margin:0 0 6px; color:var(--muted); }
+.disc p:last-child { margin-bottom:0; }
+
+/* pills */
+.pills { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.pill {
+  font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  padding:3px 7px; border-radius:999px; border:1px solid var(--line-2); color:var(--muted);
+  background: var(--panel-2); white-space:nowrap;
+}
+.pill.proxy   { color: var(--warn-ink);  border-color: var(--warn-line);  background: var(--warn-bg); }
+.pill.na      { color: var(--alert-ink); border-color: var(--alert-line); background: var(--alert-bg); }
+.pill.partial { color: var(--warn-ink);  border-color: var(--warn-line);  background: var(--warn-bg); }
+.pill.low     { color: var(--alert-ink); border-color: var(--alert-line); background: var(--alert-bg); }
+.pill.ind     { color: var(--ai);        border-color: var(--ai); background: transparent; }
+
+/* ---- tables ---- */
+.tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:var(--shadow); }
+table { border-collapse:collapse; width:100%; font-size:13.5px; }
+th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); white-space:nowrap; }
+/* Deliberately NOT position:sticky. .tablewrap scrolls horizontally, not
+   vertically, so a sticky th sticks to the VIEWPORT and floats over the rows
+   as the whole page scrolls. */
+th { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700;
+     background:var(--panel-2); vertical-align:bottom; }
+td { vertical-align:top; }
+tr:last-child td { border-bottom:none; }
+td.num, th.num { text-align:right; font-family:var(--mono); font-variant-numeric: tabular-nums; }
+/* NOT ".wrap" — that class is the page container and would apply its 32/20/80px
+   page padding to every table cell. Distinct name on purpose. */
+td.memo { white-space:normal; min-width:240px; }
+
+/* ---- bars ---- */
+.barrow { display:grid; grid-template-columns: minmax(120px,190px) 1fr 92px; gap:12px; align-items:center;
+          padding:7px 0; border-bottom:1px solid var(--line); }
+.barrow:last-child { border-bottom:none; }
+.barrow .name { font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.barrow .track { height:9px; background:var(--panel-2); border-radius:999px; overflow:hidden; border:1px solid var(--line); }
+.barrow .fill { height:100%; background:var(--ai); border-radius:999px; }
+.barrow .n { font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right; }
+
+.note { font-size:12.5px; color:var(--muted); margin-top:10px; }
+.empty { color:var(--muted); font-size:13.5px; padding:14px 0; }
+
+footer { margin-top:52px; padding-top:18px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
+footer p { margin:0 0 7px; }
+code { font-family:var(--mono); font-size:.92em; background:var(--panel-2); padding:1px 5px; border-radius:4px; }
+
+@media print {
+  body { background:#fff; }
+  .card, .big, .tablewrap { box-shadow:none; break-inside:avoid; }
+  button.theme { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><noscript>
+  <h1>DX &amp; AI adoption report</h1>
+  <p>This report needs JavaScript to render. All of its data is already inside this
+  file — nothing is fetched from the network.</p>
+</noscript></div>
+
+<script type="application/json" id="dxm-data">
+__DXM_DATA__
+</script>
+
+<script>
+(function () {
+  "use strict";
+
+  var D;
+  try {
+    D = JSON.parse(document.getElementById("dxm-data").textContent);
+  } catch (e) {
+    document.getElementById("app").textContent = "Could not parse embedded data: " + e;
+    return;
+  }
+
+  // ---------------------------------------------------------------- helpers
+  function esc(s) {
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function isNum(v) { return typeof v === "number" && isFinite(v); }
+  function fmtNum(v, dp) {
+    if (!isNum(v)) return "—";
+    return v.toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  }
+  function fmtValue(unit, v) {
+    if (!isNum(v)) return "—";
+    switch (unit) {
+      case "percent": return fmtNum(v, 1) + "%";
+      case "ratio":   return fmtNum(v, 2);
+      case "hours":   return v >= 48 ? fmtNum(v / 24, 1) + " d" : fmtNum(v, 1) + " h";
+      case "days":    return fmtNum(v, 1) + " d";
+      case "count":   return fmtNum(v, Math.abs(v) < 10 && v % 1 !== 0 ? 2 : 0);
+      case "date":    return String(v);
+      default:        return fmtNum(v, 2);
+    }
+  }
+  function pct(n, d) { return (isNum(n) && isNum(d) && d > 0) ? (100 * n / d) : null; }
+  function last(a) { return a.length ? a[a.length - 1] : null; }
+
+  var PERIOD_WORD = { day: "day", week: "week", month: "month" };
+  var PW = PERIOD_WORD[D.meta.period_kind] || "period";
+
+  // ------------------------------------------------------------- svg charts
+  // Deliberately hand-rolled. A chart library would be an external dependency
+  // and this file must open from disk with no network at all.
+  function sparkline(pts, opts) {
+    opts = opts || {};
+    var w = opts.w || 200, h = opts.h || 46, pad = 5;
+    var real = pts.filter(function (p) { return isNum(p.y); });
+    if (real.length < 2) return "";
+    var ys = real.map(function (p) { return p.y; });
+    var min = Math.min.apply(null, ys), max = Math.max.apply(null, ys);
+    if (opts.zeroBase && min > 0) min = 0;
+    var span = (max - min) || 1;
+    var n = pts.length;
+    var X = function (i) { return pad + (n === 1 ? 0 : i * (w - 2 * pad) / (n - 1)); };
+    var Y = function (v) { return h - pad - ((v - min) / span) * (h - 2 * pad); };
+
+    // Break the polyline wherever the series has a gap, so a missing bucket
+    // never gets silently interpolated into a straight line.
+    var segs = [], cur = [];
+    pts.forEach(function (p, i) {
+      if (isNum(p.y)) { cur.push(X(i).toFixed(1) + "," + Y(p.y).toFixed(1)); }
+      else { if (cur.length > 1) segs.push(cur); cur = []; }
+    });
+    if (cur.length > 1) segs.push(cur);
+
+    var s = '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h +
+            '" role="img" aria-label="trend">';
+    segs.forEach(function (sg) {
+      s += '<polyline fill="none" stroke="' + (opts.color || "var(--accent)") +
+           '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + sg.join(" ") + '"/>';
+    });
+    var li = -1;
+    for (var i = pts.length - 1; i >= 0; i--) { if (isNum(pts[i].y)) { li = i; break; } }
+    if (li >= 0) {
+      var p = pts[li];
+      s += '<circle cx="' + X(li).toFixed(1) + '" cy="' + Y(p.y).toFixed(1) + '" r="3.4" ' +
+           (p.partial
+             ? 'fill="var(--panel)" stroke="var(--warn-ink)" stroke-width="2"'
+             : 'fill="' + (opts.color || "var(--accent)") + '"') + '/>';
+    }
+    return s + "</svg>";
+  }
+
+  function barchart(pts, opts) {
+    opts = opts || {};
+    var w = opts.w || 640, h = opts.h || 120, pad = 6, gap = 2;
+    var ys = pts.map(function (p) { return isNum(p.y) ? p.y : 0; });
+    var max = Math.max.apply(null, ys.concat([1]));
+    var n = pts.length || 1;
+    var bw = Math.max(2, (w - 2 * pad - gap * (n - 1)) / n);
+    var s = '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h +
+            '" preserveAspectRatio="none" role="img" aria-label="' + esc(opts.label || "series") + '">';
+    pts.forEach(function (p, i) {
+      var v = isNum(p.y) ? p.y : 0;
+      var bh = (v / max) * (h - 2 * pad);
+      var x = pad + i * (bw + gap);
+      var y = h - pad - bh;
+      var fill = p.partial ? "var(--warn-line)" : (opts.color || "var(--accent-2)");
+      s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) +
+           '" height="' + Math.max(1, bh).toFixed(1) + '" fill="' + fill + '" rx="1">' +
+           "<title>" + esc(p.x + ": " + (isNum(p.y) ? p.y : "no data")) +
+           (p.partial ? " (partial " + PW + ")" : "") + "</title></rect>";
+      if (isNum(p.y2) && p.y2 > 0) {
+        var bh2 = (p.y2 / max) * (h - 2 * pad);
+        s += '<rect x="' + x.toFixed(1) + '" y="' + (h - pad - bh2).toFixed(1) + '" width="' + bw.toFixed(1) +
+             '" height="' + Math.max(1, bh2).toFixed(1) + '" fill="var(--ai)" rx="1">' +
+             "<title>" + esc(p.x + ": " + p.y2 + " AI-assisted") + "</title></rect>";
+      }
+      // The partial marker is drawn LAST and as a full-height outline, because
+      // an overlay series can completely cover a short amber bar — and a partial
+      // bucket that looks like a complete one is the failure this exists to stop.
+      if (p.partial) {
+        s += '<rect x="' + x.toFixed(1) + '" y="' + pad + '" width="' + bw.toFixed(1) +
+             '" height="' + (h - 2 * pad) + '" fill="none" stroke="var(--warn-ink)" stroke-width="1.5" ' +
+             'stroke-dasharray="3 2" rx="1"><title>' + esc(p.x) + ": incomplete " + PW +
+             ", not comparable</title></rect>";
+      }
+    });
+    return s + "</svg>";
+  }
+
+  // --------------------------------------------------------------- indexing
+  var catalog = {};
+  (D.catalog || []).forEach(function (c) { catalog[c.metric_key] = c; });
+
+  var series = {};   // metric_key -> [rows sorted by period_start]
+  (D.metrics || []).forEach(function (m) {
+    (series[m.metric_key] = series[m.metric_key] || []).push(m);
+  });
+  Object.keys(series).forEach(function (k) {
+    series[k].sort(function (a, b) { return a.period_start < b.period_start ? -1 : 1; });
+  });
+
+  function isPartial(row) {
+    return row.is_current === 1 || (row.note && /partial/i.test(row.note));
+  }
+  // The most recent bucket that is NOT partial — everything headline is read
+  // from here. A partial current week that looks like a decline is the single
+  // most common way this class of dashboard lies.
+  function latestComplete(rows) {
+    for (var i = rows.length - 1; i >= 0; i--) { if (!isPartial(rows[i])) return rows[i]; }
+    return null;
+  }
+
+  var out = [];
+  function push(h) { out.push(h); }
+
+  // ----------------------------------------------------------------- header
+  var m = D.meta;
+  push('<div class="head"><div>' +
+       "<h1>Delivery &amp; AI-adoption report</h1>" +
+       '<div class="sub">' + esc(m.scope) + " &middot; <strong>" + esc(m.scope_key) + "</strong> &middot; " +
+       esc(m.period_kind) + "ly buckets, UTC &middot; " + esc(m.since) + " &rarr; " + esc(m.until) +
+       "<br>generated " + esc(m.generated_at) + " &middot; dx-metrics v" + esc(m.skill_version) +
+       " &middot; run #" + esc(m.run_id) + "</div></div>" +
+       '<div class="spacer"></div>' +
+       '<button class="theme" id="themebtn" type="button">Theme</button></div>');
+
+  // -------------------------------------------------------------- the rules
+  push('<div class="banner"><div class="t">Sensitive — read before sharing</div>' +
+       "<p><strong>This report must not be used to measure individual performance, and must not " +
+       "feed performance reviews, ratings, compensation, promotion or headcount decisions.</strong> " +
+       "Nothing on this page measures how good, fast or valuable a person is.</p>" +
+       "<p>Every number here is a proxy computed from git metadata and the GitHub API. It sees " +
+       "artifacts (commits, pull requests, trailers), never work, judgement, review, pairing, " +
+       "specification, debugging or support. Two teams with identical numbers can be doing " +
+       "completely different jobs.</p>" +
+       "<p>Treat it as a conversation starter about the system, not a verdict about people.</p></div>");
+
+  if (m.include_individuals) {
+    push('<div class="banner"><div class="t">Individual data is enabled in this render</div>' +
+         "<p>This copy was generated with <code>--include-individuals</code> and names people in the " +
+         "adoption-timing section. It is limited by design to <em>when a person’s tooling first " +
+         "emitted an AI co-author trailer</em> — there is no per-person throughput, volume or quality " +
+         "output anywhere in this tool, with or without the flag.</p>" +
+         "<p>Even so: an adoption date is not a competence signal, and a late date is far more often " +
+         "a tooling-configuration fact than a behavioural one. Do not circulate this copy.</p></div>");
+  }
+
+  // Pull-request history truncation. This has to be a top-of-page banner and
+  // not only a per-bucket note, because the buckets it invalidates are the OLD
+  // ones — exactly the ones a reader treats as the "before AI" baseline, and
+  // exactly the ones no card is showing a note for.
+  if (m.pr_floor) {
+    push('<div class="banner warn"><div class="t">Pull-request history begins ' + esc(m.pr_floor) +
+         " — everything before that date is a partial count</div>" +
+         "<p>PRs were fetched with a date bound. The GitHub API can only bound that walk on " +
+         "<em>last updated</em>, not on merge date, so buckets before " + esc(m.pr_floor) +
+         " contain only the pull requests that happened to be touched after that date — a late comment, " +
+         "a label, a reopen. They are not a sample; they are an arbitrary subset, and they understate " +
+         "every PR count by an unknown and non-uniform amount.</p>" +
+         "<p><strong>Do not read any pre-" + esc(m.pr_floor) + " bucket as a baseline.</strong> " +
+         "Those buckets are drawn hollow and are excluded from the headline. Commit-derived numbers are " +
+         "unaffected — git history was ingested in full. To get a real baseline, re-ingest with an " +
+         "earlier <code>--since</code> or with none at all.</p></div>");
+  }
+
+  var unsafe = D.integrity && D.integrity.unsafe_repos || [];
+  if (unsafe.length) {
+    push('<div class="banner"><div class="t">Unsafe repositories — numbers below are incomplete</div><ul>' +
+         unsafe.map(function (r) { return "<li><code>" + esc(r.full_name) + "</code> — " + esc(r.reason) + "</li>"; }).join("") +
+         "</ul></div>");
+  }
+
+  // ------------------------------------------------------------- empty case
+  var haveAnything = (D.org_periods || []).length || (D.metrics || []).length;
+  if (!haveAnything) {
+    push('<div class="banner warn"><div class="t">No aggregates for this scope and window</div>' +
+         "<p>The database has no <code>agg_org_period</code> or <code>agg_metric</code> rows for " +
+         "<strong>" + esc(m.scope_key) + "</strong> in " + esc(m.since) + " → " + esc(m.until) +
+         ". Run the ingest and aggregate steps first, or widen <code>--since</code>.</p></div>");
+  }
+
+  // -------------------------------------------------- headline (aggregates)
+  var ops = D.org_periods || [];
+  var opComplete = null;
+  for (var i = ops.length - 1; i >= 0; i--) { if (!ops[i].partial) { opComplete = ops[i]; break; } }
+  var opPrev = null;
+  if (opComplete) {
+    var ci = ops.indexOf(opComplete);
+    for (var j = ci - 1; j >= 0; j--) { if (!ops[j].partial) { opPrev = ops[j]; break; } }
+  }
+
+  function bigCard(label, valueHtml, deltaHtml) {
+    return '<div class="big"><div class="lab">' + label + "</div>" + valueHtml +
+           (deltaHtml ? '<div class="delta">' + deltaHtml + "</div>" : "") + "</div>";
+  }
+  function bigNum(v) {
+    return isNum(v) ? '<div class="num">' + esc(v) + "</div>"
+                    : '<div class="num na">not computed</div>';
+  }
+  function deltaOf(cur, prev, unit) {
+    if (!isNum(cur) || !isNum(prev)) return "vs previous " + PW + ": n/a";
+    var d = cur - prev;
+    var sign = d > 0 ? "+" : (d < 0 ? "−" : "±");
+    return "vs previous " + PW + ": " + sign + fmtValue(unit, Math.abs(d));
+  }
+
+  // Headline reads from agg_metric for the pair-model numbers, because they
+  // have no column in agg_org_period. rowAt() takes the value of a metric in
+  // the same bucket the rest of the headline is describing, so the cards cannot
+  // silently be about different periods.
+  function rowAt(key, period) {
+    var rows = series[key] || [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].period_start === period) return rows[i];
+    return null;
+  }
+  function valAt(key, period) { var r = rowAt(key, period); return r ? r.value : null; }
+
+  if (opComplete) {
+    var aiPrPct = pct(opComplete.ai_prs_merged, opComplete.prs_merged);
+    var aiPrPctPrev = opPrev ? pct(opPrev.ai_prs_merged, opPrev.prs_merged) : null;
+    var aiCommitPct     = valAt("adoption.ai_commit_share", opComplete.period_start);
+    var aiCommitPctPrev = opPrev ? valAt("adoption.ai_commit_share", opPrev.period_start) : null;
+    var levRow  = rowAt("leverage.commits_per_steerer", opComplete.period_start);
+    var levPrev = opPrev ? rowAt("leverage.commits_per_steerer", opPrev.period_start) : null;
+    var unkRow  = rowAt("meta.unknown_steerer_share", opComplete.period_start);
+    var hl = [
+      // Leverage first. On a team where agents do the committing and people do
+      // the steering, "how much does one human steer" is the number that
+      // answers what a seat buys; an AI percentage is a floor with an
+      // untrustworthy shape and does not.
+      bigCard("Commits per steerer<br>output one human steered, latest complete " + PW,
+              (levRow && isNum(levRow.value))
+                ? '<div class="num">' + esc(fmtNum(levRow.value, 1)) + "</div>"
+                : '<div class="num na">' +
+                  (levRow && levRow.note && /WITHHELD/.test(levRow.note) ? "withheld — cohort too small" : "not computed") +
+                  "</div>",
+              (levRow && isNum(levRow.value) && levRow.denominator
+                 ? esc(fmtNum(levRow.numerator, 0)) + " commits / " + esc(fmtNum(levRow.denominator, 0)) + " steerers · "
+                 : "") +
+              deltaOf(levRow && levRow.value, levPrev && levPrev.value, "count")),
+      bigCard("Merged PRs<br>human-steered only, latest complete " + PW,
+              bigNum(opComplete.prs_merged),
+              deltaOf(opComplete.prs_merged, opPrev && opPrev.prs_merged, "count")),
+      bigCard("Median cycle time<br>first commit → merge",
+              isNum(opComplete.cycle_time_p50_h)
+                ? '<div class="num">' + esc(fmtValue("hours", opComplete.cycle_time_p50_h)) + "</div>"
+                : '<div class="num na">not computed</div>',
+              deltaOf(opComplete.cycle_time_p50_h, opPrev && opPrev.cycle_time_p50_h, "hours")),
+      bigCard("AI-EXECUTED SHARE OF COMMITS<br><strong>FLOOR</strong> — the rest is unknown executor, not human",
+              isNum(aiCommitPct)
+                ? '<div class="num">&ge; ' + esc(fmtNum(aiCommitPct, 1)) + "%</div>"
+                : (isNum(aiPrPct)
+                    ? '<div class="num">&ge; ' + esc(fmtNum(aiPrPct, 1)) + "% <span style=\"font-size:13px\">of PRs</span></div>"
+                    : '<div class="num na">not computed</div>'),
+              deltaOf(aiCommitPct, aiCommitPctPrev, "percent")),
+      bigCard("Executions with NO identifiable steerer<br>the quality signal for this whole page",
+              (unkRow && isNum(unkRow.value))
+                ? '<div class="num"' + (unkRow.value >= 10 ? ' style="color:var(--alert-ink)"' : "") + ">" +
+                  esc(fmtNum(unkRow.value, 1)) + "%</div>"
+                : '<div class="num na">not computed</div>',
+              (!unkRow || !isNum(unkRow.value))
+                ? "not computed for this " + PW
+                : (unkRow.value >= 10
+                    ? "above 10% — the adoption TREND is not presentable"
+                    : "under 10% — the trend is readable, with the floor caveat"))
+    ];
+    // The headline reads agg_org_period directly, so it never passes through
+    // metric_catalog and never inherits a proxy_statement. Every number in it
+    // is nonetheless a proxy, and the largest single distortion — bot-authored
+    // PRs removed from every PR figure — has to be stated HERE, next to the
+    // numbers, not only in the integrity table further down. This is the
+    // section that gets screenshotted.
+    var igh = D.integrity || {};
+    var botNote = "";
+    if (isNum(igh.prs_bot) && igh.prs_bot > 0) {
+      var botPct = pct(igh.prs_bot, igh.prs_total);
+      botNote = '<div class="banner warn"><div class="t">Every PR number on this page excludes bot-authored PRs</div>' +
+        "<p>In this window " + esc(fmtNum(igh.prs_total, 0)) + " pull requests were merged. " +
+        esc(fmtNum(igh.prs_bot, 0)) +
+        (isNum(botPct) ? " of them (" + esc(fmtNum(botPct, 0)) + "%)" : " of them") +
+        " were authored by bot or agent accounts and are <strong>not counted anywhere on this page</strong>. " +
+        "Throughput, cycle time, defect ratio, innovation ratio and AI PR share are all computed over the " +
+        esc(fmtNum(igh.prs_merged, 0)) + " human-authored PRs only. On a team where agents open PRs directly, " +
+        "the human figure and the shipped figure answer different questions and neither one alone is " +
+        '&ldquo;delivery output&rdquo;.</p></div>';
+    }
+    push("<section><h2>At a glance " +
+         '<span class="pillar-note">— latest complete ' + PW + ", starting " + esc(opComplete.period_start) +
+         ". The current, incomplete " + PW + " is excluded here on purpose. Every figure below is a proxy; " +
+         "see the matching card further down for what each one cannot see.</span></h2>" +
+         botNote +
+         '<div class="headline">' + hl.join("") + "</div></section>");
+  }
+
+  // ---------------------------------------------------- the attribution pair
+  // The model this whole report rests on, drawn as the 2x2 it actually is.
+  // A previous version of this page had one axis — "human or AI" — and treated
+  // every commit it could not attribute as human. That single assumption
+  // manufactured an AI-adoption ramp out of identity resolution improving.
+  var ap = D.attribution || {};
+  if (isNum(ap.commits) && ap.commits > 0) {
+    function cell(n, cls) {
+      var p = pct(n, ap.commits);
+      return '<td class="num"' + (cls ? ' style="' + cls + '"' : "") + ">" + fmtNum(n, 0) +
+             (isNum(p) ? '<br><span style="color:var(--muted);font-size:11px">' + fmtNum(p, 1) + "%</span>" : "") +
+             "</td>";
+    }
+    push("<section><h2>How every commit is attributed " +
+         '<span class="pillar-note">— two axes, neither one inferred from the other. ' +
+         "Every commit in scope appears exactly once in this table.</span></h2>" +
+         '<div class="banner warn"><div class="t">A commit is not human OR AI. It has a steerer and an executor, and either can be absent</div>' +
+         "<p><strong>Steerer</strong> — the human who directed the work. <strong>Executor</strong> — the agent " +
+         "that produced the diff. A commit made by a person driving a coding agent is attributed to " +
+         "<em>both</em>, and that is the normal case here, not an edge case.</p>" +
+         "<p><strong>An UNKNOWN executor is not a human executor.</strong> It means no " +
+         "<code>Co-Authored-By</code> trailer named an agent. Trailer discipline arrived late in every " +
+         "repository this tool has been pointed at, so untrailered history is genuinely unknown and is " +
+         "never counted as human work. Every AI number on this page is therefore a <strong>floor</strong>, " +
+         "and the unknown-executor column is the width of the uncertainty band around it.</p>" +
+         "<p><strong>An UNKNOWN steerer is a measurement gap, not a person.</strong> These commits are " +
+         "counted as executions — they really happened — but they are never counted as human-steered, " +
+         "never enter a per-person view, and never enter the leverage numerator.</p></div>" +
+         '<div class="tablewrap"><table><thead><tr><th>Steerer \\ Executor</th>' +
+         '<th class="num">Executor: agent<br><span style="font-weight:400;text-transform:none">declared trailer</span></th>' +
+         '<th class="num">Executor: UNKNOWN<br><span style="font-weight:400;text-transform:none">no evidence either way</span></th>' +
+         '<th class="num">Total</th></tr></thead><tbody>' +
+         "<tr><td><strong>Steerer: known</strong><br>" +
+           '<span style="color:var(--muted);font-size:12px">' + esc(fmtNum(ap.steerers, 0)) +
+           " distinct people</span></td>" +
+           cell(ap.pair_known_agent) + cell(ap.pair_known_unk) + cell(ap.steerer_known) + "</tr>" +
+         "<tr><td><strong>Steerer: UNKNOWN</strong><br>" +
+           '<span style="color:var(--muted);font-size:12px">commit email resolved to nobody</span></td>' +
+           cell(ap.pair_unk_agent) + cell(ap.pair_unk_unk) +
+           cell(ap.steerer_unknown, ap.steerer_unknown && pct(ap.steerer_unknown, ap.commits) >= 10 ? "color:var(--alert-ink)" : "") +
+           "</tr>" +
+         "<tr><td><strong>Total</strong></td>" +
+           cell(ap.executor_agent) + cell(ap.executor_unknown) + cell(ap.commits) + "</tr>" +
+         "</tbody></table></div>" +
+         '<div class="note"><strong>Excluded from this table entirely:</strong> merge commits (not authorship) and ' +
+         esc(fmtNum(ap.steerer_machine || 0, 0)) + " commit(s) whose author is a known machine or bot account " +
+         "— a devbox worker, a CI runner, an agent with its own GitHub account. Those are steered by nobody this " +
+         "tool can name, and CONTRACT.md makes their exclusion mandatory.</div>" +
+         '<div class="note"><strong>There is no &ldquo;executor: human&rdquo; column, and there never will be.</strong> ' +
+         "Nothing in git or the GitHub API can produce that value. Offering it would mean inferring human " +
+         "authorship from the absence of a trailer, which is the specific error this model exists to remove.</div>" +
+         "</section>");
+  }
+
+  // ------------------------------------------------------- volume over time
+  if (ops.length > 1) {
+    var barPts = ops.map(function (p) {
+      return { x: p.period_start, y: p.prs_merged, y2: p.ai_prs_merged, partial: !!p.partial };
+    });
+    push("<section><h2>Merged pull requests per " + PW +
+         ' <span class="pillar-note">— purple overlay = at least one commit carried an AI co-author trailer' +
+         "; dashed amber outline = incomplete current " + PW + ", not comparable with the rest</span></h2>" +
+         '<div class="tablewrap" style="padding:10px 6px">' + barchart(barPts, { label: "merged PRs per " + PW }) +
+         '<div class="note" style="padding:0 8px 4px">' +
+         esc(ops[0].period_start) + " → " + esc(last(ops).period_start) +
+         " &middot; " + ops.length + " buckets &middot; counts merged PRs only; closed-unmerged PRs are never throughput." +
+         "</div></div></section>");
+  }
+
+  // ------------------------------------------------------------ metric grid
+  var PILLARS = [
+    ["leverage",     "Leverage",     "How much output one human steered. On a team where agents do the committing, this is what a seat buys — and it is a floor, because executions with no identifiable steerer are left out of the numerator."],
+    ["speed",        "Speed",        "Throughput and cycle time. Both are counts of artifacts, not of value delivered."],
+    ["quality",      "Quality",      "Derived from a PR classifier's opinion, not from a defect tracker."],
+    ["impact",       "Impact",       "Direction of effort. This tool cannot see customer outcomes at all."],
+    ["effectiveness","Effectiveness","DX Core 4 measures this with a survey. Git cannot produce it."],
+    ["adoption",     "AI adoption",  "Co-Authored-By trailers only. Every number here is a floor."],
+    ["risk",         "Risk",         "Concentration and single-point-of-failure signals."],
+    ["meta",         "About this report", "How much of this page a deterministic script decided on its own."]
+  ];
+
+  function card(c) {
+    var rows = series[c.metric_key] || [];
+    var cur = latestComplete(rows) || last(rows);
+    var prev = null;
+    if (cur) {
+      var idx = rows.indexOf(cur);
+      for (var k = idx - 1; k >= 0; k--) { if (!isPartial(rows[k])) { prev = rows[k]; break; } }
+    }
+
+    var h = '<div class="card"><div class="title">' + esc(c.label) + "</div>";
+
+    if (c.computable === 0) {
+      h += '<div class="valrow"><div class="val na">Unavailable — not computable</div></div>';
+      h += '<div class="pills"><span class="pill na">Not computable</span>' +
+           (c.privacy_class === "individual_ok" ? '<span class="pill ind">Individual-level</span>' : "") +
+           "</div>";
+      h += '<div class="foot"><div class="disc"><p><span class="k">Why there is no number:</span> ' +
+           esc(c.proxy_statement || "Not derivable from git or the GitHub API.") + "</p>" +
+           (c.cannot_see ? '<p><span class="k">What it would have measured:</span> ' + esc(c.cannot_see) + "</p>" : "") +
+           "</div></div></div>";
+      return h;
+    }
+
+    if (!rows.length) {
+      h += '<div class="valrow"><div class="val na">Not computed in this run</div></div>';
+      h += '<div class="pills">' + (c.is_proxy ? '<span class="pill proxy">Proxy</span>' : "") +
+           '<span class="pill">No data in window</span></div>';
+      h += '<div class="foot"><div class="disc">' +
+           (c.is_proxy && c.proxy_statement ? '<p><span class="k">Proxy:</span> ' + esc(c.proxy_statement) + "</p>" : "") +
+           (c.cannot_see ? '<p><span class="k">Cannot see:</span> ' + esc(c.cannot_see) + "</p>" : "") +
+           "</div></div></div>";
+      return h;
+    }
+
+    var partial = cur && isPartial(cur);
+    // The bucket in progress. It is deliberately NOT the number on the card —
+    // a half-finished week that reads as a collapse is the most common way this
+    // class of dashboard lies — but hiding it silently is its own lie, so it is
+    // named, valued, and shown as excluded.
+    var tail = last(rows);
+    var excluded = (tail && isPartial(tail) && tail !== cur) ? tail : null;
+    var lowN = cur && (isNum(cur.sample_size) ? cur.sample_size < 5
+                      : (isNum(cur.denominator) ? cur.denominator < 5 : false));
+    var pts = rows.map(function (r) { return { x: r.period_start, y: r.value, partial: isPartial(r) }; });
+
+    h += '<div class="valrow"><div class="val' + (isNum(cur && cur.value) ? "" : " na") + '">' +
+         (isNum(cur && cur.value) ? esc(fmtValue(c.unit, cur.value)) : "no value for this " + PW) + "</div>" +
+         sparkline(pts, { zeroBase: c.unit === "percent" || c.unit === "count" }) + "</div>";
+
+    var bits = [];
+    // Only show the fraction when BOTH halves exist. "3 / —" reads as a broken
+    // ratio; the reader cannot tell a missing denominator from a zero one.
+    if (cur && isNum(cur.numerator) && isNum(cur.denominator)) {
+      bits.push(fmtNum(cur.numerator, 0) + " / " + fmtNum(cur.denominator, 0));
+    }
+    if (cur && isNum(cur.sample_size)) bits.push("n = " + fmtNum(cur.sample_size, 0));
+    if (cur) bits.push(PW + " of " + cur.period_start);
+    if (prev && isNum(prev.value) && isNum(cur.value)) {
+      var d = cur.value - prev.value;
+      bits.push((d > 0 ? "+" : d < 0 ? "−" : "±") + fmtValue(c.unit, Math.abs(d)) + " vs prev");
+    }
+    h += '<div class="frac">' + esc(bits.join("  ·  ")) + "</div>";
+
+    h += '<div class="pills">' +
+         (c.is_proxy ? '<span class="pill proxy">Proxy</span>' : "") +
+         (partial ? '<span class="pill partial">Partial ' + PW + "</span>" : "") +
+         (excluded ? '<span class="pill partial">Partial ' + PW + " excluded</span>" : "") +
+         (lowN ? '<span class="pill low">Low sample</span>' : "") +
+         (c.privacy_class === "individual_ok" ? '<span class="pill ind">Individual-level</span>' : "") +
+         "</div>";
+
+    h += '<div class="foot"><div class="disc">' +
+         (c.is_proxy && c.proxy_statement ? '<p><span class="k">Proxy:</span> ' + esc(c.proxy_statement) + "</p>" : "") +
+         (c.cannot_see ? '<p><span class="k">Cannot see:</span> ' + esc(c.cannot_see) + "</p>" : "") +
+         (partial ? '<p><span class="k">Partial ' + PW + ":</span> this " + PW +
+                    " is still in progress, so the number above is not comparable with the ones before it.</p>" : "") +
+         (excluded ? '<p><span class="k">Excluded:</span> the current ' + PW + " (" + esc(excluded.period_start) +
+                     ") is still in progress and is not the number above. So far it reads " +
+                     (isNum(excluded.value) ? esc(fmtValue(c.unit, excluded.value)) : "no value") +
+                     " — incomplete, and shown hollow at the end of the trend line.</p>" : "") +
+         (cur && cur.note ? '<p><span class="k">This bucket:</span> ' + esc(cur.note) + "</p>" : "") +
+         (lowN ? '<p><span class="k">Sample:</span> the denominator is under 5. A ratio over a handful of ' +
+                 "pull requests is noise, not a trend.</p>" : "") +
+         "</div></div></div>";
+    return h;
+  }
+
+  // Every metric in agg_metric is safe to render by default: that table has no
+  // identity column, so a number from it structurally cannot name a person. The
+  // "Individual-level" pill marks metrics whose QUESTION is about people; actual
+  // names only ever come from the opt-in adoption section further down.
+  var rendered = {};
+  PILLARS.forEach(function (p) {
+    var key = p[0];
+    var cs = (D.catalog || []).filter(function (c) { return c.pillar === key; });
+    if (!cs.length) return;
+    cs.forEach(function (c) { rendered[c.metric_key] = 1; });
+    push("<section><h2>" + esc(p[1]) + ' <span class="pillar-note">— ' + esc(p[2]) + "</span></h2>" +
+         '<div class="cards">' + cs.map(card).join("") + "</div></section>");
+  });
+
+  // A catalog row in a pillar this renderer has never heard of must NOT vanish.
+  // Silently dropping a metric someone deliberately catalogued is the same class
+  // of failure as rendering one that was never catalogued.
+  var orphanPillars = (D.catalog || []).filter(function (c) { return !rendered[c.metric_key]; });
+  if (orphanPillars.length) {
+    push('<section><h2>Other metrics <span class="pillar-note">— catalogued under a pillar this ' +
+         "renderer does not have a section for (" +
+         esc(orphanPillars.map(function (c) { return c.pillar; })
+              .filter(function (v, i, a) { return a.indexOf(v) === i; }).join(", ")) +
+         "). Shown rather than dropped.</span></h2>" +
+         '<div class="cards">' + orphanPillars.map(card).join("") + "</div></section>");
+  }
+
+  // ------------------------------------------------------------- agent mix
+  var agents = D.agents || [];
+  if (agents.length) {
+    var tot = agents.reduce(function (a, x) { return a + x.commits; }, 0);
+    var mx = Math.max.apply(null, agents.map(function (x) { return x.commits; }));
+    push("<section><h2>Which AI agents left a trailer " +
+         '<span class="pillar-note">— computed in the renderer from raw trailers; see the note below</span></h2>' +
+         '<div class="tablewrap" style="padding:8px 16px">' +
+         agents.map(function (a) {
+           return '<div class="barrow"><div class="name">' + esc(a.label) + "</div>" +
+                  '<div class="track"><div class="fill" style="width:' +
+                  (mx ? (100 * a.commits / mx).toFixed(1) : 0) + '%"></div></div>' +
+                  '<div class="n">' + fmtNum(a.commits, 0) + "  " +
+                  (D.integrity && D.integrity.ai_commits
+                    ? "(" + fmtNum(100 * a.commits / D.integrity.ai_commits, 0) + "%)" : "") +
+                  "</div></div>";
+         }).join("") +
+         '<div class="note"><strong>Proxy, and a floor.</strong> This is the mix of agents that are ' +
+         "<em>configured to write a Co-Authored-By trailer</em>, not the mix of agents actually used. " +
+         "A commit with two AI trailers is counted once for each agent, so the shares can exceed 100%. " +
+         "Merge commits and bot accounts are excluded. Total AI-trailered commits in window: " +
+         esc(fmtNum((D.integrity && D.integrity.ai_commits) || tot, 0)) + ".</div>" +
+         "</div></section>");
+  }
+
+  // -------------------------------------------------------- adoption curve
+  var ac = D.adoption_curve || {};
+  if (ac.suppressed) {
+    push("<section><h2>AI adoption over time</h2>" +
+         '<div class="banner warn"><div class="t">Suppressed — cohort too small</div>' +
+         "<p>The contributor population for this scope is " + esc(ac.population) +
+         ", below the minimum cohort size of " + esc(ac.min_cohort) +
+         ". An adoption curve over a group this small identifies individuals, so it is not rendered. " +
+         "Raise <code>--min-cohort</code> deliberately if you accept that.</p></div></section>");
+  } else if (!(ac.points || []).length) {
+    push("<section><h2>AI adoption over time</h2>" +
+         '<div class="banner warn"><div class="t">Withheld — every bucket was too small</div>' +
+         "<p>" + esc(ac.withheld || 0) + " of " + esc(ac.population) +
+         " contributors have an AI-trailer date, but no single " + esc(ac.bucket || "bucket") +
+         " contained at least " + esc(ac.min_cohort) + " of them. A bucket holding one person " +
+         "<em>is</em> that person's adoption date, so nothing is plotted.</p></div></section>");
+  } else if ((ac.points || []).length) {
+    // Simple numbers first. A cumulative curve over a handful of dates drawn as
+    // bars reads as three enormous blocks and implies precision that three
+    // points do not have — so this is a proportion plus a dated step list.
+    var cum = 0;
+    var curve = ac.points.map(function (p) { cum += p.n; return { x: p.d, y: cum }; });
+    var share = pct(cum, ac.population);
+    push("<section><h2>AI adoption over time " +
+         '<span class="pillar-note">— when contributors first produced a commit carrying an AI ' +
+         "co-author trailer. Counts only, no names.</span></h2>" +
+         '<div class="tablewrap" style="padding:16px">' +
+         '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">' +
+         '<div style="font-size:34px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums">' +
+         esc(cum) + " of " + esc(ac.population) + "</div>" +
+         '<div style="color:var(--muted);font-size:13.5px">contributors in scope have ever produced an ' +
+         "AI-trailered commit" + (isNum(share) ? " (" + esc(fmtNum(share, 0)) + "%)" : "") + "</div></div>" +
+         '<div class="track" style="height:11px;margin:12px 0 16px;background:var(--panel-2);' +
+         'border:1px solid var(--line);border-radius:999px;overflow:hidden">' +
+         '<div style="height:100%;width:' + (isNum(share) ? share.toFixed(1) : 0) +
+         '%;background:var(--ai)"></div></div>' +
+         curve.map(function (p) {
+           return '<div class="barrow"><div class="name">' + esc(p.x) + "</div>" +
+                  '<div class="track"><div class="fill" style="width:' +
+                  (ac.population ? (100 * p.y / ac.population).toFixed(1) : 0) + '%"></div></div>' +
+                  '<div class="n">' + esc(p.y) + " cumulative</div></div>";
+         }).join("") +
+         (ac.withheld ? '<div class="note"><strong>' + esc(ac.withheld) + " adopter(s) withheld.</strong> " +
+            "Their first-trailer " + esc(ac.bucket || "bucket") + " held fewer than " + esc(ac.min_cohort) +
+            " people, which would have published an individual's adoption date. The cumulative figure " +
+            "above therefore understates adoption by that many people.</div>" : "") +
+         '<div class="note"><strong>Dates are bucketed to the ' + esc(ac.bucket || "period") +
+         ".</strong> Exact first-trailer days are never published — a day plus a count of one names a person.</div>" +
+         '<div class="note"><strong>Proxy, and a floor.</strong> This is when the <em>trailer</em> first ' +
+         "appeared — when the tooling was configured — not when the person started using AI. Someone with " +
+         "no date here is far more likely to be using a tool that writes no trailer than to be using " +
+         "nothing.</div></div></section>");
+  }
+
+  // --------------------------------------------- individuals (opt-in only)
+  if (m.include_individuals) {
+    var inds = (D.individuals && D.individuals.adoption) || [];
+    push("<section><h2>Adoption timing, by person " +
+         '<span class="pillar-note">— opt-in. Sorted by date. This is the only per-person output that ' +
+         "exists in this tool.</span></h2>");
+    if (!inds.length) {
+      push('<div class="empty">No adoption-timeline rows for this scope. Run the aggregate step.</div>');
+    } else {
+      push('<div class="tablewrap"><table><thead><tr>' +
+           "<th>Contributor</th><th>First AI-trailered commit</th><th>First agent</th>" +
+           "</tr></thead><tbody>" +
+           inds.map(function (r) {
+             return "<tr><td>" + esc(r.login) + "</td><td>" +
+                    (r.first_ai_trailer_at ? esc(String(r.first_ai_trailer_at).slice(0, 10))
+                                           : '<span style="color:var(--muted)">no trailer observed</span>') +
+                    "</td><td>" + esc(r.first_agent_key || "—") + "</td></tr>";
+           }).join("") + "</tbody></table></div>");
+    }
+    push('<div class="note"><strong>Deliberately absent:</strong> commit counts, PR counts, lines changed, ' +
+         "cycle time or any other volume or quality number per person. No flag produces them. " +
+         "&ldquo;No trailer observed&rdquo; overwhelmingly means the person’s tooling does not write one — " +
+         "it is not evidence that they do not use AI.</div></section>");
+  }
+
+  // ------------------------------------------------------------- integrity
+  var ig = D.integrity || {};
+  var integrityRows = [
+    ["Repositories in scope", ig.repo_count, ""],
+    ["Commits in window (all)", ig.commits_total, "before any exclusion"],
+    ["— merge commits, excluded", ig.commits_merge, "excluded from counts and attribution"],
+    ["— bot commits, excluded", ig.commits_bot,
+      "author is a GitHub Bot account or matched a bot_patterns rule"],
+    ["— unknown-steerer commits", ig.commits_unattributed,
+      "the author email resolved to nobody. Counted as executions, NOT as human work, and kept out of every per-person view and out of the leverage numerator"],
+    ["— agent-executor commits", ig.ai_commits,
+      "at least one Co-Authored-By naming a known agent. The remainder is UNKNOWN executor, never human executor"],
+    ["Merged PRs in window (all)", ig.prs_total, "before any exclusion — what the system actually shipped"],
+    ["— bot-authored PRs, excluded", ig.prs_bot,
+      "author is a GitHub Bot account or matched a bot_patterns rule"],
+    ["Merged PRs counted (human-steered or unknown steerer)", ig.prs_merged,
+      "EVERY PR number on this page is this figure, not the one above"],
+    ["— unclassified", ig.prs_unclassified,
+      "the denominator gap under the defect and innovation ratios"],
+    ["Unresolved commit emails", ig.unresolved_emails,
+      "across all ingested repos; the human-attention queue"]
+  ];
+  push("<section><h2>Data integrity " +
+       '<span class="pillar-note">— what was thrown away, and how big the gap is. Reported rather than ' +
+       "silently dropped.</span></h2>" +
+       '<div class="tablewrap"><table><thead><tr><th>Population</th><th class="num">Count</th>' +
+       "<th>Meaning</th></tr></thead><tbody>" +
+       integrityRows.map(function (r) {
+         return "<tr><td>" + esc(r[0]) + '</td><td class="num">' +
+                (isNum(r[1]) ? fmtNum(r[1], 0) : "—") + '</td><td class="memo" style="color:var(--muted)">' +
+                esc(r[2]) + "</td></tr>";
+       }).join("") + "</tbody></table></div>");
+  // The unknown-steerer gate. What it reports is no longer a bug being
+  // disclosed — unattributable commits are counted as UNKNOWN STEERER now, not
+  // as human — but its SIZE still decides whether any trend on this page is
+  // presentable, because a large and moving gap means the known-steerer subset
+  // is a different population in every bucket.
+  var apx = D.attribution || {};
+  if (isNum(apx.steerer_unknown) && isNum(apx.commits) && apx.commits > 0) {
+    var up = 100 * apx.steerer_unknown / apx.commits;
+    var kh = pct(apx.pair_known_agent, apx.steerer_known);
+    var ah = pct(apx.executor_agent, apx.commits);
+    if (up >= 10) {
+      push('<div class="banner" style="margin-top:12px"><div class="t">' + fmtNum(up, 1) +
+           "% of executions have no identifiable steerer — do not present a trend from this page</div>" +
+           "<p>These commits are <strong>not</strong> counted as human-steered. They are counted as " +
+           "executions with an unknown steerer: kept in every execution denominator, excluded from the " +
+           "leverage numerator, and excluded from every per-person view. In practice they come from " +
+           "devbox and CI addresses such as <code>user@host.local</code> or " +
+           "<code>worker@…internal</code> that GitHub has no account for.</p>" +
+           "<p><strong>What is still not safe to read is the SHAPE of any attribution-derived series.</strong> " +
+           "The two AI-share series on this page — over all executions (" +
+           (isNum(ah) ? esc(fmtNum(ah, 1)) + "%" : "n/a") + ") and over known-steerer executions only (" +
+           (isNum(kh) ? esc(fmtNum(kh, 1)) + "%" : "n/a") +
+           ") — are computed over different populations, and while this gap is large and moving they drift " +
+           "apart for reasons that have nothing to do with behaviour. <strong>Quote the most recent " +
+           "complete period's AI floor, not the ramp.</strong></p>" +
+           "<p>The fix is not a code change: fill in <code>identity-overrides.tsv</code> for the addresses " +
+           "in the review queue and re-run. Risk metrics (bus factor, top-contributor share) are computed " +
+           "over known steerers only, so their denominators are smaller than the totals above and are not " +
+           "comparable bucket-to-bucket while this gap moves.</p></div>");
+    } else {
+      push('<div class="banner warn" style="margin-top:12px"><div class="t">Attribution quality — ' +
+           fmtNum(up, 1) + "% of executions have no identifiable steerer</div>" +
+           "<p>Below the 10% bar, so the adoption series on this page can be read as a trend — with the " +
+           "standing caveat that every AI number here is a <strong>floor</strong>, and that its shape is " +
+           "affected by when each team started writing trailers. Unattributed executions are counted as " +
+           "unknown steerer, never as human, and are excluded from the leverage numerator and from every " +
+           "per-person view.</p>" +
+           "<p>Compare the two AI-share series: over all executions (" +
+           (isNum(ah) ? esc(fmtNum(ah, 1)) + "%" : "n/a") + ") versus over known-steerer executions only (" +
+           (isNum(kh) ? esc(fmtNum(kh, 1)) + "%" : "n/a") +
+           "). If those two move apart across the window, what you are watching is identity resolution, " +
+           "not behaviour.</p></div>");
+    }
+  }
+  push("</section>");
+
+  // -------------------------------------------------------------- coverage
+  var cov = (D.coverage && D.coverage.by_run) || [];
+  var backlog = (D.coverage && D.coverage.backlog) || [];
+  push("<section><h2>Script coverage " +
+       '<span class="pillar-note">— how much of this report a deterministic script decided, with no ' +
+       "model in the loop. Latest successful run of each script.</span></h2>");
+  if (!cov.length) {
+    push('<div class="empty">No coverage rows recorded yet.</div>');
+  } else {
+    push('<div class="tablewrap"><table><thead><tr><th>Script</th><th>Unit</th>' +
+         '<th class="num">Units</th><th class="num">Script</th><th class="num">Fallback</th>' +
+         '<th class="num">LLM</th><th class="num">Coverage</th></tr></thead><tbody>' +
+         cov.map(function (r) {
+           return "<tr><td><code>" + esc(r.script) + "</code></td><td>" + esc(r.unit_kind) + "</td>" +
+                  '<td class="num">' + fmtNum(r.total, 0) + '</td><td class="num">' + fmtNum(r.n_script, 0) +
+                  '</td><td class="num">' + fmtNum(r.n_script_fallback, 0) + '</td><td class="num">' +
+                  fmtNum(r.n_llm, 0) + '</td><td class="num">' + fmtNum(r.coverage_pct, 1) + "%</td></tr>";
+         }).join("") + "</tbody></table></div>");
+  }
+  if (backlog.length) {
+    push('<h2 style="margin-top:20px">LLM fallback backlog ' +
+         '<span class="pillar-note">— every row is a deterministic rule that does not exist yet, ranked ' +
+         "by how often it was needed</span></h2>" +
+         '<div class="tablewrap"><table><thead><tr><th>Unit</th><th>Why the script gave up</th>' +
+         '<th class="num">Hits</th></tr></thead><tbody>' +
+         backlog.map(function (r) {
+           return "<tr><td>" + esc(r.unit_kind) + '</td><td class="memo">' + esc(r.reason) +
+                  '</td><td class="num">' + fmtNum(r.hits, 0) + "</td></tr>";
+         }).join("") + "</tbody></table></div>");
+  }
+  push("</section>");
+
+  // ---------------------------------------------------------------- footer
+  push("<footer>" +
+       "<p><strong>How to read this.</strong> Buckets are calendar-aligned at UTC; weeks start Monday " +
+       "(ISO-8601). The current, incomplete bucket is outlined in dashed amber, named on every card that " +
+       "has one, and excluded from the headline numbers. " +
+       "&ldquo;Active contributor&rdquo; means a distinct non-bot login with at least one merged PR in the " +
+       "bucket. Cycle time runs from the first commit on the branch to merge, so it never includes the " +
+       "thinking, specifying or waiting that happened before that commit.</p>" +
+       "<p><strong>Every commit carries two attributions: a steerer and an executor, and either can be " +
+       "absent.</strong> A commit is never classified as human-or-AI. &ldquo;Steerer unknown&rdquo; means " +
+       "the commit email resolved to no GitHub account — a measurement gap, not a person, and never " +
+       "counted as human work. &ldquo;Executor unknown&rdquo; means no agent trailer was found, which is " +
+       "not evidence that a human wrote it.</p>" +
+       "<p><strong>AI adoption numbers are floors.</strong> They count only commits carrying a " +
+       "<code>Co-Authored-By</code> trailer naming a known agent. Autocomplete, chat-window copy-paste, " +
+       "any tool not configured to add a trailer, and squashes that dropped one are all invisible. Real " +
+       "usage is higher than what is shown here, by an amount this tool cannot estimate — and because " +
+       "trailer discipline arrived at different times in different repos, the <em>shape</em> of an AI " +
+       "series is less trustworthy than its floor.</p>" +
+       "<p><strong>Leverage is the headline on an agentic team.</strong> Commits and merged PRs per " +
+       "distinct steerer answer &ldquo;what does one human seat produce&rdquo;, which is the question an " +
+       "AI percentage cannot answer. It is a floor too: executions with no identifiable steerer are left " +
+       "out of its numerator, and the number is withheld entirely when the steerer count falls below the " +
+       "minimum cohort, because a per-person rate over one or two people is a per-person report.</p>" +
+       "<p><strong>Not on this page:</strong> Developer Experience Index (survey-only), deployment " +
+       "frequency, change failure rate, code quality, customer impact, and any per-person measure of " +
+       "output. Their absence is deliberate — a fabricated number would be worse than a gap.</p>" +
+       "<p>Generated by the <code>dx-metrics</code> skill, v" + esc(m.skill_version) +
+       ". This file is self-contained: it makes no network requests and loads no external code.</p>" +
+       "</footer>");
+
+  document.getElementById("app").innerHTML = out.join("");
+
+  // ----------------------------------------------------------------- theme
+  var root = document.documentElement;
+  try {
+    var saved = localStorage.getItem("dxm-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) { /* file:// with storage disabled — the media query still works */ }
+  var btn = document.getElementById("themebtn");
+  if (btn) {
+    btn.addEventListener("click", function () {
+      var cur = root.getAttribute("data-theme");
+      var sysDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var next = cur ? (cur === "dark" ? "light" : "dark") : (sysDark ? "light" : "dark");
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("dxm-theme", next); } catch (e) {}
+    });
+  }
+})();
+</script>
+</body>
+</html>

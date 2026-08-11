@@ -66,6 +66,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/refactor-codebase`](skills/ops/refactor-codebase/) | Autonomously refactor a codebase across many behavior-preserving cycles — decompose fat files by domain, deepen shallow modules, pay down architectural debt — driven by a persistent masterplan and verification gates. Complements `improve-codebase-architecture` (which only finds and reports opportunities) by actually doing the refactor, safely, over many sessions |
 | [`ops/seo-ops`](skills/ops/seo-ops/) | Evidence-first pre-launch, production, incident, and recurring SEO audits with deterministic static checks, browser boundaries, multilingual controls, and a reusable casebook |
 | [`ops/vercel-ops`](skills/ops/vercel-ops/) | Safe project guards, environment-variable synchronization, explicit previews, deployment-protection checks, and custom-domain verification for existing Vercel projects |
+| [`ops/dx-metrics`](skills/ops/dx-metrics/) | Measure AI-agent adoption and its effect on delivery — DX Core 4 speed/quality/impact, `Co-Authored-By` adoption curves, cycle time, ownership risk — from git + the GitHub API into a self-contained HTML dashboard. Aggregate by default; per-person data is opt-in and never a throughput leaderboard |
 
 ## Namespace Convention
 

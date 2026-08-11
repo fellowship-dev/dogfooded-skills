@@ -1,0 +1,109 @@
+# dx-metrics — identity overrides. Tab-separated. Edit freely; never edit code.
+#
+# SENSITIVE: once filled in, this file contains commit author emails and GitHub
+# logins. It is operational state, not an export. Do not commit a filled-in copy
+# of it, do not paste it into a ticket, and do not use anything derived from it
+# to evaluate a person.
+#
+# Columns:  directive <TAB> key <TAB> value <TAB> note(optional)
+#
+#   email    <commit-email>   <github-login>     confirm an email GitHub could not resolve
+#   alias    <other-login>    <canonical-login>  two accounts, one human
+#   bot      <login>          <why>              force-classify as a bot / machine
+#   human    <login>          <why>              force-classify as a human (beats the regex)
+#   exclude  <login>          <why>              a real account that is not a person (shared/service)
+#   name     <login>          <Display Name>     canonical name for the .mailmap
+#
+# The `email` key may be a GLOB (* and ?). Machine addresses come in families —
+# a new devbox mints a new hostname — so a glob keeps the file correct when the
+# box is replaced. Later lines win, so put globs first and exceptions after.
+#
+# Overrides are applied AFTER the automatic rules, so a line here always wins.
+#
+# WHY THIS FILE MATTERS MORE THAN IT LOOKS
+# ---------------------------------------
+# Every address left unmapped becomes an execution with an UNKNOWN STEERER. That
+# is honest, and it is also the number that gates the whole report: above ~10%,
+# no attribution-derived trend on the dashboard is presentable. Filling this in
+# is the single highest-leverage thing an operator can do to a run.
+#
+# Two different fixes live here and they must not be confused:
+#   * a HUMAN committing from a machine  -> map the address to that human's login
+#     (a person on their own laptop is still that person steering; the agent is
+#     the executor)
+#   * a MACHINE with no identifiable human behind it -> map it to a
+#     dxm-machine-* login. Anything matching ^dxm-machine- is auto-flagged as a
+#     bot by schema.sql, so it is excluded from delivery metrics rather than
+#     silently inflating the human population.
+#
+# ===========================================================================
+# EXAMPLE MAPPINGS — replace these with your own
+# ---------------------------------------------------------------------------
+# Everything below is illustrative. The shapes are real (they are the shapes
+# that actually occur), the addresses are not. Delete what does not apply and
+# add your own.
+#
+# CONFIRM BEFORE YOU ADD A LINE. Every mapping should be checked against the
+# commit author NAME recorded in git for that address, not guessed from the
+# local part of the email. A wrong line here is a permanent, silent
+# misattribution — worse than the gap it closes.
+# ===========================================================================
+
+# ---- machine families, by glob -------------------------------------------
+# An in-house coding agent running on ephemeral devboxes. The git author name
+# on these typically reads "CI Agent" / "CI Agent Operator" / "Build Bot".
+email	*@ci-agent.local	dxm-machine-ci-agent	in-house agent devbox; no human steerer identifiable
+email	*@ci-agent.internal	dxm-machine-ci-agent	in-house agent devbox; no human steerer identifiable
+email	*@build-bot.internal	dxm-machine-build-bot	build automation role account
+# Cloud devboxes: the hostname changes every time a box is replaced, which is
+# exactly why this is a glob and not an enumeration.
+email	ubuntu@*.ec2.internal	dxm-machine-ec2-devbox	cloud devbox default user; git author name "Ubuntu"
+email	*@*.ec2.internal	dxm-machine-ec2-devbox	cloud devbox; no human steerer identifiable
+
+# ---- named machine accounts ----------------------------------------------
+email	worker@ci-agent.local	dxm-machine-ci-agent	git author name "CI Agent"
+email	operator@ci-agent.internal	dxm-machine-ci-agent	in-house agent operator role
+email	ci@build-bot.internal	dxm-machine-build-bot	CI runner
+email	deploy@build-bot.internal	dxm-machine-build-bot	deploy automation
+email	scaffold-bot@users.noreply.github.com	dxm-machine-scaffold-bot	template/scaffolding automation
+
+# An agent that commits under its own GitHub account is an EXECUTOR, not a
+# contributor. Leaving one classified as a human made a small org read as
+# "1 human + 1 agent" while calling the agent a human, which is the exact
+# failure the pair model exists to prevent.
+email	agent@example.invalid	helper-bot	agent account
+bot	helper-bot	agent account, not a person: it is an executor, and a human steers it
+
+# ---- humans committing from their own machines ---------------------------
+# THE ARCHETYPAL PAIR. A human on their own laptop, with an agent doing the
+# typing: the steerer is the human, the executor is whatever the trailer says.
+# Leaving these unmapped is the largest single source of manufactured "unknown"
+# — in one measured org it was 577 commits from one engineer's laptop.
+email	octocat@*.local	octocat	any of this engineer's own machines
+email	octocat@workstation.local	octocat	desktop; git author name matches the GitHub account
+email	octocat@users.noreply.github.com	octocat	GitHub-provided no-reply address
+
+# ===========================================================================
+# WHAT TO LEAVE UNMAPPED, DELIBERATELY
+# ---------------------------------------------------------------------------
+# The residual unknown-steerer population is usually real humans whose commit
+# email GitHub cannot resolve to an account — contractors on an agency domain,
+# people who left, addresses never added to a GitHub profile. Guessing a login
+# for them is exactly the thing this tool must not do, so they stay UNKNOWN
+# STEERER and are reported as one.
+#
+# DO NOT LIST THOSE ADDRESSES HERE. This file is meant to be committable; the
+# addresses are not. They are already in the generated review queue, which is
+# chmod 600, lives under $DXM_HOME, and is never exported:
+#
+#     $DXM_HOME/identity/identity-review.tsv
+#
+# Every line in it is already a valid override line — fill in the login and
+# append it, with a note saying who confirmed it and when.
+#
+# Expect the gap to be concentrated and old: in the orgs this was calibrated
+# against, a handful of contractor addresses on one agency domain accounted for
+# 15-17% of lifetime history, while the current quarter was under 1%. Two
+# confirmed lines can move an org from "trend not presentable" to "presentable".
+# Only someone inside that org can confirm them. Nobody here guessed.
+# ===========================================================================

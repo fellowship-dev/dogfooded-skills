@@ -1,0 +1,23 @@
+# UI-surface paths for fellowship-dev/dogfooded-skills.
+#
+# Consumed by the cto-review visual-evidence check
+# (skills/ops/cto-review/stages/01-setup/CONTEXT.md, step 5.6).
+#
+# Format: one glob per line. `#` comments and blank lines ignored.
+#   path/**     — `**` matches across `/`, `*` and `?` do not
+#   !glob       — exclusion; an exclusion always wins over an include
+#
+# This repo is a skills library. It ships no deployed UI, so there are no include
+# lines here — the built-in extension default (.tsx .jsx .vue .svelte .css .scss
+# .sass .less .html .erb) stays in force, narrowed by the exclusions below.
+#
+# (A file with >=1 INCLUDE line switches the check to strict mode and replaces the
+# extension default entirely. An exclusion-only file like this one does not.)
+
+# Skills render HTML reports from their own pipelines. These templates are program
+# output, not a product surface: capturing one means running the whole skill against
+# real data on a browser-capable devbox, which costs far more than the screenshot is
+# worth. This is what fired on #125 (dx-metrics dashboard.html + trends.html).
+!**/templates/**
+!**/fixtures/**
+!**/testdata/**

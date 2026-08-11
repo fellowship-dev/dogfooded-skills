@@ -49,6 +49,8 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 | {description} | {label/comment/CI} | {resolved/unresolved/escalated} |
 {... or "_No blockers found_"}
 
+{VISUAL_EVIDENCE_NOTICE — omit this line entirely unless stage 01 recorded `notice: yes`}
+
 <!-- review-state v1
 {REVIEW_STATE_JSON}
 -->
@@ -57,6 +59,27 @@ COMMENT_EOF
 ```
 For `merge_state: merged`, prefix the verdict line to make clear it is a post-merge note.
 Capture the returned comment URL for the report.
+
+**Visual evidence notice (advisory, never a blocker).** If the stage 01 handoff's
+`## Visual Evidence` block says `notice: yes`, append exactly this block in place of the
+`{VISUAL_EVIDENCE_NOTICE}` placeholder. If it says `notice: no` or the block is absent, write
+nothing there — no empty heading, no "n/a" line.
+
+```
+_Advisory — not a merge blocker._ The diff touches a user-facing surface ({trigger}) and the PR
+body carries no embedded screenshot. If it renders something a person looks at, `/evidence-upload`
+captures and embeds it (capture needs a worker devbox — the operator image has no browser). If
+there is genuinely no visual surface, add a level-2 heading reading `Visual` + `Evidence` followed
+within 3 lines by `N/A — no user-facing surface` and this line stops appearing.
+```
+
+**Do NOT write a literal `Visual Evidence` markdown heading at column 0 anywhere in the comment.**
+The step 5.6 comment scan selects comments matching `^#{1,4}\s.*[Vv]isual\s+[Ee]vidence`; a notice
+carrying that heading would be read back as evidence on the next run and the check would grade its
+own homework. Keep the token split or in prose, exactly as above.
+
+The notice never applies a label, never changes the verdict, and never affects the merge bar in
+Step 3.1.
 
 **Finalizing `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
 `## Review State` (or a fresh `{"v":1,"findings":[]}` if `none`), set `"stage": "cto-review"`,

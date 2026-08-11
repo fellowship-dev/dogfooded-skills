@@ -456,6 +456,13 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   # Trigger: is there a user-facing surface in the diff? Prints "ext:<file>", "glob:<file>",
   # or "none". Exclusions always win; an explicit .pylot/ui-paths glob overrides the built-in
   # NOT_UI carve-out (which mirrors the *.d.mts exclusion the staging gate already has).
+  #
+  # STRICT INCLUDES: if .pylot/ui-paths carries at least one INCLUDE line, that list is the
+  # repo's complete declaration of its UI surface and the built-in extension default is not
+  # consulted at all. A repo that knows where its UI lives should not also be judged by a
+  # file-extension guess — that guess is what fired on a skills library shipping an HTML
+  # report template (dogfooded-skills#125). A file with only `!` exclusion lines does NOT
+  # enable strict mode: it narrows the extension default, which stays in force.
   UI_TRIGGER=$(printf '%s\n' "$CHANGED_FILES" | UI_PATHS="$UI_PATHS" python3 -c "
 import sys, os, re
 UI_EXT = re.compile(r'\.(tsx|jsx|vue|svelte|css|scss|sass|less|html|erb)\$', re.I)
@@ -485,7 +492,7 @@ for f in sys.stdin.read().splitlines():
         continue
     if any(g.match(f) for g in inc):
         print('glob:' + f); break
-    if UI_EXT.search(f) and not NOT_UI.search(f):
+    if not inc and UI_EXT.search(f) and not NOT_UI.search(f):
         print('ext:' + f); break
 else:
     print('none')
@@ -548,36 +555,39 @@ else:
     if [ "${VIS_RESULT%%:*}" = "PASS" ]; then
       echo "[cto-review] visual evidence gate: PASSED (${VIS_RESULT#*:})"
     else
-      echo "[cto-review] visual evidence gate: BLOCKED — ${VIS_RESULT#*:} (trigger: $UI_TRIGGER)"
-      mkdir -p .procedure-output/cto-review/01-setup
-      cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
-# Stage 01: Setup
-
-## PR Identity
-- PR: #${PR}
-- Repo: ${REPO}
-
-## Merge State
-- merge_state: open
-- short_circuit: missing-visual-evidence
-
-## Visual Evidence Gate
-- trigger: ${UI_TRIGGER}
-- result: ${VIS_RESULT}
-
-## Changed Files
-${CHANGED_FILES}
-EOF
-      exit 0
+      # NOT a blocker. Missing visual evidence is recorded as a NOTICE and the review runs to
+      # completion — see "Why this is a notice, not a gate" below. VIS_NOTICE is carried into
+      # the handoff and surfaced by stage 03 as an advisory line; it sets no short_circuit,
+      # applies no label, and never suppresses stages 02/03.
+      echo "[cto-review] visual evidence: NOTICE — ${VIS_RESULT#*:} (trigger: $UI_TRIGGER)"
+      VIS_NOTICE="yes"
     fi
   fi
 fi
 ```
 
-If `short_circuit: missing-visual-evidence` is set, the orchestrator posts the rejection comment,
-applies `needs-work`, and emits the blocked outcome without running stage 02 or 03. The rejection
-message MUST name the self-serve path — this block is fixable by the factory, and the whole point
-of the gate is that it stops asking humans for screenshots.
+### Why this is a notice, not a gate
+
+This check used to set `short_circuit: missing-visual-evidence`, which skipped stages 02 and 03
+entirely and applied `needs-work`. That was wrong in both directions:
+
+- **It withheld the review that was already earned.** On dogfooded-skills#125 a 12,208-line PR had
+  already surfaced two real test-infrastructure bugs; the missing screenshot threw the deeper
+  review away and returned a needs-work label instead of the findings. A missing picture is not a
+  reason to stop reading the code.
+- **The remedy is not always cheap.** The self-serve path assumes a capturable running surface. For
+  a skill whose "UI" is an HTML report rendered from its own pipeline, producing the screenshot
+  means running the entire pipeline against real data on a browser-capable devbox — far more
+  expensive than the evidence is worth, and the auto-dispatch loop cannot do it unattended.
+
+So: the review always runs, and missing visual evidence is reported as an advisory line in the
+review comment. It never blocks a merge and never applies a label on its own. The anti-nag property
+that motivated the machine-parsed gate is preserved — the verdict is still deterministic and stated
+once, rather than an LLM re-litigating it every run — but it is now advice, not a wall.
+
+The notice text MUST still name the self-serve path, and MUST NOT contain a literal `Visual
+Evidence` markdown heading at column 0 (the comment scan would otherwise read the notice back as
+evidence on the next run and grade its own homework).
 
 6. Extract the LAST `review-state v1` block from the PR comments (#2210) — the machine ledger the
    earlier pipeline stages accumulated (findings with statuses + verification manifest + risk tier):
@@ -660,13 +670,15 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - merge_state: {open | merged | closed-no-merge}
 - mergedAt: {timestamp or null}
 - mergeCommit: {oid or null}
-- short_circuit: {none | closed-no-merge | missing-staging-evidence | missing-visual-evidence}
+- short_circuit: {none | closed-no-merge | missing-staging-evidence}
 - ci_status: {passing | failing | pending | unavailable}
 - merge_strategy: {auto | label-only}
 
-## Visual Evidence Gate
+## Visual Evidence
 - trigger: {ext:<file> | glob:<file> | none}
 - result: {PASS:<reason> | BLOCK:<reason> | waived}
+- notice: {yes | no}
+(Advisory only — never a short_circuit. `notice: yes` means stage 03 appends the advisory line.)
 
 ## Repo Context
 - CLAUDE.md direction: {summary or "(no CLAUDE.md)"}
@@ -703,10 +715,10 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - Lane resolved from the label snapshot (step 5.3) and recorded; absent label recorded as `none`.
 - Staging evidence gate evaluated before the expensive full-diff fetch, with the `lane:fast`
   waiver applied and its rationale echoed when it fires.
-- Visual evidence gate evaluated after it, and only if it did not short-circuit — one blocker at a time.
+- Visual evidence evaluated after it, and only if it did not short-circuit. Its verdict is recorded
+  as `notice`; it never sets a short_circuit and never suppresses stages 02/03.
 - For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.
-- For `closed-no-merge`, `missing-staging-evidence`, or `missing-visual-evidence`: short_circuit set;
-  remaining gathering skipped.
+- For `closed-no-merge` or `missing-staging-evidence`: short_circuit set; remaining gathering skipped.
 
 ## Failure
 - PR does not exist or `gh auth` fails → write handoff with `status: error` and the reason; the

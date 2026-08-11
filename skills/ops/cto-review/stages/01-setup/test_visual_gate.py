@@ -146,6 +146,23 @@ TRIGGER_FIXTURES = [
      ["ui/src/hooks/x.ts"], "# a comment\n\n  \nui/src/**\n", "glob:"),
     ("t22) empty diff — waived, never blocks",
      [], "", "none"),
+
+    # --- STRICT INCLUDES (dogfooded-skills#125) -----------------------------
+    # >=1 include line makes the list authoritative: the built-in extension default is not
+    # consulted at all. This is what lets a repo say "I know where my UI is" instead of being
+    # judged by a filename guess.
+    ("t23) strict: .html outside the include list is NOT a trigger",
+     ["skills/ops/dx-metrics/templates/dashboard.html"], PYLOT_UI_PATHS, "none"),
+    ("t24) strict: .tsx outside the include list is NOT a trigger",
+     ["packages/docs/src/Landing.tsx"], PYLOT_UI_PATHS, "none"),
+    ("t25) strict does not weaken the list itself — an include still triggers",
+     ["packages/docs/src/Landing.tsx", "ui/src/app/page.tsx"], PYLOT_UI_PATHS, "glob:"),
+    ("t26) exclusion-ONLY file does not enable strict — extension default stays in force",
+     ["ui/src/app/page.tsx"], "!**/templates/**\n", "ext:"),
+    ("t27) exclusion-only file still narrows: the excluded .html is waived",
+     ["skills/ops/dx-metrics/templates/dashboard.html"], "!**/templates/**\n", "none"),
+    ("t28) the real dogfooded-skills#125 diff, no ui-paths — still triggers (unchanged default)",
+     ["skills/ops/dx-metrics/templates/dashboard.html", "skills/ops/dx-metrics/run.sh"], "", "ext:"),
 ]
 
 

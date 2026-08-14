@@ -22,11 +22,11 @@ stage runs inline in the orchestrator — do NOT spawn a Task. All GH side effec
   intervention. `status=blocked` would trigger an unnecessary escalation to the human operator.)
 
 - **`merged`** (already merged):
-  Post the review as a **post-merge note** (Step 1). Apply the verdict label (Step 2). Do NOT
-  attempt any merge in Step 3 — skip merge entirely. Write the report (Step 4). Emit success with
+  Post the review as a **post-merge note** (Step 1). Apply the verdict label (Step 4). Do NOT
+  attempt any merge in Step 5 — skip merge entirely. Write the report (Step 6). Emit success with
   `action=post-merge-note`.
 
-- **`open`**: full path — Steps 1-4 below, then emit success.
+- **`open`**: full path — Steps 1-7 below, then emit success.
 
 ## Steps
 
@@ -79,7 +79,7 @@ carrying that heading would be read back as evidence on the next run and the che
 own homework. Keep the token split or in prose, exactly as above.
 
 The notice never applies a label, never changes the verdict, and never affects the merge bar in
-Step 3.1.
+Step 3.
 
 **Finalizing `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
 `## Review State` (or a fresh `{"v":1,"findings":[]}` if `none`), set `"stage": "cto-review"`,
@@ -88,21 +88,11 @@ findings `open`; LGTM with dismissals records the dismissal reasons in `note`), 
 `verified` entries for the dimensions this review covered. Validate with `jq .` before posting —
 the block is the pipeline's permanent audit trail (close-audit and re-checks read it).
 
-### Step 2: Apply the verdict label
-```bash
-gh label create "approved" --repo $REPO --color "0e8a16" --description "CTO approved — ready to merge" 2>/dev/null || true
-gh label create "needs-work" --repo $REPO --color "d93f0b" --description "Needs work before merge" 2>/dev/null || true
+### Step 2: Security / Owner Gate — RUNS BEFORE VERDICT LABEL (#2918, #3009)
 
-if [[ "$VERDICT" == "merge" ]]; then
-  gh pr edit $PR --repo $REPO --add-label "approved"
-elif [[ "$VERDICT" == "hold" || "$VERDICT" == "sendback" ]]; then
-  gh pr edit $PR --repo $REPO --add-label "needs-work"
-fi
-```
-
-### Step 3: Merge or label (OPEN PRs only — skip entirely if merge_state is `merged`)
-
-#### Step 3.0: Security / Owner Gate — LAST CHECK BEFORE MERGE (#2918)
+This gate runs BEFORE the verdict label (Step 4) is applied. When it fires and exits, `needs-work`
+is never written to the PR — preventing phantom `rework-on-needs-work` missions on parked PRs.
+(#3009 — was Step 3.0, moved here to correct label ordering.)
 
 This check is **deterministic code, not judgement**. It runs immediately before the merge call,
 using a FRESH label read from GitHub (not from the stage 01 handoff cache). If the PR carries
@@ -168,10 +158,10 @@ echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS"
   removes nothing from this gate. A fast-lane PR carrying `security` parks here exactly as it does
   today — that is the #2918 acceptance criterion, replayed.
 
-#### Step 3.1: Resolve the merge bar for this lane (#2996)
+### Step 3: Resolve the merge bar for this lane (#2996)
 
 The required-label set is the ONLY thing the lane changes. Read the lane from the SAME fresh
-`$LIVE_LABELS` string that Step 3.0 just fetched — never from the stage 01 handoff, and never from
+`$LIVE_LABELS` string that Step 2 just fetched — never from the stage 01 handoff, and never from
 the lane recorded at review time.
 
 ```bash
@@ -202,7 +192,7 @@ would be waiting on a mission that the pipeline deliberately did not run. **A mi
 controls the owner traded the staging net for:
 1. review-pr's findings and the `review-state v1` ledger (still-open findings are verdict inputs).
 2. This stage's own cohesive whole-diff judgement.
-3. The #2918 owner hard-stop at Step 3.0 — lane-independent, above.
+3. The #2918 owner hard-stop at Step 2 — lane-independent, above.
 4. CI green — unchanged, and never merged red (Hard Rule 9).
 5. **The in-deploy full corpus gate.** The fast lane skips the *pre-merge staging deploy*; it does
    not touch the release train. `scripts/ci-release-gate.sh` still runs the unscoped corpus before
@@ -210,11 +200,25 @@ controls the owner traded the staging net for:
    merge is a merge to develop, not a deploy to prod.
 6. Post-deploy journeys and evals (#2788) as the behavioural net after the fact.
 
+### Step 4: Apply the verdict label
+```bash
+gh label create "approved" --repo $REPO --color "0e8a16" --description "CTO approved — ready to merge" 2>/dev/null || true
+gh label create "needs-work" --repo $REPO --color "d93f0b" --description "Needs work before merge" 2>/dev/null || true
+
+if [[ "$VERDICT" == "merge" ]]; then
+  gh pr edit $PR --repo $REPO --add-label "approved"
+elif [[ "$VERDICT" == "hold" || "$VERDICT" == "sendback" ]]; then
+  gh pr edit $PR --repo $REPO --add-label "needs-work"
+fi
+```
+
+### Step 5: Merge or label (OPEN PRs only — skip entirely if merge_state is `merged`)
+
 Only proceed to a merge if ALL hold:
 1. Stage 02 `merge_decision` is `merge` (verdict LGTM / "merge immediately").
-2. `MISSING` is empty — i.e. the lane's required labels from Step 3.1 are all present.
+2. `MISSING` is empty — i.e. the lane's required labels from Step 3 are all present.
 3. CI is green.
-4. Step 3.0 gate did NOT fire.
+4. Step 2 (owner gate) did NOT fire.
 
 ```bash
 # Verify CI is green
@@ -258,7 +262,7 @@ fi
 If CI is failing: do NOT merge — the verdict should already be hold; note the CI failure in the
 comment if not already noted. Record the action taken: `merged` | `labeled` | `closed-superseded` | `held` (CI-red only — never for a conflict).
 
-### Step 4: Write the report file (local only — NO Quest)
+### Step 6: Write the report file (local only — NO Quest)
 Use the template in `shared/report-format.md`:
 ```bash
 REPORT_PATH="$PYLOT_DIR/reports/$(date +%Y-%m-%d)-cto-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
@@ -267,12 +271,12 @@ REPORT_PATH="$PYLOT_DIR/reports/$(date +%Y-%m-%d)-cto-review-$(echo $REPO | tr '
 checklist, action items, and the posted comment URL into the file. There is NO Quest POST — the
 report ends at the file write; operators surface it via the mission report.
 
-### Step 5: Emit the outcome marker (orchestrator only)
+### Step 7: Emit the outcome marker (orchestrator only)
 ```
 [pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
 ```
 On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
-On the owner gate fire (step 3.0), emit the parked marker and STOP:
+On the owner gate fire (Step 2), emit the parked marker and STOP:
 ```
 [pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
 ```
@@ -303,8 +307,8 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 ```
 
 ## Success criteria
-- Owner gate (Step 3.0) ran using a FRESH GitHub label read, not the cached handoff.
-- Merge bar (Step 3.1) resolved from that SAME fresh label read: `reviewed` on `lane:fast`,
+- Owner gate (Step 2) ran using a FRESH GitHub label read, not the cached handoff.
+- Merge bar (Step 3) resolved from that SAME fresh label read: `reviewed` on `lane:fast`,
   `reviewed` + `double-checked` on `lane:staging` or no lane label.
 - On `lane:fast`, a missing `double-checked` was NOT treated as a blocker and did NOT produce
   `needs-work` or a request for a double-check.

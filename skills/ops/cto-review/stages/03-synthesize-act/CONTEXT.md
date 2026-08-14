@@ -22,9 +22,9 @@ stage runs inline in the orchestrator — do NOT spawn a Task. All GH side effec
   intervention. `status=blocked` would trigger an unnecessary escalation to the human operator.)
 
 - **`merged`** (already merged):
-  Post the review as a **post-merge note** (Step 1). Apply the verdict label (Step 4). Do NOT
-  attempt any merge in Step 5 — skip merge entirely. Write the report (Step 6). Emit success with
-  `action=post-merge-note`.
+  Post the review as a **post-merge note** (Step 1). Skip Steps 2 and 3 (OPEN PRs only). Apply
+  the verdict label (Step 4). Do NOT attempt any merge in Step 5 — skip merge entirely. Write the
+  report (Step 6). Emit success with `action=post-merge-note`.
 
 - **`open`**: full path — Steps 1-7 below, then emit success.
 

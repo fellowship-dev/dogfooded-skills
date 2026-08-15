@@ -33,6 +33,29 @@ pylot secrets get <path>                 # bundle keys + fingerprints (no values
 
 Load into conversation: `pylot conversations resources-add <conv-id> type=secret ref=pylot/<path>`
 
+## Team Settings
+
+One command, one round-trip, visible proof — prints the value read back from
+the server after the PATCH (#3094):
+
+```bash
+pylot teams config <team> deploy.release_mode=ship   # dotted-path set + read-back
+pylot teams config <team> budget_daily_usd=600
+pylot teams get <team> --fields deploy,cron          # scoped read of stored config
+pylot teams update <team> key=value [...]            # multi-field PATCH (no read-back print)
+```
+
+Mutable fields (server-validated; a 400 lists the live set as `valid_fields`):
+`budget_daily_usd` `enabled` `org` `chains` `provider_chain` `cron` `fargate`
+`fargate_size` `deploy` `operators` `worker_images` `repos` `distill_enabled`
+`context_warn_pct` `context_hard_pct` `slack_channels`.
+
+Read-back guarantee: a field the server cannot persist is rejected with 400 —
+never accepted-and-dropped (the round-trip corpus test enforces this; team-level
+`skills` was removed from the set for exactly that reason — operator skills live
+under `operators.<role>.skills`). If a write "succeeds" but reads back null,
+that is a bug — file it; do not retry with creative payloads.
+
 ## Workers — Spawn, Drive, Stop
 
 A worker is a Fargate devbox running the target repo. Ownership is by scope:

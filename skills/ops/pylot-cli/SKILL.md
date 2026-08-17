@@ -299,6 +299,26 @@ pylot automations get <name>     # single rule detail
 
 Per-repo coverage: filter `only_repos`/`skip_repos` from list output.
 
+## Slack Channel Routing
+
+Bind Slack channels to teams for message routing. Many channels can bind to the same team (many-to-one). CLI is the primary interface — no UI equivalent.
+
+```bash
+# Bind a channel to a team (additive; channel must already be known to the bot)
+pylot teams channels bind <channel-id> --team <team> [--org <org>]
+
+# List all Slack channels with their bound team (null = unbound)
+pylot teams channels list [--org <org>]
+
+# Set the org-level fallback team for unbound channels
+pylot orgs set-slack-default <team> --org <org>
+
+# Clear the org-level fallback team
+pylot orgs clear-slack-default --org <org>
+```
+
+Default-team fallback: when a Slack message arrives on a channel with no explicit binding, it is routed to the org-level default team (if set). Unbound channels with no org default are dropped.
+
 ## Async Wake Pattern
 
 Dispatch with `--context conversation_id=…` → auto-wake on mission terminal + PR lifecycle.

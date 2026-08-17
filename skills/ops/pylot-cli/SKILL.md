@@ -53,7 +53,7 @@ fi
 PRESIGN=$(pylot assets presign \
   --content-type "$CONTENT_TYPE" --size "$SIZE" \
   --repo <org/repo> --filename "$(basename "$FILE")" \
-  --evidence-class visual --retention-policy indefinite)
+  --evidence-class visual --retention-policy <repo-policy>)  # use the retention policy required by the owning repo (e.g. indefinite, 90d)
 ASSET_ID=$(printf '%s' "$PRESIGN" | jq -r '.asset_id')
 UPLOAD_URL=$(printf '%s' "$PRESIGN" | jq -r '.upload_url')
 

@@ -190,6 +190,7 @@ PROMPT_RESP=$(curl -s --max-time 30 -X POST \
   -d "{\"prompt\": $PROMPT}" \
   "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/prompt")
 TURN_SEQ=$(echo "$PROMPT_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("turn_seq",""))' 2>/dev/null)
+echo "[speckit-runner] implement prompt queued (turn_seq=$TURN_SEQ)"
 ```
 
 Poll to `done`, then re-fetch the worker output and extract the emitted branch.
@@ -226,16 +227,7 @@ REVIEW_SPAWN=$(curl -s --max-time 90 -X POST \
   "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
 RWID=$(printf '%s' "$REVIEW_SPAWN" | jq -r '.worker_id // empty')
 if [ -n "$RWID" ]; then
-REVIEW_PROMPT=$(BRANCH="$BRANCH" CHECKPOINT_OUT="$PRODUCER_OUT" python3 -c "import json,os; print(json.dumps(f'''Independently review issue #$0 in $REPO and the pushed branch {os.environ['BRANCH']}. Start from a clean checkout. Read the issue and repository guidance, compare the branch with its merge base, and inspect the changed behavior. Do not edit, commit, push, or create a PR.
-
-Look for correctness gaps, incomplete requirements, weak or misleading verification, security or data-integrity risks, maintainability regressions, and user-facing or operational consequences. Apply repository evidence and engineering judgment; do not assume any language, framework, file layout, or test command.
-
-The producer checkpoint receipt below is evidence to verify, not reasoning to trust. Cross-check its commands, results, and receipts against the branch.
-
-PRODUCER CHECKPOINT RECEIPT:
-{os.environ['CHECKPOINT_OUT']}
-
-Return concise suggestions with: priority, concern, concrete evidence, and suggested action. Separate high-value corrections from optional polish. Findings are advisory: never block or fail the mission solely because you found them. End with [pylot] phase=independent-review status=done actionable=yes|no.'''))")
+REVIEW_PROMPT=$(BRANCH="$BRANCH" CHECKPOINT_OUT="$PRODUCER_OUT" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and the pushed branch ' + os.environ['BRANCH'] + '. Start from a clean checkout. Read the issue and repository guidance, compare the branch with its merge base, and inspect the changed behavior. Do not edit, commit, push, or create a PR.\n\nLook for correctness gaps, incomplete requirements, weak or misleading verification, security or data-integrity risks, maintainability regressions, and user-facing or operational consequences. Apply repository evidence and engineering judgment; do not assume any language, framework, file layout, or test command.\n\nThe producer checkpoint receipt below is evidence to verify, not reasoning to trust. Cross-check its commands, results, and receipts against the branch.\n\nPRODUCER CHECKPOINT RECEIPT:\n' + os.environ['CHECKPOINT_OUT'] + '\n\nReturn concise suggestions with: priority, concern, concrete evidence, and suggested action. Separate high-value corrections from optional polish. Findings are advisory: never block or fail the mission solely because you found them. End with [pylot] phase=independent-review status=done actionable=yes|no.'))")
 REVIEW_RESP=$(curl -s --max-time 30 -X POST \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
   -d "{\"prompt\": $REVIEW_PROMPT}" \

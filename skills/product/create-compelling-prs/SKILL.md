@@ -102,6 +102,16 @@ Closes #ISSUE
 
 ---
 
+## Independent Review Record
+
+When the implementation pipeline provides an independent advisory review, add a
+short section that distinguishes suggestions corrected, declined with rationale,
+unavailable due to review runtime failure, and still residual. Objective repo
+policy may gate readiness or merge. Independent LLM suggestions themselves never
+block PR creation, fail the mission, or strand its pushed checkpoint.
+
+---
+
 ## Deployment Evidence
 
 Whether a PR must prove it ran somewhere before review — and in what form — is **repo policy, not protocol**. Some companies gate infra/backend PRs on a verified staging deploy; some have no staging environment at all.
@@ -123,7 +133,7 @@ Whether a PR must prove it ran somewhere before review — and in what form — 
 
 For any UI-impacting change, capture before/after screenshots (Playwright preferred, manual fallback) and embed them in the PR body.
 
-**Where images are hosted is repo policy.** Check the playbook for an asset-hosting section: if it names an upload path — a skill (e.g. `skills/ops/evidence-upload`), an endpoint, a bucket — follow it exactly, including any visibility step needed to make the URL public.
+**Where images are hosted is repo policy.** Check the playbook for an asset-hosting section and follow it. When the policy uses Pylot assets, read `pylot-cli` and use its Assets workflow; that skill is the single source for supported lifecycle commands and upload transport.
 
 > **No asset-hosting section?** Attach the images to the PR directly (GitHub hosts images uploaded through the PR editor or the comment API) or link a CI artifact, and say which you used. Never link an image from a host the reviewer cannot reach.
 

@@ -1,6 +1,6 @@
 ---
 name: pylot-cli
-description: Compact CLI reference for gateway work — dispatch, monitor, secrets, devbox workers, automations.
+description: Use when operating the Pylot gateway through its CLI — dispatch, monitor, secrets, assets, workers, and automations.
 user-invocable: false
 allowed-tools: Bash, Read
 ---
@@ -32,6 +32,59 @@ pylot secrets get <path>                 # bundle keys + fingerprints (no values
 ```
 
 Load into conversation: `pylot conversations resources-add <conv-id> type=secret ref=pylot/<path>`
+
+## Assets
+
+Use the CLI for the complete Pylot asset lifecycle. The only operation outside
+the CLI is the direct `PUT` to the short-lived presigned object URL; never call a
+Pylot gateway asset endpoint with `curl`.
+
+```bash
+FILE=/path/to/evidence.png
+CONTENT_TYPE=image/png
+SIZE=$(wc -c < "$FILE" | tr -d ' ')
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA256=$(sha256sum "$FILE" | awk '{print $1}')
+else
+  SHA256=$(shasum -a 256 "$FILE" | awk '{print $1}')
+fi
+
+# Choose the ownership scope required by the destination: --repo, --job, or --conversation.
+PRESIGN=$(pylot assets presign \
+  --content-type "$CONTENT_TYPE" --size "$SIZE" \
+  --repo <org/repo> --filename "$(basename "$FILE")" \
+  --evidence-class visual --retention-policy <repo-policy>)  # use the retention policy required by the owning repo (e.g. indefinite, 90d)
+ASSET_ID=$(printf '%s' "$PRESIGN" | jq -r '.asset_id')
+UPLOAD_URL=$(printf '%s' "$PRESIGN" | jq -r '.upload_url')
+
+# The presigned URL carries its own credentials; do not add a Pylot auth header.
+curl -fsS -X PUT "$UPLOAD_URL" -H "Content-Type: $CONTENT_TYPE" --data-binary @"$FILE" && \
+  pylot assets finalize "$ASSET_ID" --sha256 "$SHA256" --size "$SIZE"
+```
+
+`visual` is the evidence class for screenshots and recordings intended as
+durable review evidence. Use the retention and evidence policy required by the
+owning repo; do not class a transient conversation image as permanent evidence
+unless that is intentional.
+
+After finalization, use the verb that matches the destination:
+
+```bash
+pylot assets view "$ASSET_ID"                              # metadata + temporary GET URL
+pylot assets attach "$ASSET_ID" --mission "$PYLOT_JOB_ID" # private mission evidence
+pylot assets publish "$ASSET_ID"                          # public capability URL
+pylot assets publish "$ASSET_ID" --conversation <id> --alt "description"
+pylot assets unpublish "$ASSET_ID"                         # revoke public capability URL
+```
+
+Publishing returns `public_url`. Start with ordinary publish. Add
+`--override-policy` only when the owning policy explicitly calls for an audited
+override or the server returns the corresponding policy restriction; never use
+it preemptively to bypass policy. Conversation publishing
+both publishes and attaches the asset; `attach --mission` records private mission
+evidence without publishing it. All six lifecycle actions — `presign`, `finalize`,
+`view`, `attach`, `publish`, and `unpublish` — remain gateway operations and must
+go through `pylot assets`.
 
 ## Team Settings
 

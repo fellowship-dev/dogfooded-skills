@@ -613,23 +613,18 @@ gh pr diff $PR --repo $REPO -- "**/package.json" "**/Gemfile" "**/requirements.t
 gh pr checks $PR --repo $REPO || echo "CHECKS_UNAVAILABLE"
 ```
 
-9. Resolve the team merge strategy (default `auto`):
+9. Resolve the team merge strategy from Pylot's DB-authoritative live team
+   configuration. Automated merge authority is explicit: only
+   `deploy.release_mode=ship` maps to `auto`; `propose`, missing, malformed,
+   ambiguous, or unavailable configuration maps to `label-only`:
 ```bash
-MERGE_STRATEGY=$(python3 -c "
-import yaml
-with open('$PYLOT_DIR/crew.yml') as f:
-    data = yaml.safe_load(f)
-for team, cfg in data.get('crew', {}).items():
-    if not isinstance(cfg, dict): continue
-    for r in cfg.get('repos', []):
-        if r.lower() == '$REPO'.lower():
-            print(cfg.get('merge_strategy', 'auto'))
-            exit()
-print('auto')
-" 2>/dev/null || echo "auto")
+MERGE_RESOLVER="skills/cto-review/resolve-merge-strategy.sh"
+test -f "$MERGE_RESOLVER" || MERGE_RESOLVER="skills/ops/cto-review/resolve-merge-strategy.sh"
+MERGE_STRATEGY=$(bash "$MERGE_RESOLVER" "$REPO")
 echo "merge_strategy=$MERGE_STRATEGY"
 ```
-(Crew config may live in the DB rather than a YAML file; if `crew.yml` is absent, default `auto`.)
+Do not read `crew.yml`: live Pylot team configuration is stored in the database.
+Do not infer merge authority from a missing file or from the model's judgement.
 
 10. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
 

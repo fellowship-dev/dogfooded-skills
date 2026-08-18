@@ -33,7 +33,7 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918), **resolve the pipeline lane** (#2996, step 5.3). Short-circuit if CLOSED-not-merged or if an infra/backend PR lacks staging evidence. The staging gate is **waived on `lane:fast`** (#2996) — the lane classifier already proved the diff touches no deployable surface and test-in-staging deliberately never ran. Visual evidence (5.6) is evaluated the same way but is a **notice, not a short-circuit**. Both checks search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918), **resolve the pipeline lane** (#2996, step 5.3), and resolve merge authority from the DB-authoritative team `deploy.release_mode`. Only explicit `ship` permits automated merge; every other state is label-only. Short-circuit if CLOSED-not-merged or if an infra/backend PR lacks staging evidence. The staging gate is **waived on `lane:fast`** (#2996) — the lane classifier already proved the diff touches no deployable surface and test-in-staging deliberately never ran. Visual evidence (5.6) is evaluated the same way but is a **notice, not a short-circuit**. Both checks search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
 | 02-review | subagent | **Judgement layer first** (#2918): read all labels + all comments, identify and classify every blocker (resolved/unresolved). Then ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items + **receipts block**. Review depth is identical in both lanes. |
 | 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918) — read labels fresh from GitHub; if `security` or `waiting-on-owner` present: post park comment, apply `waiting-on-owner`, emit `status=blocked`, STOP. **Step 3.1: lane merge bar** (#2996) — from the same fresh read: `lane:fast` requires `reviewed` only; everything else requires `reviewed` + `double-checked`. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
 
@@ -205,6 +205,11 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 16. **The fast lane does not touch prod's gate (#2996)** — it skips the PRE-MERGE staging deploy,
     not the release train. `scripts/ci-release-gate.sh` still runs the unscoped full corpus before
     anything reaches production. A fast-lane merge is a merge to develop; prod is still gated.
+17. **Merge authority is explicit and DB-authoritative** — stage 01 MUST use
+    `resolve-merge-strategy.sh`, which reads live team configuration through the Pylot CLI. Only
+    `deploy.release_mode=ship` grants automated merge authority. `propose`, missing configuration,
+    lookup failure, malformed output, or an ambiguous repo-to-team mapping all resolve to
+    `label-only`. Never read a legacy `crew.yml`, and never default to auto-merge.
 
 ## Reference files
 

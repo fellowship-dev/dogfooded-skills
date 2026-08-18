@@ -249,14 +249,14 @@ conflict is NOT a hold reason — finish it now, in this order:
 
 Use the `merge_strategy` resolved in stage 01:
 ```bash
-if [ "$MERGE_STRATEGY" = "label-only" ]; then
-  # Team requires human merge — label instead
+if [ "$MERGE_STRATEGY" = "auto" ]; then
+  # Exactly one live team explicitly selected deploy.release_mode=ship.
+  gh pr merge $PR --repo $REPO --merge
+else
+  # Every missing, malformed, ambiguous, or propose state requires human merge.
   gh label create "ready-to-merge" --repo $REPO --color "0e8a16" --description "Agent-verified, Max merges" 2>/dev/null || true
   gh pr edit $PR --repo $REPO --add-label "ready-to-merge"
-  echo "Labeled ready-to-merge (merge_strategy: label-only)"
-else
-  # Default: auto-merge
-  gh pr merge $PR --repo $REPO --merge
+  echo "Labeled ready-to-merge (merge_strategy: ${MERGE_STRATEGY:-missing}; automated merge requires exact auto)"
 fi
 ```
 If CI is failing: do NOT merge — the verdict should already be hold; note the CI failure in the

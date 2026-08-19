@@ -31,6 +31,11 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    verification manifest from review-pr, #2210). Build a mental model of what the diff changes and
    why — the ledger's summary spares you re-deriving intent, but the DIFF remains the ground truth.
 
+   If `Receipt status: stale`, retain its finding IDs and history, but do not trust its `verified`
+   manifest as coverage of current HEAD. Re-check every still-relevant finding against the current
+   full diff and perform the normal tier-scaled cohesive review. Staleness never forces a pipeline
+   restart and never suppresses this stage.
+
 2. **Reconcile claims vs diff — BLOCKING, do this before curating anything.**
    Extract every *concrete, checkable* claim from the PR title and body: named files/modules,
    endpoints or routes, functions, migrations, config keys, test files and test counts,
@@ -140,6 +145,7 @@ here in one line — this text is what a human reads first.}
 
 ## Risk Tier
 - tier: {from Review State, or the ESCALATED tier + reason, or "unknown (no review-state)"}
+- incoming_receipt: {current | stale | absent}; reviewed_head={sha|none}; current_head={sha}
 
 ## Curated First-Review Findings
 | ID | Finding | Verdict | Action |

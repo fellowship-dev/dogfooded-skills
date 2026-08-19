@@ -35,7 +35,7 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch PR metadata, CI status, existing review comments, full diff; checkout PR branch + merge base |
+| 01-setup | subagent | Fetch PR metadata including current HEAD, classify the incoming review receipt as current/stale/absent, capture comments + full diff, and checkout PR branch + merge base |
 | 02-review | subagent | ONE cohesive critical review in clean context: reconcile the PR's claims against the diff, verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
 | 04-post | inline | Re-check the claims gate against the live PR, detect re-check context (needs-work in labels), post curated review comment, apply labels to close the pipeline loop (re-check) or signal completion (first-check), verify the side effects landed, write local report file, emit outcome marker |
@@ -154,6 +154,10 @@ from the orchestrator (never from a subagent).
     `review-state v1` block; stage 02 curates by ledger ID at tier-scaled depth (escalate-only);
     stage 04 re-posts the updated block as valid JSON. No block found → pre-#2210 fallback
     (verbatim first-review curation, full depth).
+13. **A stale first review is historical evidence, not a blocker or current coverage** — compare
+    its `head_sha` with the post-rebase PR HEAD. Continue the cohesive review against the complete
+    current diff, re-check prior findings, and post a new current-head receipt. Never restart the
+    whole pipeline merely because the incoming receipt is stale.
 
 ## Reference files
 

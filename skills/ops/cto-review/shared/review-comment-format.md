@@ -11,6 +11,7 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 **Repo:** $REPO
 **PR:** [$REPO#$PR]($PR_URL) — $PR_TITLE
 **Branch:** `$HEAD_BRANCH` → `$BASE_BRANCH`
+**Head reviewed:** `$CURRENT_HEAD_SHA`
 **Labels:** $CURRENT_LABELS
 
 ---

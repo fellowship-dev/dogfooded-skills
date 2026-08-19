@@ -26,6 +26,7 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 ## PR Review: $REPO#$PR — $PR_TITLE
 
 **Branch:** `$PR_BRANCH` → `$BASE_BRANCH`
+**Head reviewed:** `$HEAD_SHA`
 **Size:** +$ADDITIONS / -$DELETIONS across $FILE_COUNT files
 
 ### Summary
@@ -229,6 +230,10 @@ fi
 Only AFTER the comment posts successfully **and** after Steps 2 and 2.5 have applied their labels.
 
 ```bash
+REVIEW_RUN=$(grep -m1 'review_run:' .procedure-output/review-pr/00-context/handoff.md | awk '{print $3}' || echo "fresh")
+if [ "$REVIEW_RUN" = "stale-refresh" ]; then
+  gh pr edit $PR --repo $REPO --remove-label "reviewed" 2>/dev/null || true
+fi
 gh label create "reviewed" --repo $REPO --color "bfd4f2" --description "First-pass review complete" 2>/dev/null || true
 gh pr edit $PR --repo $REPO --add-label "reviewed"
 ```
@@ -243,6 +248,10 @@ the PR:
 | no lane label + `reviewed` | `review-pr-on-reviewed` | pre-#2996 behaviour (fail-closed default) |
 
 Never apply `double-checked` — that's a different skill entirely.
+
+On `stale-refresh`, removing then re-adding `reviewed` is intentional: the new receipt now binds
+the review to current HEAD, and the re-add emits the downstream event. Do not remove the label
+earlier; a failed comment or prerequisite-label step must leave the previous pipeline state intact.
 
 ### Step 4: Write Report (local file only — NO Quest)
 

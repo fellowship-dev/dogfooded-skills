@@ -47,6 +47,15 @@ fi
 VERDICT=$(grep "^verdict:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
 CLAIMS=$(grep "^claims_reconciled:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
 [ -n "$CLAIMS" ] || CLAIMS=unknown
+
+# Stage 02 records the exact checkout whose complete diff it reviewed. Treat a missing or
+# malformed value as unsafe rather than falling back to setup or the live PR.
+REVIEWED_HEAD_SHA=$(sed -n 's/.*; current_head=\([0-9a-f]\{40\}\)$/\1/p' "$REVIEW_HANDOFF" | head -1)
+if ! printf '%s' "$REVIEWED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "[stage-04] refusing to post: stage 02 did not record an exact reviewed HEAD SHA"
+  echo "[pylot] outcome=\"double-check failed at stage 04: reviewed HEAD SHA missing\" status=failed"
+  exit 1
+fi
 ```
 
 ### Claims-vs-diff gate against the LIVE PR (BLOCKING — run before posting)
@@ -60,8 +69,20 @@ gh pr view $PR --repo $REPO --json title,body,additions,deletions,files,headRefO
   > /tmp/dc-pr-$PR.json
 LIVE_STAT=$(jq -r '"+\(.additions)/-\(.deletions), \(.files|length) files"' /tmp/dc-pr-$PR.json)
 LIVE_FILES=$(jq -r '.files[].path' /tmp/dc-pr-$PR.json)
+LIVE_HEAD_SHA=$(jq -r '.headRefOid' /tmp/dc-pr-$PR.json)
 echo "[stage-04] live diff: $LIVE_STAT"
+echo "[stage-04] stage-02 head reviewed: $REVIEWED_HEAD_SHA"
+echo "[stage-04] live head: $LIVE_HEAD_SHA"
 printf '%s\n' "$LIVE_FILES"
+
+# A file-name or aggregate-stat comparison cannot prove content identity. This equality is the
+# receipt boundary: stage 04 may certify only the exact commit whose complete diff stage 02 read.
+if [ "$LIVE_HEAD_SHA" != "$REVIEWED_HEAD_SHA" ]; then
+  echo "[stage-04] refusing to post: PR HEAD moved after review ($REVIEWED_HEAD_SHA -> $LIVE_HEAD_SHA)"
+  echo "[stage-04] run double-check again so stage 02 reviews the complete diff at the new HEAD"
+  echo "[pylot] outcome=\"double-check failed at stage 04: PR HEAD moved after review\" status=failed"
+  exit 1
+fi
 ```
 
 Then:
@@ -70,8 +91,8 @@ Then:
   read the live `.body` and `.files` from `/tmp/dc-pr-$PR.json` and apply the stage-02 rules
   (backed / elsewhere / unbacked). Set `CLAIMS=pass` or `CLAIMS=fail` from what you find.
 - **`CLAIMS=pass`** — sanity-check that the live changed-file list still matches the manifest
-  stage 02 reviewed. If files were added or removed since setup (the branch moved, or stage 03
-  pushed), re-reconcile the affected claims before continuing.
+  stage 02 reviewed. SHA equality above is mandatory even when the file list is unchanged; a
+  stage-03 fix or any other push requires a fresh stage-02 complete-diff review before posting.
 - **`CLAIMS=fail`** — force `VERDICT=needs-work` and take **Branch D** below. Do not apply
   `double-checked`, whatever stage 02's verdict said.
 
@@ -90,6 +111,7 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 
 **Reviewer:** Automated double-check
 **Branch:** `$PR_BRANCH` → `$BASE_BRANCH`
+**Head reviewed:** `$LIVE_HEAD_SHA`
 
 ---
 
@@ -139,7 +161,8 @@ REVIEW_EOF
 
 **Updating `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
 `## Review State` (or start a fresh object with `"findings": []` if it was `none`), then:
-- set `"stage": "double-check"` and refresh `"head_sha"` (fix commits may have moved it)
+- set `"stage": "double-check"` and set `"head_sha"` to `LIVE_HEAD_SHA` (never copy the stale
+  incoming value; fix commits or rebases may have moved it)
 - set `"tier"` to the final tier (respect any escalation from stage 02; never lower)
 - update each existing finding's `"status"`: `fixed` (stage 03 addressed it — add
   `"note": "fixed in <sha>"`), `dismissed` (DISCARD verdict — note the reason), or leave `open`
@@ -160,6 +183,11 @@ Validate with `jq .` before posting — downstream cto-review parses it.
 
 Also append to the `verified` manifest:
 `{"what": "PR title/body claims reconciled against live changed files", "how": "gh pr view", "by": "double-check"}`
+
+Before posting, verify the post-review-push invariant explicitly: if a push changes content only
+inside files already present in stage 02's manifest, its new `LIVE_HEAD_SHA` still differs from
+`REVIEWED_HEAD_SHA`, the equality guard exits non-zero, and no review comment, receipt, or label
+operation is reached. Unchanged filenames and stats never relax this invariant.
 
 ### Apply labels (re-check vs first-check)
 

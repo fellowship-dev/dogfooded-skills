@@ -30,6 +30,7 @@ PR_TITLE=$(gh pr view $PR --repo $REPO --json title --jq '.title')
 PR_BRANCH=$(gh pr view $PR --repo $REPO --json headRefName --jq '.headRefName')
 BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName')
 PR_URL=$(gh pr view $PR --repo $REPO --json url --jq '.url')
+INITIAL_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 ```
 
 ### Check CI status (best-effort — may fail with PAT)
@@ -115,6 +116,16 @@ if [ -z "$REBASE_FAILED" ]; then
   git push origin $PR_BRANCH --force-with-lease
   echo "Rebased $PR_BRANCH onto origin/$BASE_BRANCH and pushed — PR conflict cleared"
 fi
+
+CURRENT_HEAD_SHA=$(git rev-parse HEAD)
+REVIEW_HEAD_SHA=$(echo "$REVIEW_STATE" | jq -r '.head_sha // empty' 2>/dev/null || true)
+if [ -z "$REVIEW_HEAD_SHA" ]; then
+  REVIEW_RECEIPT_STATUS="absent"
+elif [ "$REVIEW_HEAD_SHA" = "$CURRENT_HEAD_SHA" ]; then
+  REVIEW_RECEIPT_STATUS="current"
+else
+  REVIEW_RECEIPT_STATUS="stale"
+fi
 ```
 
 If the rebase cannot be auto-resolved (or the PR can't be fetched/checked out), write the
@@ -137,6 +148,8 @@ setup_ok: {true|false}
 - Author: {author}
 - Size: +{additions} / -{deletions}, {N} files, {N} commits
 - Labels: {labels or none}
+- Initial HEAD SHA: {INITIAL_HEAD_SHA}
+- Current HEAD SHA: {CURRENT_HEAD_SHA after any rebase}
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
@@ -152,6 +165,11 @@ diff. Never summarise, trim, or paraphrase it.}
 
 ## Review State
 {the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
+- Receipt status: {current | stale | absent}
+- Receipt head SHA: {REVIEW_HEAD_SHA or none}
+
+`stale` is not a setup failure and does not restart the pipeline. It tells stage 02 not to treat
+the old verification manifest as coverage of current HEAD.
 
 ## First Review (existing comments + reviews, verbatim)
 {every finding from CI / bots / reviewers, verbatim — or "No existing review comments found".
@@ -170,6 +188,7 @@ repeated verbatim.}
 ## Success criteria
 - `setup_ok: true`
 - PR metadata, CI status, first review (verbatim), changed files, and full diff all captured
+- Current post-rebase HEAD and incoming receipt freshness recorded
 - PR body captured untruncated; changed-file manifest carries per-file line counts
 - Any diff truncation flagged explicitly (never silent)
 - PR branch checked out in REPO_DIR, rebased onto base, and pushed; REPO_DIR recorded for downstream stages

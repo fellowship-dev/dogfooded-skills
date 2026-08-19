@@ -57,7 +57,8 @@ gh api "repos/$REPO/issues?state=open&per_page=10" --jq '.[].title'
 
 5. Fetch PR metadata:
 ```bash
-gh pr view $PR --repo $REPO --json number,title,body,headRefName,baseRefName,url,files,labels,author,additions,deletions,commits
+gh pr view $PR --repo $REPO --json number,title,body,headRefName,headRefOid,baseRefName,url,files,labels,author,additions,deletions,commits
+CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 
 # Existing labels
 gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
@@ -642,6 +643,7 @@ Path: `.procedure-output/cto-review/01-setup/handoff.md`
 - URL: {url}
 - Author: {author}
 - Branch: `{headRefName}` -> `{baseRefName}`
+- Current HEAD SHA: {CURRENT_HEAD_SHA}
 - Labels: {comma-separated current labels}
 - Additions/Deletions: +{N} / -{N}
 

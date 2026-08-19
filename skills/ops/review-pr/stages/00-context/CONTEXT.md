@@ -10,8 +10,9 @@ Run the dedup gate, then gather all PR context and the full diff that the review
 need. This stage runs inline in the orchestrator — do NOT spawn a Task. Read-only: no checkout, no
 fixes, no pushes.
 
-If the dedup gate trips (PR already has the `reviewed` label), the orchestrator emits the
-already-complete outcome marker and STOPS — stages 01 and 02 do not run.
+If the dedup gate proves that the latest valid review receipt matches current HEAD, the
+orchestrator emits the already-complete outcome marker and STOPS. A label without a matching
+receipt is stale evidence and continues through the pipeline.
 
 ## Steps
 
@@ -21,10 +22,23 @@ already-complete outcome marker and STOPS — stages 01 and 02 do not run.
 export PR=$1
 export REPO=$2
 
-ALREADY_DONE=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name] | contains(["reviewed"])')
-if [ "$ALREADY_DONE" = "true" ]; then
-  echo "[pylot] outcome=\"already complete — reviewed label already applied\" status=success"
+PR_SNAPSHOT=$(gh pr view $PR --repo $REPO --json headRefOid,labels,comments)
+HEAD_SHA=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.headRefOid')
+HAS_REVIEWED=$(printf '%s' "$PR_SNAPSHOT" | jq '[.labels[].name] | contains(["reviewed"])')
+REVIEW_STATE=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.comments[].body' \
+  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
+printf '%s' "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE=""
+REVIEWED_SHA=$(printf '%s' "$REVIEW_STATE" | jq -r '.head_sha // empty' 2>/dev/null || true)
+
+if [ "$HAS_REVIEWED" = "true" ] && [ -n "$REVIEWED_SHA" ] && [ "$REVIEWED_SHA" = "$HEAD_SHA" ]; then
+  echo "[pylot] outcome=\"already complete — reviewed receipt matches current HEAD $HEAD_SHA\" status=success"
   exit 0
+fi
+
+REVIEW_RUN="fresh"
+if [ "$HAS_REVIEWED" = "true" ]; then
+  REVIEW_RUN="stale-refresh"
+  echo "[review-pr] stale reviewed evidence: receipt=${REVIEWED_SHA:-missing} current=$HEAD_SHA — continuing"
 fi
 ```
 
@@ -65,8 +79,7 @@ gh pr diff $PR --repo $REPO
 # Changed file names (for quick overview)
 gh pr diff $PR --repo $REPO --name-only
 
-# Head SHA (recorded in review-state so later stages know which snapshot was reviewed)
-HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+# HEAD_SHA was fetched atomically with labels/comments in the dedup snapshot above.
 ```
 
 Capture the FULL diff into the handoff — the entire diff is reviewed together in stage 01, so the
@@ -160,6 +173,8 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 - Size: +{ADDITIONS} / -{DELETIONS} across {FILE_COUNT} files
 - Labels: {labels}
 - auth_surface: {none|new-auth-surface}
+- review_run: {fresh|stale-refresh}
+- prior_review_head_sha: {REVIEWED_SHA or none}
 
 ## PR Body
 {full PR body}
@@ -187,7 +202,7 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 ```
 
 ## Success criteria
-- Dedup gate ran first; if `reviewed` already present, procedure stopped here
+- Head-aware dedup gate ran first; procedure stopped only for a valid current-head receipt
 - PR metadata, body, conventions, existing comments, CI status all captured
 - The FULL diff captured in the handoff (not truncated)
 - Auth surface detection ran; `auth_surface` recorded in handoff

@@ -38,6 +38,7 @@ mandatory for every verdict comment, not optional (#2918).
 ```bash
 gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 # CTO Review: $REPO PR #$PR — $PR_TITLE
+**Head reviewed:** `{CURRENT_HEAD_SHA from stage 01}`
 ... (see shared/review-comment-format.md — verbatim) ...
 
 ## Checked / Found
@@ -83,6 +84,7 @@ Step 3.
 
 **Finalizing `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
 `## Review State` (or a fresh `{"v":1,"findings":[]}` if `none`), set `"stage": "cto-review"`,
+set `"head_sha"` to the stage-01 `Current HEAD SHA` (never preserve a stale upstream SHA),
 update finding statuses per stage 02's Ledger Reconciliation (a REWORK verdict leaves its driving
 findings `open`; LGTM with dismissals records the dismissal reasons in `note`), and append
 `verified` entries for the dimensions this review covered. Validate with `jq .` before posting —

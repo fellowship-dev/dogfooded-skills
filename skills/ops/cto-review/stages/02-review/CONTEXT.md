@@ -33,6 +33,10 @@ ledger shows what they caught and what status each finding is in. Trust what the
   production-impact judgement on HIGH-tier PRs
 - `## Review State: none` (pre-#2210 PR) → fall back to the old assumption that code quality was
   covered by the earlier phases, and note that in your output
+- compare its `head_sha` with `Current HEAD SHA` from PR Identity. If they differ, the manifest is
+  historical evidence only: preserve finding IDs/status history, but do not trust it as coverage
+  of current HEAD. Review the complete current diff at normal depth and continue; do not reject or
+  restart the pipeline solely because the earlier receipt is stale.
 
 Focus on: docs gaps, ops holes, downstream risk, security, and merge strategy — reading the WHOLE
 diff in one pass.

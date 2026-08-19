@@ -60,7 +60,9 @@ gh pr view $PR --repo $REPO --json title,body,additions,deletions,files,headRefO
   > /tmp/dc-pr-$PR.json
 LIVE_STAT=$(jq -r '"+\(.additions)/-\(.deletions), \(.files|length) files"' /tmp/dc-pr-$PR.json)
 LIVE_FILES=$(jq -r '.files[].path' /tmp/dc-pr-$PR.json)
+LIVE_HEAD_SHA=$(jq -r '.headRefOid' /tmp/dc-pr-$PR.json)
 echo "[stage-04] live diff: $LIVE_STAT"
+echo "[stage-04] head reviewed: $LIVE_HEAD_SHA"
 printf '%s\n' "$LIVE_FILES"
 ```
 
@@ -90,6 +92,7 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 
 **Reviewer:** Automated double-check
 **Branch:** `$PR_BRANCH` → `$BASE_BRANCH`
+**Head reviewed:** `$LIVE_HEAD_SHA`
 
 ---
 
@@ -139,7 +142,8 @@ REVIEW_EOF
 
 **Updating `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
 `## Review State` (or start a fresh object with `"findings": []` if it was `none`), then:
-- set `"stage": "double-check"` and refresh `"head_sha"` (fix commits may have moved it)
+- set `"stage": "double-check"` and set `"head_sha"` to `LIVE_HEAD_SHA` (never copy the stale
+  incoming value; fix commits or rebases may have moved it)
 - set `"tier"` to the final tier (respect any escalation from stage 02; never lower)
 - update each existing finding's `"status"`: `fixed` (stage 03 addressed it — add
   `"note": "fixed in <sha>"`), `dismissed` (DISCARD verdict — note the reason), or leave `open`

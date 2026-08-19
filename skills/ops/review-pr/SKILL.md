@@ -43,7 +43,7 @@ Parse from `$ARGUMENTS`: `PR=$1`, `REPO=$2`. Both required.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 00-context | inline | Dedup gate (exit if already `reviewed`) + gather PR metadata, conventions, existing comments, CI status, the full diff, the **mechanical risk tier** (#2210), and **new auth surface detection** (#2918) |
+| 00-context | inline | Head-aware dedup gate (exit only when `reviewed` has a valid receipt for current HEAD) + gather PR metadata, conventions, existing comments, CI status, the full diff, the **mechanical risk tier** (#2210), and **new auth surface detection** (#2918) |
 | 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion at tier-scaled depth (LOW bounded / MEDIUM full / HIGH full + runtime-shape checklist): analyze, confidence-score findings (≥80), **security-classify each finding** (#2918), convention compliance, Closes-vs-Refs. Clean isolated context. |
 | 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** + **apply `security` label if auth-surface or security-class findings** (#2918) + **apply the deterministic `lane:fast`/`lane:staging` label** (#2996) + apply `reviewed` label **LAST** + write local report + emit outcome marker |
 
@@ -67,9 +67,10 @@ Run stage 00 yourself (orchestrator context). Read CONTEXT.md:
 ```
 skills/review-pr/stages/00-context/CONTEXT.md
 ```
-Run the dedup gate first. If the PR already has the `reviewed` label, emit the already-complete
-outcome marker and STOP — do not spawn stage 01. Otherwise gather all context + the full diff and
-write the handoff to `.procedure-output/review-pr/00-context/handoff.md`.
+Run the dedup gate first. Short-circuit only when the PR has `reviewed` AND the latest valid
+`review-state v1` block has `head_sha` equal to the current `headRefOid`. A missing, invalid, or
+stale receipt is not completion: record `review_run: stale-refresh`, continue through the normal
+review, and let stage 02 re-toggle `reviewed` after posting the current-head receipt.
 
 ### Stage 01 (single subagent — NO fan-out)
 
@@ -122,7 +123,7 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
 
 ## Exit paths
 
-- **Already complete**: stage 00 dedup gate hits → `[pylot] outcome="already complete — reviewed label already applied" status=success` (orchestrator, inline)
+- **Already complete**: stage 00 dedup gate finds a current-head receipt → `[pylot] outcome="already complete — reviewed receipt matches current HEAD {sha}" status=success` (orchestrator, inline)
 - **Success**: stage 02 emits `[pylot] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`
 
@@ -142,7 +143,9 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
    `127.0.0.1:4242`. Operators surface the report via the mission report.
 10. **Never apply `double-checked`** — only `reviewed`. The verdict is always "proceed to
     double-check"; this skill never blocks.
-11. **Do not skip stages** — every stage executes (except stage 01/02 when the dedup gate exits at 00).
+11. **Do not skip stages** — every stage executes (except stage 01/02 when the head-aware dedup
+    gate proves the latest receipt matches current HEAD). A `reviewed` label by itself is never
+    proof of completion.
 12. **Risk tier is mechanical and escalate-only** (#2210) — stage 00 computes it from the rubric;
     stage 01 may raise it (recording why) but never lower it. LOW-tier review is bounded by design —
     do not "be thorough" past the tier; the saved depth is reallocated to HIGH-tier PRs.
@@ -162,6 +165,10 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
     automations that react to `reviewed` read the label set carried in that webhook payload, so a
     lane label applied after `reviewed` is invisible to them and the PR silently pays for the full
     pipeline. This ordering is the mechanism, not a style preference.
+17. **Review completion is head-bound** — every posted review names and records the automatically
+    fetched current HEAD SHA. When refreshing a stale receipt, remove and re-add `reviewed` only
+    after the new comment and prerequisite labels land, so downstream stages receive a current
+    trigger without restarting or blocking the review itself.
 
 ## Reference files
 

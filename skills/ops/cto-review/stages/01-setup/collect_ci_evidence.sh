@@ -7,6 +7,20 @@ HEAD_SHA=${2:?usage: collect_ci_evidence.sh org/repo head-sha}
 # The caller supplies the PR base branch because required checks are branch-specific.
 BASE_BRANCH=${3:?usage: collect_ci_evidence.sh org/repo head-sha base-branch}
 
+# GitHub writes API error JSON to stdout, while stderr carries only a
+# human-readable diagnostic. A private repository's unavailable-plan 403 is
+# absent configuration only when the nonzero path and stdout payload both match.
+# Every other API error remains unavailable evidence.
+PLAN_UNAVAILABLE_MESSAGE='Upgrade to GitHub Pro or make this repository public to enable this feature.'
+is_plan_unavailable_403() {
+  local status=$1 payload=$2
+  [ "$status" != "0" ] && printf '%s' "$payload" | jq -e --arg message "$PLAN_UNAVAILABLE_MESSAGE" '
+    type == "object"
+    and .message == $message
+    and .status == "403"
+  ' >/dev/null
+}
+
 # Fetch every page and prove the response is complete. A green first page cannot
 # establish merge safety when GitHub reports more evidence than it returned there.
 collect_paginated() {
@@ -49,6 +63,9 @@ REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_
 if grep -q '404' /tmp/cto-required.err; then
   REQUIRED='{"contexts":[]}'
   REQUIRED_OK=true
+elif is_plan_unavailable_403 "${REQUIRED_STATUS:-0}" "$REQUIRED"; then
+  REQUIRED='{"contexts":[]}'
+  REQUIRED_OK=true
 elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
   # A successful response is evidence only when it has the documented shape.
   # Do not normalize malformed required-check configurations into an empty set.
@@ -67,11 +84,16 @@ elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
   fi
 else
   REQUIRED_OK=false
+  # Keep the final evidence document well-formed while retaining the failed
+  # lookup bit above; malformed stdout must never turn into a collector crash.
+  REQUIRED='{"contexts":[]}'
 fi
 
 RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>/tmp/cto-rulesets.err) || RULESETS_STATUS=$?
 RULESET_CONTEXTS='[]'
 if grep -q '404' /tmp/cto-rulesets.err; then
+  RULESETS_OK=true
+elif is_plan_unavailable_403 "${RULESETS_STATUS:-0}" "$RULESETS"; then
   RULESETS_OK=true
 elif [ "${RULESETS_STATUS:-0}" != "0" ]; then
   RULESETS_OK=false

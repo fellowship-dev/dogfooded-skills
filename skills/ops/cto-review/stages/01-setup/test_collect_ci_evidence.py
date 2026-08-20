@@ -62,10 +62,68 @@ esac
 
 
 def main() -> None:
-    # Stage 01 must invoke this collector, rather than reimplementing a partial
-    # first-page-only query before handing evidence to the shared classifier.
+    # Stage 01 must invoke this current helper, rather than reusing text from a
+    # prior review comment or reimplementing a partial first-page-only query.
     setup = SETUP_CONTEXT.read_text()
-    assert 'CI_EVIDENCE=$(bash "$CI_DIR/collect_ci_evidence.sh" "$REPO" "$CURRENT_HEAD_SHA" "$BASE_BRANCH")' in setup
+    ci_step = setup[setup.index('CI_DIR="skills/cto-review/stages/01-setup"'):setup.index('\n9. Resolve')]
+    assert 'CI_EVIDENCE=$(bash "$CI_DIR/collect_ci_evidence.sh" "$REPO" "$CURRENT_HEAD_SHA" "$BASE_BRANCH")' in ci_step
+    assert "ALL_COMMENT_BODIES" not in ci_step
+    assert "REVIEW_STATE" not in ci_step
+
+    # Production gh shape: API JSON is stdout and `gh: Upgrade...` is stderr.
+    # Both unavailable endpoints become empty configuration only after exiting
+    # nonzero with the exact structured payload.
+    plan_unavailable = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
+  *rules/branches*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+    assert plan_unavailable["expected_checks_ok"] is True, plan_unavailable
+    assert plan_unavailable["expected_checks"] == [], plan_unavailable
+    assert classify(plan_unavailable) == {
+        "classification": "na-no-configured-checks",
+        "reason": "CI: N/A — no configured checks",
+    }, plan_unavailable
+
+    arbitrary_403 = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) printf '%s\\n' '{"message":"Resource not accessible by integration","status":"403"}'; printf '%s\\n' 'gh: Resource not accessible by integration' >&2; exit 1 ;;
+  *rules/branches*) echo '[]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+    assert arbitrary_403["expected_checks_ok"] is False, arbitrary_403
+    assert classify(arbitrary_403)["classification"] == "block", arbitrary_403
+
+    malformed_403 = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) printf '%s\\n' '{"message":'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
+  *rules/branches*) echo '[]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+    assert malformed_403["expected_checks_ok"] is False, malformed_403
+    assert classify(malformed_403)["classification"] == "block", malformed_403
+
+    mixed_plan_and_real_source = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":1,"check_runs":[{"name":"ruleset-ci","status":"completed","conclusion":"success"}]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
+  *rules/branches*) echo '[{"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ruleset-ci"}]}}]}]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+    assert mixed_plan_and_real_source["expected_checks"] == ["ruleset-ci"], mixed_plan_and_real_source
+    assert classify(mixed_plan_and_real_source)["classification"] == "pass", mixed_plan_and_real_source
 
     truncated = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;

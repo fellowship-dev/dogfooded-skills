@@ -18,6 +18,8 @@ branch with the base merged).
 REPO_DIR={REPO_DIR from setup handoff}
 PR_BRANCH={PR_BRANCH from setup handoff}
 cd "$REPO_DIR"
+PRE_FIX_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+POST_FIX_HEAD_SHA=$PRE_FIX_HEAD_SHA
 ```
 
 ### Apply fixes
@@ -63,6 +65,12 @@ If you made fix commits:
 ```bash
 cd "$REPO_DIR"
 git push origin $PR_BRANCH
+POST_FIX_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+if [ "$POST_FIX_HEAD_SHA" != "$PRE_FIX_HEAD_SHA" ]; then
+  REVIEW_RECEIPT_INVALIDATED=true
+else
+  REVIEW_RECEIPT_INVALIDATED=false
+fi
 ```
 
 If you couldn't push (permission denied): note that fixes need to be applied by the repo owner —
@@ -76,6 +84,9 @@ Path: `.procedure-output/double-check/03-fix/handoff.md`
 # Stage 03: Fix
 
 pushed: {true | false | n/a}
+pre_fix_head_sha: {40-character remote SHA}
+post_fix_head_sha: {40-character remote SHA, or pre_fix_head_sha when no push}
+review_receipt_invalidated: {true when a push changed head; otherwise false}
 
 ## Fixes Applied
 | # | Finding | Commit | Notes |
@@ -95,6 +106,7 @@ pushed: {true | false | n/a}
 - Each Fix-List item addressed (or documented why not)
 - Test suite run and result recorded (or explicitly skipped with reason)
 - Fix commits pushed (or push failure documented)
+- A successful fix push invalidates the Stage 02 receipt; the orchestrator starts a fresh exact-head cycle
 
 ## Failure
 - Build/test environment unusable → document it; still write handoff so stage 04 can report it

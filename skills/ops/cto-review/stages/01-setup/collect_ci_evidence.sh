@@ -70,31 +70,49 @@ else
 fi
 
 RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>/tmp/cto-rulesets.err) || RULESETS_STATUS=$?
+RULESET_CONTEXTS='[]'
 if grep -q '404' /tmp/cto-rulesets.err; then
-  RULESETS='[]'
   RULESETS_OK=true
 elif [ "${RULESETS_STATUS:-0}" != "0" ]; then
   RULESETS_OK=false
-elif printf '%s' "$RULESETS" | jq -e '
-  type == "array"
-  and all(.[];
-    type == "object"
-    and (.rules | type == "array")
-    and all(.rules[];
-      type == "object"
-      and (if .type == "required_status_checks" then
-        (.parameters | type == "object")
-        and (.parameters.required_status_checks | type == "array")
-        and all(.parameters.required_status_checks[];
-          type == "string" or (type == "object" and (.context | type == "string"))
-        )
-      else true end)
-    )
-  )
-' >/dev/null; then
+elif RULESET_CONTEXTS=$(printf '%s' "$RULESETS" | jq -ce '
+  # Each accessor is guarded by the containing value type. Keep validation
+  # and extraction together so a rejected payload is never traversed later.
+  def context_is_valid:
+    if type == "string" then true
+    elif type == "object" then (.context | type == "string")
+    else false
+    end;
+  def rule_is_valid:
+    if type != "object" then false
+    elif .type != "required_status_checks" then true
+    elif (.parameters | type) != "object" then false
+    elif (.parameters.required_status_checks | type) != "array" then false
+    else all(.parameters.required_status_checks[]; context_is_valid)
+    end;
+  def ruleset_is_valid:
+    if type != "object" then false
+    elif (.rules | type) != "array" then false
+    else all(.rules[]; rule_is_valid)
+    end;
+  def context_value:
+    if type == "string" then . else .context end;
+
+  if type != "array" then error("malformed ruleset response")
+  elif all(.[]; ruleset_is_valid) then
+    [ .[]
+      | .rules[]
+      | select(.type == "required_status_checks")
+      | .parameters.required_status_checks[]
+      | context_value
+    ]
+  else error("malformed ruleset response")
+  end
+') ; then
   RULESETS_OK=true
 else
   RULESETS_OK=false
+  RULESET_CONTEXTS='[]'
 fi
 
 WORKFLOW_TREE=$(gh api "repos/$REPO/git/trees/$HEAD_SHA?recursive=1" 2>/dev/null) || WORKFLOW_TREE_OK=false
@@ -134,6 +152,6 @@ jq -n \
   --argjson runs "${CHECK_RUNS:-null}" \
   --argjson statuses "${COMMIT_STATUSES:-null}" \
   --argjson required "${REQUIRED:-null}" \
-  --argjson rulesets "${RULESETS:-null}" --argjson workflows "${PR_WORKFLOWS:-null}" \
+  --argjson ruleset_contexts "$RULESET_CONTEXTS" --argjson workflows "${PR_WORKFLOWS:-null}" \
   --arg check_ok "$CHECK_RUNS_OK" --arg status_ok "$COMMIT_STATUSES_OK" --arg required_ok "$REQUIRED_OK" --arg rulesets_ok "$RULESETS_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
-  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true" and $rulesets_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]? | if type == "object" then .context else . end]), pr_workflows: $workflows}'
+  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true" and $rulesets_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + $ruleset_contexts), pr_workflows: $workflows}'

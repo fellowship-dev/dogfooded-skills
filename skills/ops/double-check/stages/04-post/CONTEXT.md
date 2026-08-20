@@ -75,6 +75,7 @@ then
   LIVE_READ_FAILED=true
 fi
 source skills/ops/double-check/shared/exact-head-receipt.sh
+source skills/ops/double-check/shared/nonpromotion-receipt.sh
 LIVE_HEAD_SHA=$(jq -r '.headRefOid // empty' /tmp/dc-pr-$PR.json 2>/dev/null || true)
 DECISION=$(dc_exact_head_decision "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RESTART_COUNT")
 if [ "${LIVE_READ_FAILED:-false}" = true ]; then DECISION=blocked; fi
@@ -91,30 +92,18 @@ if ! printf '%s' "$FINAL_COMMENT_CURSOR" | jq -e 'type == "array"' >/dev/null 2>
 fi
 
 if [ "$DECISION" = restart ]; then
-  # This stable key makes repeated delivery/resume idempotent. It is not an approval receipt.
-  MARKER="pylot:exact-head-restart pr=$PR from=$REVIEWED_HEAD_SHA to=$LIVE_HEAD_SHA receipt=$RECEIPT_ID"
-  gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' | grep -Fq "$MARKER" || \
-    gh pr comment $PR --repo $REPO --body "<!-- $MARKER -->
-## Double-check restarted
-The PR head changed after review. The stale receipt for `$REVIEWED_HEAD_SHA` was not promoted;
-a fresh clean-context review is required for `$LIVE_HEAD_SHA`."
-  printf 'restart_count: 1\nfrom_head_sha: %s\nto_head_sha: %s\nreceipt_id: %s\ncomment_cursor: %s\n' \
-    "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RECEIPT_ID" "$LIVE_COMMENT_CURSOR" \
-    > .procedure-output/double-check/04-post/restart.md
-  echo "[pylot] outcome=\"double-check restart required: PR HEAD moved after review\" status=blocked"
+  # Stale receipts are local-only: comments notify subscribers and can be unreadable later.
+  dc_write_nonpromotion_receipt restart .procedure-output/double-check/04-post \
+    "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RECEIPT_ID" "$RESTART_COUNT" "$LIVE_COMMENT_CURSOR"
   exit 3
 fi
 if [ "$DECISION" = blocked ]; then
-  MARKER="pylot:exact-head-blocked pr=$PR reviewed=$REVIEWED_HEAD_SHA live=${LIVE_HEAD_SHA:-unavailable} receipt=$RECEIPT_ID"
-  gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' 2>/dev/null | grep -Fq "$MARKER" || \
-    gh pr comment $PR --repo $REPO --body "<!-- $MARKER -->
-## Double-check blocked
-No approval was published: the exact-head receipt cannot be promoted (reviewed `$REVIEWED_HEAD_SHA`, live `${LIVE_HEAD_SHA:-unavailable}`, restart count `$RESTART_COUNT`)."
-  printf 'blocked: true\nreason: %s\nreviewed_head_sha: %s\nlive_head_sha: %s\nreceipt_id: %s\n' \
-    "${COMMENT_CURSOR_CHANGED:+review comments changed after cohesive review}" \
-    "$REVIEWED_HEAD_SHA" "${LIVE_HEAD_SHA:-unavailable}" "$RECEIPT_ID" \
-    > .procedure-output/double-check/04-post/blocked.md
-  echo "[pylot] outcome=\"double-check blocked: exact-head receipt unavailable or superseded\" status=blocked"
+  NONPROMOTION_REASON="exact-head receipt unavailable or superseded"
+  [ "${COMMENT_CURSOR_CHANGED:-false}" = true ] && NONPROMOTION_REASON="review comments changed after cohesive review"
+  [ "${LIVE_READ_FAILED:-false}" = true ] && NONPROMOTION_REASON="live PR read failed"
+  dc_write_nonpromotion_receipt blocked .procedure-output/double-check/04-post \
+    "$REVIEWED_HEAD_SHA" "${LIVE_HEAD_SHA:-unavailable}" "$RECEIPT_ID" "$RESTART_COUNT" \
+    "$LIVE_COMMENT_CURSOR" "$NONPROMOTION_REASON"
   exit 2
 fi
 
@@ -151,15 +140,9 @@ dc_require_promotable_head() {
 dc_stop_for_nonpromotion() {
   local live_head_sha=$1 decision=$2 cursor
   cursor=$(jq -c '[.comments[] | {id, createdAt, updatedAt}]' /tmp/dc-final-pr-$PR.json 2>/dev/null || true)
-  if [ "$decision" = restart ]; then
-    printf 'restart_count: 1\nfrom_head_sha: %s\nto_head_sha: %s\nreceipt_id: %s\ncomment_cursor: %s\n' \
-      "$REVIEWED_HEAD_SHA" "$live_head_sha" "$RECEIPT_ID" "$cursor" \
-      > .procedure-output/double-check/04-post/restart.md
-    exit 3
-  fi
-  printf 'blocked: true\nreviewed_head_sha: %s\nlive_head_sha: %s\nreceipt_id: %s\n' \
-    "$REVIEWED_HEAD_SHA" "${live_head_sha:-unavailable}" "$RECEIPT_ID" \
-    > .procedure-output/double-check/04-post/blocked.md
+  dc_write_nonpromotion_receipt "$decision" .procedure-output/double-check/04-post \
+    "$REVIEWED_HEAD_SHA" "${live_head_sha:-unavailable}" "$RECEIPT_ID" "$RESTART_COUNT" "$cursor"
+  [ "$decision" = restart ] && exit 3
   exit 2
 }
 ```

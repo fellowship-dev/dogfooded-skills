@@ -14,6 +14,18 @@ phases, then give its pushed checkpoint to a separate review worker before PR cr
 Gateway: `$PYLOT_API` (or `$PYLOT_GATEWAY_URL`). Token: `$PYLOT_DISPATCH_TOKEN`.
 Mission: `$PYLOT_JOB_ID`. Repo: `$1` (or `$PYLOT_REPO`).
 
+Define this cleanup once at session start. The EXIT trap makes detached supervisor
+checkout removal executable on every terminal path, including an early failure.
+
+```bash
+cleanup_supervisor_checkout() {
+  if [ -n "${SUPERVISOR_CHECKOUT:-}" ] && [ -d "$SUPERVISOR_CHECKOUT" ]; then
+    git worktree remove --force "$SUPERVISOR_CHECKOUT" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_supervisor_checkout EXIT
+```
+
 > **Drive the worker in the foreground by polling the worker API — in short chunks you re-run yourself.** After queueing each phase prompt, run the Poll-to-idle snippet (Step P) with the Bash tool, **using the default Bash timeout (do NOT pass a long `timeout`)**. Each call returns in **under 2 minutes** with a `POLL_RESULT`; while it prints `POLL_RESULT=running`, **run Step P again immediately**. Every ~30 min it prints `POLL_RESULT=block_elapsed` with a decision packet (heartbeat age, output-changed flag, log tail) — review it and, if the worker is healthy, **run Step P again to grant another block**. Repeat until `POLL_RESULT=done`.
 >
 > **The trap (read this):** the harness **auto-backgrounds any Bash command that runs past its tool `timeout`** (default ~120 s). A backgrounded poll is fatal. You may *see* a completion notification arrive for a background task — **ignore that signal as a reason to wait.** Those notifications only fire **while your session is actively running tool calls**; the instant you end your turn to "wait for it," the headless `claude -p` session exits and the mission is finalized as **failed** — while the worker is still healthy. So: never set a long Bash `timeout` on Step P, never background it, never "wait for a notification," never end your turn while a worker turn is in flight. If Step P ever gets backgrounded, that is a bug — kill it and run it again. Each call is short synchronous shell you run, read, and re-run yourself.
@@ -274,7 +286,7 @@ SUPERVISOR_DISCLOSURE=$(cat "$RECEIPT_DIR/pr-verification.md")
 states are `passed`, `failed`, `not-run`, and `unavailable`; freshness is a
 separate current/stale field so stale receipts cannot silently become current.
 Keep the receipt and disclosure available to the review, correction, and PR
-steps. Clean up the detached worktree only after the PR is confirmed.
+steps. The session EXIT trap removes the detached worktree on every terminal path.
 
 ---
 
@@ -394,13 +406,36 @@ at `CORRECTION_HEAD`.
 ```bash
 if ! vr_bind_current_head "$CORRECTION_HEAD"; then
   vr_mark_stale "$CORRECTION_HEAD"
-  STALE_SUPERVISOR_RECEIPTS=$(cat "$VR_RECEIPT_FILE")
-  STALE_SUPERVISOR_DISCLOSURE=$(vr_disclosure)
+  STALE_RECEIPT_FILE="$RECEIPT_DIR/stale-${VR_HEAD_SHA}.tsv"
+  STALE_DISCLOSURE_FILE="$RECEIPT_DIR/stale-${VR_HEAD_SHA}.md"
+  cp "$VR_RECEIPT_FILE" "$STALE_RECEIPT_FILE"
+  vr_disclosure >"$STALE_DISCLOSURE_FILE"
+  STALE_SUPERVISOR_RECEIPTS=$(cat "$STALE_RECEIPT_FILE")
+  STALE_SUPERVISOR_DISCLOSURE=$(cat "$STALE_DISCLOSURE_FILE")
   echo '[speckit-runner] correction moved HEAD; earlier supervisor receipts are stale'
-  # Fetch/worktree-add CORRECTION_HEAD, vr_init a new receipt file, rediscover
-  # repository-owned checks, and call vr_run/vr_record exactly as in Step 4.5.
-  # Replace SUPERVISOR_RECEIPTS and SUPERVISOR_DISCLOSURE with that fresh set.
+  cleanup_supervisor_checkout
+  SUPERVISOR_CHECKOUT=$(mktemp -d)
+  FRESH_RECEIPT_DIR="$RECEIPT_DIR/head-$CORRECTION_HEAD"
+  VR_RECEIPT_FILE="$FRESH_RECEIPT_DIR/receipts.tsv"
+  FRESH_DISCOVERY_FILE="$FRESH_RECEIPT_DIR/discovered-checks.txt"
+  git fetch origin "$BRANCH"
+  git worktree add --detach "$SUPERVISOR_CHECKOUT" "$CORRECTION_HEAD"
+  vr_init "$VR_RECEIPT_FILE" "$REPO" "$CORRECTION_HEAD"
+  cd "$SUPERVISOR_CHECKOUT"
+  # Repeat Step 4.5 discovery here. Write each discovered CHECK_ID and exact
+  # CHECK_COMMAND to FRESH_DISCOVERY_FILE, then call vr_run or vr_record.
+  : >"$FRESH_DISCOVERY_FILE"
+  # printf '%s\t%s\n' "$CHECK_ID" "$CHECK_COMMAND" >>"$FRESH_DISCOVERY_FILE"
+  # if vr_run "$CHECK_ID" "$CHECK_COMMAND"; then :; fi
+  if [ ! -s "$FRESH_DISCOVERY_FILE" ] || ! vr_has_records_for_head "$CORRECTION_HEAD"; then
+    echo '[speckit-runner] correction-head verification was not freshly discovered and recorded' >&2
+    exit 1
+  fi
 fi
+vr_has_records_for_head "$CORRECTION_HEAD" || {
+  echo '[speckit-runner] no current receipt recorded for correction head' >&2
+  exit 1
+}
 SUPERVISOR_RECEIPTS=$(cat "$VR_RECEIPT_FILE")
 SUPERVISOR_DISCLOSURE=$(vr_disclosure)
 ```
@@ -536,8 +571,8 @@ If the PR exists, residual or unavailable suggestions produce `status=success`,
 not `failed` or `blocked`.
 
 ```bash
-# Run the Step C snippet first. Also remove SUPERVISOR_CHECKOUT with
-# `git worktree remove "$SUPERVISOR_CHECKOUT"` after the PR is confirmed.
+# Run the Step C snippet first. The session EXIT trap removes
+# SUPERVISOR_CHECKOUT on this and every other terminal path.
 
 if [ -n "$PR_NUM" ]; then
   echo "[pylot] outcome=\"speckit complete: PR #$PR_NUM opened; independent_review=$FIRST_REVIEW_STATUS\" status=success"

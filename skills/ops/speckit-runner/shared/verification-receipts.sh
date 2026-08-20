@@ -14,7 +14,25 @@ vr_init() {
   printf 'repository\thead_sha\tcheck\tcommand\tstarted_at\tended_at\texit_status\tartifact\tstate\tfreshness\tnote\n' >"$VR_RECEIPT_FILE"
 }
 
-vr_field() { printf '%s' "$1" | tr '\t\r\n' '   '; }
+# Canonical fields are hex encoded: tabs, newlines, pipes, and backticks retain
+# their exact values without ever becoming TSV or Markdown syntax. Bash cannot
+# represent NUL in an argument, so it is the sole byte outside this contract.
+vr_field() {
+  printf 'hex:'
+  LC_ALL=C printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n'
+}
+
+vr_unfield() {
+  local encoded=${1#hex:} byte output='' index=0
+  case "$1" in hex:*) ;; *) return 64 ;; esac
+  [[ $encoded =~ ^([0123456789abcdefABCDEF]{2})*$ ]] || return 64
+  while [ "$index" -lt "${#encoded}" ]; do
+    printf -v byte '%b' "\\x${encoded:index:2}"
+    output+=$byte
+    index=$((index + 2))
+  done
+  printf '%s' "$output"
+}
 
 vr_write() {
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -54,7 +72,8 @@ vr_bind_current_head() {
   local current_head=${1:?current HEAD required}
   [ -f "$VR_RECEIPT_FILE" ] || return 1
   local receipt_head
-  receipt_head=$(sed -n '2{s/\t.*//;p;}' "$VR_RECEIPT_FILE")
+  receipt_head=$(awk -F '\t' 'NR == 2 { print $2; exit }' "$VR_RECEIPT_FILE")
+  receipt_head=$(vr_unfield "$receipt_head") || return 1
   [ -n "$receipt_head" ] && [ "$receipt_head" = "$current_head" ]
 }
 
@@ -69,5 +88,13 @@ vr_disclosure() {
   [ -f "$VR_RECEIPT_FILE" ] || return 1
   printf '### Supervisor verification receipts\n\n'
   printf '| Check | Command / identity | State | Exit | HEAD binding | Evidence | Note |\n|---|---|---|---|---|---|---|\n'
-  awk -F '\t' 'NR > 1 { printf "| %s | `%s` | %s | %s | %s | %s | %s |\n", $3, $4, $9, $7, $10, $8 == "" ? "N/A" : $8, $11 }' "$VR_RECEIPT_FILE"
+  # Hex fields are safe to place directly in a Markdown table. Keep this POSIX
+  # awk: BSD awk rejects a ternary expression directly inside printf arguments.
+  awk -F '\t' 'NR > 1 { evidence = $8; if (evidence == "") evidence = "N/A"; printf "| %s | %s | %s | %s | %s | %s | %s |\n", $3, $4, $9, $7, $10, evidence, $11 }' "$VR_RECEIPT_FILE"
+}
+
+vr_has_records_for_head() {
+  local current_head=${1:?current HEAD required}
+  vr_bind_current_head "$current_head" || return 1
+  awk -F '\t' 'NR > 1 { found = 1; exit } END { exit !found }' "$VR_RECEIPT_FILE"
 }

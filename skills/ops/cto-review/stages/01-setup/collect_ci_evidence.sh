@@ -7,6 +7,13 @@ HEAD_SHA=${2:?usage: collect_ci_evidence.sh org/repo head-sha}
 # The caller supplies the PR base branch because required checks are branch-specific.
 BASE_BRANCH=${3:?usage: collect_ci_evidence.sh org/repo head-sha base-branch}
 
+# Required-check and ruleset API failures must be attributed to this invocation.
+# Shared /tmp paths let another concurrent review replace stderr between a failed
+# request and its 404 check, which could incorrectly turn a failure into an
+# unprotected configuration. Keep this directory private and remove it on exit.
+CI_TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cto-ci-evidence.XXXXXX") || exit 1
+trap 'rm -rf "$CI_TMP_DIR"' EXIT
+
 # Fetch every page and prove the response is complete. A green first page cannot
 # establish merge safety when GitHub reports more evidence than it returned there.
 collect_paginated() {
@@ -45,8 +52,8 @@ COMMIT_STATUS_ITEMS=$(collect_paginated "repos/$REPO/commits/$HEAD_SHA/status" s
 : "${COMMIT_STATUSES_OK:=true}"
 COMMIT_STATUSES=$(jq -cn --argjson items "${COMMIT_STATUS_ITEMS:-null}" '{statuses: $items}')
 
-REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_checks" 2>/tmp/cto-required.err) || REQUIRED_STATUS=$?
-if grep -q '404' /tmp/cto-required.err; then
+REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_checks" 2>"$CI_TMP_DIR/required.err") || REQUIRED_STATUS=$?
+if grep -q '404' "$CI_TMP_DIR/required.err"; then
   REQUIRED='{"contexts":[]}'
   REQUIRED_OK=true
 elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
@@ -69,8 +76,8 @@ else
   REQUIRED_OK=false
 fi
 
-RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>/tmp/cto-rulesets.err) || RULESETS_STATUS=$?
-if grep -q '404' /tmp/cto-rulesets.err; then
+RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>"$CI_TMP_DIR/rulesets.err") || RULESETS_STATUS=$?
+if grep -q '404' "$CI_TMP_DIR/rulesets.err"; then
   RULESETS='[]'
   RULESETS_OK=true
 elif [ "${RULESETS_STATUS:-0}" != "0" ]; then

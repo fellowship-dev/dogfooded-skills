@@ -123,6 +123,37 @@ esac
     assert malformed_rulesets["expected_checks_ok"] is False, malformed_rulesets
     assert classify(malformed_rulesets)["classification"] == "block", malformed_rulesets
 
+    # A concurrent invocation can overwrite the former shared stderr path after
+    # this request fails. Its forged 404 must not make this invocation treat an
+    # API/auth failure as an unprotected branch.
+    try:
+        isolated_required_error = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) echo '404' > /tmp/cto-required.err; echo '500 required lookup failed' >&2; exit 1 ;;
+  *rules/branches*) echo '[]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+        assert isolated_required_error["expected_checks_ok"] is False, isolated_required_error
+        assert classify(isolated_required_error)["classification"] == "block", isolated_required_error
+
+        isolated_ruleset_error = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) echo '{"contexts":[]}' ;;
+  *rules/branches*) echo '404' > /tmp/cto-rulesets.err; echo '500 ruleset lookup failed' >&2; exit 1 ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+        assert isolated_ruleset_error["expected_checks_ok"] is False, isolated_ruleset_error
+        assert classify(isolated_ruleset_error)["classification"] == "block", isolated_ruleset_error
+    finally:
+        Path("/tmp/cto-required.err").unlink(missing_ok=True)
+        Path("/tmp/cto-rulesets.err").unlink(missing_ok=True)
+
     paginated = run_collector("""case "$*" in
   *check-runs*\&page=1*) python3 -c 'import json; print(json.dumps({"total_count": 101, "check_runs": [{"name": f"green-{i}", "status": "completed", "conclusion": "success"} for i in range(100)]}))' ;;
   *check-runs*\&page=2*) echo '{"total_count":101,"check_runs":[{"name":"late-failure","status":"completed","conclusion":"failure"}]}' ;;
@@ -148,7 +179,7 @@ esac
 esac
 """)
     assert incomplete["check_runs_ok"] is False, incomplete
-    print("stage-01 CI collection: truncated tree, list trigger, workflow-content failure, malformed expected-check payloads, ruleset context, and late pagination failures pass")
+    print("stage-01 CI collection: truncated tree, list trigger, workflow-content failure, malformed expected-check payloads, isolated stderr failures, ruleset context, and late pagination failures pass")
 
 
 if __name__ == "__main__":

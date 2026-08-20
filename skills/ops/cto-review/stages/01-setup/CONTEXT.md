@@ -59,6 +59,7 @@ gh api "repos/$REPO/issues?state=open&per_page=10" --jq '.[].title'
 ```bash
 gh pr view $PR --repo $REPO --json number,title,body,headRefName,headRefOid,baseRefName,url,files,labels,author,additions,deletions,commits
 CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName')
 
 # Existing labels
 gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
@@ -609,10 +610,79 @@ Also pull dependency-manifest changes explicitly so they are easy to spot:
 gh pr diff $PR --repo $REPO -- "**/package.json" "**/Gemfile" "**/requirements.txt" "**/go.mod" "**/pyproject.toml"
 ```
 
-8. Fetch CI status (the review and act stages must honor it):
+8. Classify CI once at the reviewed head (the review and act stages consume this authoritative
+   result; never substitute `gh pr checks` exit status). The classifier is fail-closed: an API,
+   authorization, JSON, workflow-parsing, or required-context lookup failure is `block`, not an
+   empty check set. Collect all three expected-check sources at `CURRENT_HEAD_SHA`:
+
 ```bash
-gh pr checks $PR --repo $REPO || echo "CHECKS_UNAVAILABLE"
+CI_DIR="skills/cto-review/stages/01-setup"
+test -f "$CI_DIR/ci_gate.py" || CI_DIR="skills/ops/cto-review/stages/01-setup"
+
+# Check-runs response for the exact reviewed SHA. Preserve API failure separately from zero runs.
+CHECK_RUNS=$(gh api "repos/$REPO/commits/$CURRENT_HEAD_SHA/check-runs?per_page=100" 2>/dev/null) || CHECK_RUNS_OK=false
+: "${CHECK_RUNS_OK:=true}"
+
+# A 404 means no branch protection is configured; every other failure remains a block.
+REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_checks" 2>/tmp/cto-required.err) || REQUIRED_STATUS=$?
+if grep -q '404' /tmp/cto-required.err; then
+  REQUIRED='{"contexts":[]}'
+  REQUIRED_OK=true
+elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
+  REQUIRED_OK=true
+else
+  REQUIRED_OK=false
+fi
+
+# Rulesets can add required checks independently of legacy branch protection. A 404 means no
+# matching ruleset; any other error is evidence we cannot safely classify as N/A.
+RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>/tmp/cto-rulesets.err) || RULESETS_STATUS=$?
+if grep -q '404' /tmp/cto-rulesets.err; then
+  RULESETS='[]'
+elif [ "${RULESETS_STATUS:-0}" != "0" ]; then
+  REQUIRED_OK=false
+fi
+
+# Enumerate workflow files at the PR head. Parse every declaration; a lookup or parsing failure
+# blocks rather than incorrectly waiving CI. `pr_workflows` holds PR-triggered workflows only.
+WORKFLOW_TREE=$(gh api "repos/$REPO/git/trees/$CURRENT_HEAD_SHA?recursive=1" 2>/dev/null) || WORKFLOW_TREE_OK=false
+: "${WORKFLOW_TREE_OK:=true}"
+PR_WORKFLOWS='[]'
+if [ "$WORKFLOW_TREE_OK" = true ]; then
+  PR_WORKFLOWS=$(echo "$WORKFLOW_TREE" | python3 -c '
+import json, sys
+for item in json.load(sys.stdin).get("tree", []):
+    path = item.get("path", "")
+    if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")):
+        print(path)
+' | while IFS= read -r path; do
+    content=$(gh api "repos/$REPO/contents/$path?ref=$CURRENT_HEAD_SHA" --jq .content 2>/dev/null | base64 -d) || exit 1
+    if printf '%s\n' "$content" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+trigger = re.compile(r"^[ \\t]*(pull_request|pull_request_target|[\\\"\\x27](pull_request|pull_request_target)[\\\"\\x27])[ \\t]*:", re.M)
+inline = re.compile(r"^[ \\t]*on[ \\t]*:[^#\\n]*(pull_request|pull_request_target)", re.M)
+sys.exit(0 if trigger.search(text) or inline.search(text) else 1)
+'; then printf '%s\n' "$path"; fi
+  done | jq -Rsc 'split("\n") | map(select(length > 0))') || WORKFLOW_TREE_OK=false
+fi
+
+CI_EVIDENCE=$(jq -n \
+  --argjson runs "${CHECK_RUNS:-null}" \
+  --argjson required "${REQUIRED:-null}" \
+  --argjson rulesets "${RULESETS:-null}" --argjson workflows "${PR_WORKFLOWS:-null}" \
+  --arg check_ok "$CHECK_RUNS_OK" --arg required_ok "$REQUIRED_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
+  '{check_runs_ok: ($check_ok == "true"), expected_checks_ok: ($required_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?]), pr_workflows: $workflows}')
+CI_RESULT=$(printf '%s' "$CI_EVIDENCE" | python3 "$CI_DIR/ci_gate.py")
+CI_CLASSIFICATION=$(echo "$CI_RESULT" | jq -r .classification)
+CI_REASON=$(echo "$CI_RESULT" | jq -r .reason)
+echo "[cto-review] CI classification: $CI_CLASSIFICATION — $CI_REASON"
 ```
+
+`pass` requires every observed check to be completed with conclusion `success`. `block` covers a
+pending, failing, cancelled, skipped, neutral, unknown, or missing expected check. Only a successful
+zero-check response with no required context and no pull-request workflow is
+`na-no-configured-checks`; render its receipt exactly as `CI: N/A — no configured checks`.
 
 9. Resolve the team merge strategy from Pylot's DB-authoritative live team
    configuration. Automated merge authority is explicit: only
@@ -668,7 +738,10 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - mergedAt: {timestamp or null}
 - mergeCommit: {oid or null}
 - short_circuit: {none | closed-no-merge | missing-staging-evidence}
-- ci_status: {passing | failing | pending | unavailable}
+- ci_classification: {pass | block | na-no-configured-checks}
+- ci_receipt: {"CI: N/A — no configured checks" for N/A, otherwise the classifier reason}
+- ci_observed_checks: {check-run names/status/conclusion from the reviewed head}
+- ci_expected_checks: {required contexts/ruleset checks and PR workflow paths, or "none"}
 - merge_strategy: {auto | label-only}
 
 ## Visual Evidence
@@ -714,7 +787,8 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
   waiver applied and its rationale echoed when it fires.
 - Visual evidence evaluated after it, and only if it did not short-circuit. Its verdict is recorded
   as `notice`; it never sets a short_circuit and never suppresses stages 02/03.
-- For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.
+- For `open`/`merged`: full diff, metadata, repo context, CI classification/evidence, and merge
+  strategy all captured.
 - For `closed-no-merge` or `missing-staging-evidence`: short_circuit set; remaining gathering skipped.
 
 ## Failure

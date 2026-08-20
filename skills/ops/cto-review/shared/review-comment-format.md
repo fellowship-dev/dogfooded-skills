@@ -47,6 +47,7 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 | Related code searched | [✅ evidence found / ❌ no evidence / N/A] |
 | Docs updated | [✅ / ❌ what is missing] |
 | Merge strategy | [Direct merge / Release train — reason] |
+| CI classification | [CI pass / CI: N/A — no configured checks / CI block — reason] |
 | FlowChad flows affected | [✅ none / ⚠️ re-run flowchad-runner post-merge / N/A] |
 | Production impact assessed | [✅ low risk / ⚠️ requires careful deploy / N/A] |
 

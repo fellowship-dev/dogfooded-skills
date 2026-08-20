@@ -195,7 +195,8 @@ controls the owner traded the staging net for:
 1. review-pr's findings and the `review-state v1` ledger (still-open findings are verdict inputs).
 2. This stage's own cohesive whole-diff judgement.
 3. The #2918 owner hard-stop at Step 2 — lane-independent, above.
-4. CI green — unchanged, and never merged red (Hard Rule 9).
+4. CI pass or `CI: N/A — no configured checks` — unchanged as a merge prerequisite, and never
+   merged when the Stage 01 classification is block (Hard Rule 9).
 5. **The in-deploy full corpus gate.** The fast lane skips the *pre-merge staging deploy*; it does
    not touch the release train. `scripts/ci-release-gate.sh` still runs the unscoped corpus before
    anything reaches production, on every train, for every commit that lands on develop. A fast-lane
@@ -219,12 +220,17 @@ fi
 Only proceed to a merge if ALL hold:
 1. Stage 02 `merge_decision` is `merge` (verdict LGTM / "merge immediately").
 2. `MISSING` is empty — i.e. the lane's required labels from Step 3 are all present.
-3. CI is green.
+3. Stage 01 `ci_classification` is `pass` or `na-no-configured-checks` (never re-run or
+   reinterpret `gh pr checks`; `block` is a hold).
 4. Step 2 (owner gate) did NOT fire.
 
 ```bash
-# Verify CI is green
-gh pr checks $PR --repo $REPO
+# Consume the single, reviewed-head CI classification from Stage 01.
+CI_CLASSIFICATION=$(sed -n 's/^- ci_classification: //p' .procedure-output/cto-review/01-setup/handoff.md | head -1)
+case "$CI_CLASSIFICATION" in
+  pass|na-no-configured-checks) ;;
+  *) echo "[cto-review] CI merge prerequisite: BLOCKED ($CI_CLASSIFICATION)"; exit 0 ;;
+esac
 
 # Verify required labels
 gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
@@ -261,8 +267,10 @@ else
   echo "Labeled ready-to-merge (merge_strategy: ${MERGE_STRATEGY:-missing}; automated merge requires exact auto)"
 fi
 ```
-If CI is failing: do NOT merge — the verdict should already be hold; note the CI failure in the
-comment if not already noted. Record the action taken: `merged` | `labeled` | `closed-superseded` | `held` (CI-red only — never for a conflict).
+If CI classification is `block`: do NOT merge — the verdict should already be hold; note the
+classifier reason in the comment if not already noted. Record the action taken: `merged` |
+`labeled` | `closed-superseded` | `held` (CI-block only — never for a conflict). N/A is permitted
+only after the normal verdict, lane labels, and unconditional owner gate have all passed.
 
 ### Step 6: Write the report file (local only — NO Quest)
 Use the template in `shared/report-format.md`:
@@ -301,7 +309,7 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 - owner_gate_fired: {true (label: security|waiting-on-owner) | false}
 - comment_posted: {url or "skipped (closed-no-merge)" or "park comment (owner gate)"}
 - label_applied: {approved | needs-work | ready-to-merge | waiting-on-owner (gate) | none}
-- merge_action: {merged | labeled-ready-to-merge | closed-superseded | held (CI-red only) | parked (owner gate) | skipped (already merged) | skipped (closed)}
+- merge_action: {merged | labeled-ready-to-merge | closed-superseded | held (CI-block only) | parked (owner gate) | skipped (already merged) | skipped (closed)}
 - report_path: {path}
 
 ## Outcome

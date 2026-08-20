@@ -11,6 +11,8 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("collect_ci_evidence.sh")
+GATE = Path(__file__).with_name("ci_gate.py")
+SETUP_CONTEXT = Path(__file__).with_name("CONTEXT.md")
 
 
 def run_collector(fake_gh: str) -> dict:
@@ -30,7 +32,23 @@ def run_collector(fake_gh: str) -> dict:
     return json.loads(result.stdout)
 
 
+def classify(evidence: dict) -> dict:
+    result = subprocess.run(
+        ["python3", str(GATE)],
+        input=json.dumps(evidence),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def main() -> None:
+    # Stage 01 must invoke this collector, rather than reimplementing a partial
+    # first-page-only query before handing evidence to the shared classifier.
+    setup = SETUP_CONTEXT.read_text()
+    assert 'CI_EVIDENCE=$(bash "$CI_DIR/collect_ci_evidence.sh" "$REPO" "$CURRENT_HEAD_SHA" "$BASE_BRANCH")' in setup
+
     truncated = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
   */status*) echo '{"total_count":0,"statuses":[]}' ;;
@@ -54,6 +72,7 @@ esac
 """)
     assert list_trigger["pr_workflows_ok"] is True, list_trigger
     assert list_trigger["pr_workflows"] == [".github/workflows/ci.yml"], list_trigger
+    assert classify(list_trigger)["classification"] == "block", list_trigger
 
     paginated = run_collector("""case "$*" in
   *check-runs*\&page=1*) python3 -c 'import json; print(json.dumps({"total_count": 101, "check_runs": [{"name": f"green-{i}", "status": "completed", "conclusion": "success"} for i in range(100)]}))' ;;
@@ -68,6 +87,7 @@ esac
     assert paginated["check_runs_ok"] is True, paginated
     assert len(paginated["check_runs"]) == 101, paginated
     assert paginated["check_runs"][-1]["name"] == "late-failure", paginated
+    assert classify(paginated)["classification"] == "block", paginated
 
     incomplete = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":2,"check_runs":[]}' ;;
@@ -79,7 +99,7 @@ esac
 esac
 """)
     assert incomplete["check_runs_ok"] is False, incomplete
-    print("collect_ci_evidence: truncated tree, list trigger, and pagination regressions pass")
+    print("stage-01 CI collection: truncated tree, list trigger, and late pagination failures pass")
 
 
 if __name__ == "__main__":

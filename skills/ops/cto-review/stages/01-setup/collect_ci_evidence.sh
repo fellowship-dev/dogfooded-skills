@@ -50,7 +50,21 @@ if grep -q '404' /tmp/cto-required.err; then
   REQUIRED='{"contexts":[]}'
   REQUIRED_OK=true
 elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
-  REQUIRED_OK=true
+  # A successful response is evidence only when it has the documented shape.
+  # Do not normalize malformed required-check configurations into an empty set.
+  if printf '%s' "$REQUIRED" | jq -e '
+    type == "object"
+    and (.contexts | type == "array")
+    and all(.contexts[]; type == "string")
+    and ((has("checks") | not) or (
+      (.checks | type == "array")
+      and all(.checks[]; type == "string" or (type == "object" and (.context | type == "string")))
+    ))
+  ' >/dev/null; then
+    REQUIRED_OK=true
+  else
+    REQUIRED_OK=false
+  fi
 else
   REQUIRED_OK=false
 fi
@@ -58,8 +72,29 @@ fi
 RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>/tmp/cto-rulesets.err) || RULESETS_STATUS=$?
 if grep -q '404' /tmp/cto-rulesets.err; then
   RULESETS='[]'
+  RULESETS_OK=true
 elif [ "${RULESETS_STATUS:-0}" != "0" ]; then
-  REQUIRED_OK=false
+  RULESETS_OK=false
+elif printf '%s' "$RULESETS" | jq -e '
+  type == "array"
+  and all(.[];
+    type == "object"
+    and (.rules | type == "array")
+    and all(.rules[];
+      type == "object"
+      and (if .type == "required_status_checks" then
+        (.parameters | type == "object")
+        and (.parameters.required_status_checks | type == "array")
+        and all(.parameters.required_status_checks[];
+          type == "string" or (type == "object" and (.context | type == "string"))
+        )
+      else true end)
+    )
+  )
+' >/dev/null; then
+  RULESETS_OK=true
+else
+  RULESETS_OK=false
 fi
 
 WORKFLOW_TREE=$(gh api "repos/$REPO/git/trees/$HEAD_SHA?recursive=1" 2>/dev/null) || WORKFLOW_TREE_OK=false
@@ -100,5 +135,5 @@ jq -n \
   --argjson statuses "${COMMIT_STATUSES:-null}" \
   --argjson required "${REQUIRED:-null}" \
   --argjson rulesets "${RULESETS:-null}" --argjson workflows "${PR_WORKFLOWS:-null}" \
-  --arg check_ok "$CHECK_RUNS_OK" --arg status_ok "$COMMIT_STATUSES_OK" --arg required_ok "$REQUIRED_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
-  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]? | if type == "object" then .context else . end]), pr_workflows: $workflows}'
+  --arg check_ok "$CHECK_RUNS_OK" --arg status_ok "$COMMIT_STATUSES_OK" --arg required_ok "$REQUIRED_OK" --arg rulesets_ok "$RULESETS_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
+  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true" and $rulesets_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]? | if type == "object" then .context else . end]), pr_workflows: $workflows}'

@@ -23,7 +23,7 @@ export REPO={repo}  # org/repo
 ### Fetch PR metadata
 
 ```bash
-gh pr view $PR --repo $REPO --json number,title,body,headRefName,baseRefName,url,files,labels,author,additions,deletions,commits
+gh pr view $PR --repo $REPO --json number,title,body,headRefName,baseRefName,url,files,labels,author,additions,deletions,commits,headRefOid,comments
 
 # Extract key info
 PR_TITLE=$(gh pr view $PR --repo $REPO --json title --jq '.title')
@@ -31,6 +31,9 @@ PR_BRANCH=$(gh pr view $PR --repo $REPO --json headRefName --jq '.headRefName')
 BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName')
 PR_URL=$(gh pr view $PR --repo $REPO --json url --jq '.url')
 INITIAL_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+printf '%s' "$INITIAL_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "live head unavailable or malformed; write setup_ok: false blocked handoff"; exit 1;
+}
 ```
 
 ### Check CI status (best-effort — may fail with PAT)
@@ -59,6 +62,7 @@ echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE=""   # unparseable �
 ```bash
 gh pr view $PR --repo $REPO --json comments --jq '.comments[].body'
 gh pr view $PR --repo $REPO --json reviews --jq '.reviews[].body'
+INITIAL_COMMENT_CURSOR=$(gh pr view $PR --repo $REPO --json comments --jq '[.comments[] | {id, createdAt, updatedAt}] | @json')
 ```
 
 Capture every finding from automated CI / the Claude GitHub App / bots verbatim — the review
@@ -117,7 +121,8 @@ if [ -z "$REBASE_FAILED" ]; then
   echo "Rebased $PR_BRANCH onto origin/$BASE_BRANCH and pushed — PR conflict cleared"
 fi
 
-CURRENT_HEAD_SHA=$(git rev-parse HEAD)
+CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+printf '%s' "$CURRENT_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || REBASE_FAILED=true
 REVIEW_HEAD_SHA=$(echo "$REVIEW_STATE" | jq -r '.head_sha // empty' 2>/dev/null || true)
 if [ -z "$REVIEW_HEAD_SHA" ]; then
   REVIEW_RECEIPT_STATUS="absent"
@@ -150,6 +155,8 @@ setup_ok: {true|false}
 - Labels: {labels or none}
 - Initial HEAD SHA: {INITIAL_HEAD_SHA}
 - Current HEAD SHA: {CURRENT_HEAD_SHA after any rebase}
+- Setup head SHA: {CURRENT_HEAD_SHA, exactly 40 lowercase hex characters}
+- Initial comment cursor: {INITIAL_COMMENT_CURSOR}
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
@@ -188,7 +195,7 @@ repeated verbatim.}
 ## Success criteria
 - `setup_ok: true`
 - PR metadata, CI status, first review (verbatim), changed files, and full diff all captured
-- Current post-rebase HEAD and incoming receipt freshness recorded
+- Full remote setup head and complete initial comment cursor recorded; a failed live read is blocked
 - PR body captured untruncated; changed-file manifest carries per-file line counts
 - Any diff truncation flagged explicitly (never silent)
 - PR branch checked out in REPO_DIR, rebased onto base, and pushed; REPO_DIR recorded for downstream stages

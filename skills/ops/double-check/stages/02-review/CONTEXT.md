@@ -8,7 +8,8 @@ you have NO implementation history, which prevents confirmation bias.
 - `.procedure-output/double-check/01-setup/handoff.md` — PR metadata, first review (verbatim),
   changed files, full diff, local checkout dir
 
-Do NOT request or expect any other context. This handoff is everything.
+Do NOT request or expect orchestration history. This handoff is everything at the start of review;
+before writing your verdict you must independently refresh the PR comments as described below.
 
 ## Task
 Review the PR **in cohesion** — the whole diff together, all dimensions in ONE pass — and produce
@@ -96,7 +97,13 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
 5. **Decide tests posture.** Note whether tests should be run after fixes (and the likely stack),
    or whether tests are not applicable (e.g. deps-only / lockfile-only PR — note this explicitly).
 
-6. **Form the consolidated verdict.** One of:
+6. **Refresh live review input before the verdict.** Long corpus/test work makes the setup comment
+   snapshot stale. Fetch `gh pr view $PR --repo $REPO --json comments,headRefOid`; require its
+   `headRefOid` to be the 40-character `Setup head SHA`, include every newly created comment in
+   the curation, and record the complete comment cursor. If either read fails or head changed,
+   write `verdict: blocked` with the reason; do not produce an approving receipt.
+
+7. **Form the consolidated verdict.** One of:
    - `ready` — ready for CTO review (no MUST-FIX items, no blocking new issues, and
      `claims_reconciled` is not `fail`)
    - `needs-work` — list the specific remaining items
@@ -104,7 +111,7 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    `claims_reconciled: fail` forces `needs-work`. There is no combination of clean findings that
    overrides it.
 
-7. Set `fixes_needed`:
+8. Set `fixes_needed`:
    - `true` if there is at least one MUST-FIX finding OR a NICE-TO-HAVE you judge worth doing
      OR a new blocking issue to fix.
    - `false` if nothing actionable needs a code change (verdict can still be `ready` or `needs-work`,
@@ -124,6 +131,9 @@ Path: `.procedure-output/double-check/02-review/handoff.md`
 verdict: {ready | needs-work}
 fixes_needed: {true | false}
 claims_reconciled: {pass | fail | unknown}
+reviewed_head_sha: {40-character Setup head SHA}
+receipt_id: {pr}-{reviewed_head_sha}-r{restart_count}
+final_comment_cursor: {JSON array of every comment id/timestamp fetched immediately before verdict}
 
 ## Claims vs Diff
 | Claim (from PR title/body) | Status | Evidence |
@@ -187,6 +197,7 @@ here in one line — this text is what a human reads first.}
 - New issues surfaced (or explicitly "none")
 - Tests posture decided
 - ONE cohesive verdict — not split per-file or per-dimension
+- `reviewed_head_sha` is a full immutable remote SHA and final comment cursor was refreshed
 
 ## Failure
 - Setup handoff missing or `setup_ok: false` → write handoff with `verdict: blocked` and stop;

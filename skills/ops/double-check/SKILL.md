@@ -38,7 +38,7 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 | 01-setup | subagent | Fetch PR metadata including current HEAD, classify the incoming review receipt as current/stale/absent, capture comments + full diff, and checkout PR branch + merge base |
 | 02-review | subagent | ONE cohesive critical review in clean context: reconcile the PR's claims against the diff, verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
-| 04-post | inline | Re-check the claims gate against the live PR, detect re-check context (needs-work in labels), post curated review comment, apply labels to close the pipeline loop (re-check) or signal completion (first-check), verify the side effects landed, write local report file, emit outcome marker |
+| 04-post | inline | Re-fetch the live head and comments, promote only an exact reviewed-head receipt, or perform one clean restart; then post curated review comment and apply labels only for the matching head |
 
 ## Handoff locations
 
@@ -53,10 +53,15 @@ never the full orchestrator context.
 
 ## Execution
 
-### Stages 01 → 03 (sequential subagents)
+### Exact-head cycles (sequential subagents)
 
 Run one Task per stage, one after another. Do NOT launch any stages in parallel. Do not start the
-next stage until the current one completes.
+next stage until the current one completes. Start with `restart_count=0` and a fresh
+`receipt_id`. If stage 04 sees a different full remote SHA, it writes a restart receipt without
+posting a verdict or touching labels, then runs a new 01 → 02 cycle at that observed SHA with
+`restart_count=1`. Stage 02 still receives only its new setup handoff: never orchestration
+history. A second transition, or any unreadable live head/comments, writes one deduplicated
+blocked receipt and stops.
 
 Each Task prompt must be self-contained:
 - Include only the stage's input handoff paths
@@ -94,9 +99,12 @@ Run stage 04 yourself in the orchestrator context — do NOT spawn a Task. Read 
 ```
 skills/double-check/stages/04-post/CONTEXT.md
 ```
-Run the live claims-vs-diff gate (`gh pr view`), post the comment, apply the label, verify the
-labels/comment actually landed, write the report file, and emit the `[pylot] outcome=...` marker
-from the orchestrator (never from a subagent).
+Run the live claims-vs-diff and exact-head gates (`gh pr view`), then only for a matching receipt
+post the comment and apply the label. Verify labels/comment actually landed, write the report
+file, and emit the `[pylot] outcome=...` marker from the orchestrator (never from a subagent).
+If stage 04 exits `3`, read `04-post/restart.md`, set `RESTART_COUNT=1`, and run a new Stage 01
+then Stage 02 for its recorded `to_head_sha`; do not pass the old Stage 02 handoff. If it exits
+`2`, it is terminal blocked: retain the receipt and do not run a promotion path.
 
 ## Stage handoff chain
 
@@ -158,6 +166,12 @@ from the orchestrator (never from a subagent).
     its `head_sha` with the post-rebase PR HEAD. Continue the cohesive review against the complete
     current diff, re-check prior findings, and post a new current-head receipt. Never restart the
     whole pipeline merely because the incoming receipt is stale.
+14. **Promotion binds to the final full SHA** — immediately before every verdict comment or label
+    mutation, fetch `headRefOid` and comments. The 40-character live SHA must equal the Stage 02
+    `reviewed_head_sha`. On the first mismatch restart cleanly; on a second mismatch or failed
+    retrieval write one blocked receipt. A delta inspection, file list, short SHA, or local HEAD
+    never substitutes for equality. Stale and blocked receipts never mutate `double-checked` or
+    trigger downstream automation.
 
 ## Reference files
 

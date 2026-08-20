@@ -74,6 +74,31 @@ esac
     assert list_trigger["pr_workflows"] == [".github/workflows/ci.yml"], list_trigger
     assert classify(list_trigger)["classification"] == "block", list_trigger
 
+    workflow_content_failure = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) echo '{"contexts":[]}' ;;
+  *rules/branches*) echo '[]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[{"path":".github/workflows/ci.yml"}]}' ;;
+  *contents*) exit 1 ;;
+  *) exit 1 ;;
+esac
+""")
+    assert workflow_content_failure["pr_workflows_ok"] is False, workflow_content_failure
+    assert classify(workflow_content_failure)["classification"] == "block", workflow_content_failure
+
+    required_ruleset = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":1,"check_runs":[{"name":"ruleset-ci","status":"completed","conclusion":"success"}]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) echo '{"contexts":[]}' ;;
+  *rules/branches*) echo '[{"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ruleset-ci"}]}}]}]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+    assert required_ruleset["expected_checks"] == ["ruleset-ci"], required_ruleset
+    assert classify(required_ruleset)["classification"] == "pass", required_ruleset
+
     paginated = run_collector("""case "$*" in
   *check-runs*\&page=1*) python3 -c 'import json; print(json.dumps({"total_count": 101, "check_runs": [{"name": f"green-{i}", "status": "completed", "conclusion": "success"} for i in range(100)]}))' ;;
   *check-runs*\&page=2*) echo '{"total_count":101,"check_runs":[{"name":"late-failure","status":"completed","conclusion":"failure"}]}' ;;
@@ -99,7 +124,7 @@ esac
 esac
 """)
     assert incomplete["check_runs_ok"] is False, incomplete
-    print("stage-01 CI collection: truncated tree, list trigger, and late pagination failures pass")
+    print("stage-01 CI collection: truncated tree, list trigger, workflow-content failure, ruleset context, and late pagination failures pass")
 
 
 if __name__ == "__main__":

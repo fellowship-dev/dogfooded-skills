@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Collect fail-closed CI evidence for one immutable PR head.  Output is one JSON object.
-set -u
+set -u -o pipefail
 
 REPO=${1:?usage: collect_ci_evidence.sh org/repo head-sha}
 HEAD_SHA=${2:?usage: collect_ci_evidence.sh org/repo head-sha}
@@ -81,6 +81,7 @@ for item in payload["tree"]:
 fi
 if [ "$WORKFLOW_TREE_OK" = true ]; then
   PR_WORKFLOWS=$(printf '%s\n' "$WORKFLOW_PATHS" | while IFS= read -r path; do
+    [ -n "$path" ] || continue
     content=$(gh api "repos/$REPO/contents/$path?ref=$HEAD_SHA" --jq .content 2>/dev/null | base64 -d) || exit 1
     if printf '%s\n' "$content" | python3 -c '
 import re, sys
@@ -100,4 +101,4 @@ jq -n \
   --argjson required "${REQUIRED:-null}" \
   --argjson rulesets "${RULESETS:-null}" --argjson workflows "${PR_WORKFLOWS:-null}" \
   --arg check_ok "$CHECK_RUNS_OK" --arg status_ok "$COMMIT_STATUSES_OK" --arg required_ok "$REQUIRED_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
-  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?]), pr_workflows: $workflows}'
+  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]? | if type == "object" then .context else . end]), pr_workflows: $workflows}'

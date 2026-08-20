@@ -13,7 +13,7 @@ HEAD_B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 assert_contains() {
   local needle=$1 file=$2 scenario=$3
-  rg -Fq "$needle" "$file" || { printf 'FAIL %s: missing %s\n' "$scenario" "$needle" >&2; exit 1; }
+  grep -Fq -- "$needle" "$file" || { printf 'FAIL %s: missing %s\n' "$scenario" "$needle" >&2; exit 1; }
   printf 'PASS %s\n' "$scenario"
 }
 assert_status() {

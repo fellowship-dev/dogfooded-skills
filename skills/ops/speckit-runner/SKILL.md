@@ -554,12 +554,32 @@ Any producer prompt, poll, marker, or reconciliation failure runs Step C before
 emitting its terminal outcome.
 
 ```bash
+ISSUE_NUMBER="$0"
 PR_JSON=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" \
-  --limit 1 --json number,url,headRefName,body --jq '.[0] // empty')
+  --limit 1 --json number --jq '.[0] // empty')
 PR_NUM=$(printf '%s' "$PR_JSON" | jq -r '.number // empty')
 test -n "$PR_NUM"
-PR_VIEW=$(gh pr view "$PR_NUM" --repo "$REPO" --json url,headRefName,body)
-printf '%s' "$PR_VIEW" | jq -r '.body' | grep -F '### Supervisor verification receipts'
+# Fetch the PR body exactly once. Every later assertion uses this same response.
+PR_VIEW=$(gh pr view "$PR_NUM" --repo "$REPO" \
+  --json url,headRefName,body,closingIssuesReferences)
+PR_URL=$(printf '%s' "$PR_VIEW" | jq -r '.url // empty')
+PR_HEAD=$(printf '%s' "$PR_VIEW" | jq -r '.headRefName // empty')
+test -n "$PR_URL" && test "$PR_HEAD" = "$BRANCH"
+printf '%s' "$PR_VIEW" | jq -e --argjson issue "$ISSUE_NUMBER" --arg repo "$REPO" \
+  'any(.closingIssuesReferences[]?; .number == $issue and .repository.nameWithOwner == $repo)' \
+  >/dev/null
+PR_BODY=$(printf '%s' "$PR_VIEW" | jq -r '.body // ""')
+# Quoting the expanded needle makes it literal in the shell pattern: no grep,
+# option parsing, or regular-expression interpretation of hostile data.
+pr_body_contains_literal() (
+  test -n "$2" || exit 1
+  LC_ALL=C; export LC_ALL
+  case "$1" in *"$2"*) exit 0 ;; *) exit 1 ;; esac
+)
+pr_body_contains_literal "$PR_BODY" "$SUPERVISOR_DISCLOSURE"
+if [ -n "${STALE_SUPERVISOR_DISCLOSURE:-}" ]; then
+  pr_body_contains_literal "$PR_BODY" "$STALE_SUPERVISOR_DISCLOSURE"
+fi
 ```
 
 ---

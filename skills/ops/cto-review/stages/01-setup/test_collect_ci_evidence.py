@@ -43,6 +43,24 @@ def classify(evidence: dict) -> dict:
     return json.loads(result.stdout)
 
 
+def assert_ruleset_failure(name: str, rulesets: str) -> None:
+    evidence = run_collector(f'''case "$*" in
+  *check-runs*) echo '{{"total_count":0,"check_runs":[]}}' ;;
+  */status*) echo '{{"total_count":0,"statuses":[]}}' ;;
+  *required_status_checks*) echo '{{"contexts":[]}}' ;;
+  *rules/branches*) printf '%s\\n' '{rulesets}' ;;
+  *git/trees*) echo '{{"truncated":false,"tree":[]}}' ;;
+  *) exit 1 ;;
+esac
+''')
+    assert evidence["expected_checks_ok"] is False, f"{name}: {evidence}"
+    result = classify(evidence)
+    assert result == {
+        "classification": "block",
+        "reason": "expected_checks lookup failed",
+    }, f"{name}: {result}"
+
+
 def main() -> None:
     # Stage 01 must invoke this collector, rather than reimplementing a partial
     # first-page-only query before handing evidence to the shared classifier.
@@ -99,6 +117,20 @@ esac
     assert required_ruleset["expected_checks"] == ["ruleset-ci"], required_ruleset
     assert classify(required_ruleset)["classification"] == "pass", required_ruleset
 
+    successful_empty = run_collector("""case "$*" in
+  *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
+  */status*) echo '{"total_count":0,"statuses":[]}' ;;
+  *required_status_checks*) echo '{"contexts":[]}' ;;
+  *rules/branches*) echo '[]' ;;
+  *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
+  *) exit 1 ;;
+esac
+""")
+    assert classify(successful_empty) == {
+        "classification": "na-no-configured-checks",
+        "reason": "CI: N/A — no configured checks",
+    }, successful_empty
+
     malformed_required = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
   */status*) echo '{"total_count":0,"statuses":[]}' ;;
@@ -122,6 +154,21 @@ esac
 """)
     assert malformed_rulesets["expected_checks_ok"] is False, malformed_rulesets
     assert classify(malformed_rulesets)["classification"] == "block", malformed_rulesets
+
+    # This is the sanitized live representation from the failed installed
+    # replay: a ruleset array containing a string with nested ruleset-looking
+    # JSON. Accessing `.rules` on this string caused the original jq crash.
+    assert_ruleset_failure(
+        "live string/nested ruleset response",
+        '["{\\"rules\\":[{\\"type\\":\\"required_status_checks\\"}]}"]',
+    )
+    assert_ruleset_failure("top-level ruleset string", '"not a ruleset array"')
+    assert_ruleset_failure("ruleset rules string", '[{"rules":"not an array"}]')
+    assert_ruleset_failure("ruleset rule string", '[{"rules":["not an object"]}]')
+    assert_ruleset_failure(
+        "ruleset malformed required contexts",
+        '[{"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":17}]}}]}]',
+    )
 
     paginated = run_collector("""case "$*" in
   *check-runs*\&page=1*) python3 -c 'import json; print(json.dumps({"total_count": 101, "check_runs": [{"name": f"green-{i}", "status": "completed", "conclusion": "success"} for i in range(100)]}))' ;;

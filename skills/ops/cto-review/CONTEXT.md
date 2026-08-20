@@ -39,7 +39,9 @@ over here.
 - Evidence checks fire only on OPEN PRs. Staging is the only one that can block; visual is always
   a notice. Both waive generously — a diff that does not hit the check's paths never reaches its
   body scan — and both accept `N/A` within 3 lines of their heading as the machine-parsed waiver.
-- Never merge if CI is red, even on LGTM.
+- CI is classified once at the reviewed head as pass, block, or N/A. N/A means no configured
+  checks, not green CI, and never bypasses the normal review, lane, owner-gate, or merge-authority
+  requirements; block never merges.
 - Reporting is the local report file only. No Quest.
 
 ## Folder map

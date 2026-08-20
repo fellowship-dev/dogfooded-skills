@@ -59,6 +59,7 @@ gh api "repos/$REPO/issues?state=open&per_page=10" --jq '.[].title'
 ```bash
 gh pr view $PR --repo $REPO --json number,title,body,headRefName,headRefOid,baseRefName,url,files,labels,author,additions,deletions,commits
 CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
+BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName')
 
 # Existing labels
 gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'
@@ -609,10 +610,29 @@ Also pull dependency-manifest changes explicitly so they are easy to spot:
 gh pr diff $PR --repo $REPO -- "**/package.json" "**/Gemfile" "**/requirements.txt" "**/go.mod" "**/pyproject.toml"
 ```
 
-8. Fetch CI status (the review and act stages must honor it):
+8. Classify CI once at the reviewed head (the review and act stages consume this authoritative
+   result; never substitute `gh pr checks` exit status). The classifier is fail-closed: an API,
+   authorization, JSON, workflow-parsing, or required-context lookup failure is `block`, not an
+   empty check set. Collect all three expected-check sources at `CURRENT_HEAD_SHA`:
+
 ```bash
-gh pr checks $PR --repo $REPO || echo "CHECKS_UNAVAILABLE"
+CI_DIR="skills/cto-review/stages/01-setup"
+test -f "$CI_DIR/ci_gate.py" || CI_DIR="skills/ops/cto-review/stages/01-setup"
+
+# This collector is the single evidence source for both reviewed-head and merge-time
+# classification. It paginates check-runs and legacy statuses, fails closed on incomplete
+# responses, and recognizes mapping, inline, and block-list pull-request workflow triggers.
+CI_EVIDENCE=$(bash "$CI_DIR/collect_ci_evidence.sh" "$REPO" "$CURRENT_HEAD_SHA" "$BASE_BRANCH")
+CI_RESULT=$(printf '%s' "$CI_EVIDENCE" | python3 "$CI_DIR/ci_gate.py")
+CI_CLASSIFICATION=$(echo "$CI_RESULT" | jq -r .classification)
+CI_REASON=$(echo "$CI_RESULT" | jq -r .reason)
+echo "[cto-review] CI classification: $CI_CLASSIFICATION — $CI_REASON"
 ```
+
+`pass` requires every observed check to be completed with conclusion `success`. `block` covers a
+pending, failing, cancelled, skipped, neutral, unknown, or missing expected check. Only a successful
+zero-check response with no required context and no pull-request workflow is
+`na-no-configured-checks`; render its receipt exactly as `CI: N/A — no configured checks`.
 
 9. Resolve the team merge strategy from Pylot's DB-authoritative live team
    configuration. Automated merge authority is explicit: only
@@ -668,7 +688,10 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - mergedAt: {timestamp or null}
 - mergeCommit: {oid or null}
 - short_circuit: {none | closed-no-merge | missing-staging-evidence}
-- ci_status: {passing | failing | pending | unavailable}
+- ci_classification: {pass | block | na-no-configured-checks}
+- ci_receipt: {"CI: N/A — no configured checks" for N/A, otherwise the classifier reason}
+- ci_observed_checks: {check-run names/status/conclusion from the reviewed head}
+- ci_expected_checks: {required contexts/ruleset checks and PR workflow paths, or "none"}
 - merge_strategy: {auto | label-only}
 
 ## Visual Evidence
@@ -714,7 +737,8 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
   waiver applied and its rationale echoed when it fires.
 - Visual evidence evaluated after it, and only if it did not short-circuit. Its verdict is recorded
   as `notice`; it never sets a short_circuit and never suppresses stages 02/03.
-- For `open`/`merged`: full diff, metadata, repo context, CI status, and merge strategy all captured.
+- For `open`/`merged`: full diff, metadata, repo context, CI classification/evidence, and merge
+  strategy all captured.
 - For `closed-no-merge` or `missing-staging-evidence`: short_circuit set; remaining gathering skipped.
 
 ## Failure

@@ -170,7 +170,9 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 6. **Each stage writes handoff.md before the next stage reads it.**
 7. **Do not skip stages** — every stage executes, except stage 02 is skipped only on the CLOSED-no-merge short-circuit.
 8. **Honor merge state** — never merge a CLOSED PR; for an already-merged PR, post the review as a post-merge note and never attempt merge.
-9. **Never merge if CI is red** — even on an LGTM verdict.
+9. **Never merge on a CI block** — Stage 01 classifies CI once as `pass`, `block`, or
+   `na-no-configured-checks`. Only pass or N/A may satisfy the CI prerequisite; N/A still requires
+   the normal review, lane, owner-gate, and merge-authority requirements.
 10. **No Quest** — reporting is the local report file only.
 11. **The staging gate fires first and is the only evidence short-circuit** (step 5.5). On that
     short-circuit, skip everything else and post its rejection inline. It cannot be bypassed by

@@ -8,7 +8,7 @@ cohesion, with every dimension weighed against the same full diff at once.
 - `.procedure-output/cto-review/01-setup/handoff.md`
 
 ## Task
-Read the setup handoff — the full diff, PR metadata, repo context, merge state, CI status, ALL PR
+Read the setup handoff — the full diff, PR metadata, repo context, merge state, CI classification, ALL PR
 comments, and the label snapshot. Before forming a verdict:
 1. Run the **judgement layer** (step 0 below) — read all labels and all comments, identify every
    blocker, determine resolved/unresolved with evidence.
@@ -158,8 +158,11 @@ Decide the verdict using this table:
 | BLOCKED | External dependency or missing info | `needs-work` label; post what is needed, do NOT dispatch |
 | NEW_ISSUE | Review reveals separate work needed | Approve PR on its own merits; flag a separate issue |
 
-**Never recommend merge if CI is red** (`ci_status: failing`) — force the verdict to BLOCKED/hold and
-note the CI failure, regardless of how clean the diff is.
+**Never recommend merge if `ci_classification: block`** — force the verdict to BLOCKED/hold and
+note the classifier reason, regardless of how clean the diff is. `pass` and
+`na-no-configured-checks` may proceed only through the ordinary whole-diff verdict; N/A is not a
+generic bypass. For N/A, render exactly `CI: N/A — no configured checks` and state that the lane
+test receipts and deploy-time release corpus gate remain in force.
 
 ## Action items
 List numbered, specific, actionable must-do items. "Update docs" is not actionable;
@@ -230,7 +233,9 @@ Lane: {fast | staging | none — from the setup handoff}
 Fast lane (#2996): double-check and the pre-merge staging deploy did not run. Compensating
 controls in force: review-pr findings + review-state ledger, this cohesive review, the #2918
 owner hard-stop (lane-independent), CI green, and the in-deploy full corpus gate that still
-guards prod on every release train. A missing `double-checked` label is expected here.
+guards prod on every release train. If CI is N/A, replace "CI green" with `CI: N/A — no configured
+checks`; lane test receipts and the deploy-time release corpus gate remain the applicable controls.
+A missing `double-checked` label is expected here.
 Comments checked: {N} (last author: {login})
 Blockers found:
 | Blocker | Type | Status | Evidence |
@@ -248,7 +253,8 @@ Blockers found:
 - Judgement layer (Step 0) ran: labels read, all comments processed, each blocker classified.
 - Receipts block populated — labels seen, comment count, blockers → status.
 - Checklist tables and action items populated with no unresolved TBD/TODO.
-- CI-red forces a non-merge verdict.
+- `ci_classification: block` forces a non-merge verdict; pass and N/A remain subject to every
+  other review and merge requirement.
 
 ## Failure
 - Setup handoff missing or unreadable → write handoff with `verdict: BLOCKED` and reason "setup

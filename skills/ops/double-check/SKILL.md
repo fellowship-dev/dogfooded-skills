@@ -117,10 +117,11 @@ not run a promotion path.
 
 ## Exit paths
 
-- **Claims mismatch** (first-check, PR body claims code the diff does not contain): stage 04 posts
-  a `<!-- pylot:claims-mismatch -->` comment, **withholds** `double-checked` (which halts
-  cto-review / staging / FlowChad), does not touch `needs-work`, and emits:
-  `[pylot] outcome="double-check BLOCKED {repo}#{pr} — {N} PR-body claims unbacked by the diff, double-checked withheld" status=success`
+- **First-check fail closed** (negative verdict, claims mismatch, invalid/wrong-head ledger, or
+  open/confirmed finding): stage 04 posts a `<!-- pylot:first-check-fail-closed -->` comment,
+  removes/withholds `double-checked`, adds or retains `needs-work`, and creates no positive
+  follow-on. It emits:
+  `[pylot] outcome="double-check BLOCKED {repo}#{pr} — {reason}, double-checked withheld, needs-work retained" status=success`
 - **Re-check PASS** (PR had `needs-work`, verdict=ready): stage 04 removes `needs-work`, re-toggles
   `double-checked` (remove + re-add), and emits:
   `[pylot] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
@@ -128,8 +129,9 @@ not run a promotion path.
   does NOT re-toggle `double-checked`, posts a structured verdict comment with a
   `<!-- pylot:recheck-fail -->` marker (idempotent — skipped if marker already present), and emits:
   `[pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success`
-- **First-check success**: stage 04 applies `double-checked` label and emits:
-  `[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}, {N} findings curated, {N} fixes pushed" status=success`
+- **First-check success**: only an explicit `ready` verdict plus a valid exact-head review-state
+  ledger with no `open` or `confirmed` findings may apply `double-checked`; it emits:
+  `[pylot] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
 - **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR) →
   `[pylot] outcome="double-check blocked: {reason}" status=blocked`
@@ -173,6 +175,12 @@ not run a promotion path.
     retrieval write one blocked receipt. A delta inspection, file list, short SHA, or local HEAD
     never substitutes for equality. Stale and blocked receipts never mutate `double-checked` or
     trigger downstream automation.
+15. **First-check promotion is explicitly positive only** — apply `double-checked` only when the
+    reviewer verdict is exactly `ready` and the final valid `review-state v1` ledger is bound to
+    the exact live head with no `open` or `confirmed` findings. Any negative, missing, malformed,
+    stale, or conflicting signal fails closed: remove/withhold `double-checked`, add or retain
+    `needs-work`, and do not create CTO, FlowChad, staging, or merge follow-ons. A terminal or
+    parser-failed mission never turns an already-written negative receipt into a positive gate.
 
 ## Reference files
 

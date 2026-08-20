@@ -7,17 +7,18 @@ HEAD_SHA=${2:?usage: collect_ci_evidence.sh org/repo head-sha}
 # The caller supplies the PR base branch because required checks are branch-specific.
 BASE_BRANCH=${3:?usage: collect_ci_evidence.sh org/repo head-sha base-branch}
 
-# GitHub returns this one 403 when a private repository's plan does not include
-# branch-protection/ruleset configuration.  It is not an authorization result:
-# the configuration source is unavailable, so it contributes an empty set.  Do
-# not weaken this check: every other API error remains unavailable evidence.
+# GitHub writes API error JSON to stdout, while stderr carries only a
+# human-readable diagnostic. A private repository's unavailable-plan 403 is
+# absent configuration only when the nonzero path and stdout payload both match.
+# Every other API error remains unavailable evidence.
 PLAN_UNAVAILABLE_MESSAGE='Upgrade to GitHub Pro or make this repository public to enable this feature.'
 is_plan_unavailable_403() {
-  jq -e --arg message "$PLAN_UNAVAILABLE_MESSAGE" '
+  local status=$1 payload=$2
+  [ "$status" != "0" ] && printf '%s' "$payload" | jq -e --arg message "$PLAN_UNAVAILABLE_MESSAGE" '
     type == "object"
     and .message == $message
     and .status == "403"
-  ' "$1" >/dev/null 2>&1
+  ' >/dev/null
 }
 
 # Fetch every page and prove the response is complete. A green first page cannot
@@ -62,7 +63,7 @@ REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_
 if grep -q '404' /tmp/cto-required.err; then
   REQUIRED='{"contexts":[]}'
   REQUIRED_OK=true
-elif is_plan_unavailable_403 /tmp/cto-required.err; then
+elif is_plan_unavailable_403 "${REQUIRED_STATUS:-0}" "$REQUIRED"; then
   REQUIRED='{"contexts":[]}'
   REQUIRED_OK=true
 elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
@@ -83,13 +84,16 @@ elif [ "${REQUIRED_STATUS:-0}" = "0" ]; then
   fi
 else
   REQUIRED_OK=false
+  # Keep the final evidence document well-formed while retaining the failed
+  # lookup bit above; malformed stdout must never turn into a collector crash.
+  REQUIRED='{"contexts":[]}'
 fi
 
 RULESETS=$(gh api "repos/$REPO/rules/branches/$BASE_BRANCH" 2>/tmp/cto-rulesets.err) || RULESETS_STATUS=$?
 RULESET_CONTEXTS='[]'
 if grep -q '404' /tmp/cto-rulesets.err; then
   RULESETS_OK=true
-elif is_plan_unavailable_403 /tmp/cto-rulesets.err; then
+elif is_plan_unavailable_403 "${RULESETS_STATUS:-0}" "$RULESETS"; then
   RULESETS_OK=true
 elif [ "${RULESETS_STATUS:-0}" != "0" ]; then
   RULESETS_OK=false

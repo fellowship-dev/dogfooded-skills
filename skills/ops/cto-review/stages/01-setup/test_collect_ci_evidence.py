@@ -70,11 +70,14 @@ def main() -> None:
     assert "ALL_COMMENT_BODIES" not in ci_step
     assert "REVIEW_STATE" not in ci_step
 
+    # Production gh shape: API JSON is stdout and `gh: Upgrade...` is stderr.
+    # Both unavailable endpoints become empty configuration only after exiting
+    # nonzero with the exact structured payload.
     plan_unavailable = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
   */status*) echo '{"total_count":0,"statuses":[]}' ;;
-  *required_status_checks*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}' >&2; exit 1 ;;
-  *rules/branches*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}' >&2; exit 1 ;;
+  *required_status_checks*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
+  *rules/branches*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
   *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
   *) exit 1 ;;
 esac
@@ -89,7 +92,7 @@ esac
     arbitrary_403 = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
   */status*) echo '{"total_count":0,"statuses":[]}' ;;
-  *required_status_checks*) printf '%s\\n' '{"message":"Resource not accessible by integration","status":"403"}' >&2; exit 1 ;;
+  *required_status_checks*) printf '%s\\n' '{"message":"Resource not accessible by integration","status":"403"}'; printf '%s\\n' 'gh: Resource not accessible by integration' >&2; exit 1 ;;
   *rules/branches*) echo '[]' ;;
   *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
   *) exit 1 ;;
@@ -101,7 +104,7 @@ esac
     malformed_403 = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":0,"check_runs":[]}' ;;
   */status*) echo '{"total_count":0,"statuses":[]}' ;;
-  *required_status_checks*) printf '%s\\n' '{"message":' >&2; exit 1 ;;
+  *required_status_checks*) printf '%s\\n' '{"message":'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
   *rules/branches*) echo '[]' ;;
   *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
   *) exit 1 ;;
@@ -113,7 +116,7 @@ esac
     mixed_plan_and_real_source = run_collector("""case "$*" in
   *check-runs*) echo '{"total_count":1,"check_runs":[{"name":"ruleset-ci","status":"completed","conclusion":"success"}]}' ;;
   */status*) echo '{"total_count":0,"statuses":[]}' ;;
-  *required_status_checks*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}' >&2; exit 1 ;;
+  *required_status_checks*) printf '%s\\n' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'; printf '%s\\n' 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature.' >&2; exit 1 ;;
   *rules/branches*) echo '[{"rules":[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ruleset-ci"}]}}]}]' ;;
   *git/trees*) echo '{"truncated":false,"tree":[]}' ;;
   *) exit 1 ;;

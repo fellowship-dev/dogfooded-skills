@@ -52,6 +52,7 @@ CLAIMS=$(grep "^claims_reconciled:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2
 # Stage 02 records the exact remote checkout it reviewed. Missing/malformed is unsafe.
 REVIEWED_HEAD_SHA=$(awk '/^reviewed_head_sha:/{print $2; exit}' "$REVIEW_HANDOFF")
 RECEIPT_ID=$(awk '/^receipt_id:/{print $2; exit}' "$REVIEW_HANDOFF")
+FINAL_COMMENT_CURSOR=$(sed -n 's/^final_comment_cursor: //p' "$REVIEW_HANDOFF" | head -1)
 RESTART_COUNT=${RESTART_COUNT:-0}
 if ! printf '%s' "$REVIEWED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
   echo "[stage-04] blocked: stage 02 did not record an exact reviewed HEAD SHA"
@@ -79,6 +80,16 @@ DECISION=$(dc_exact_head_decision "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RESTAR
 if [ "${LIVE_READ_FAILED:-false}" = true ]; then DECISION=blocked; fi
 LIVE_COMMENT_CURSOR=$(jq -c '[.comments[] | {id, createdAt, updatedAt}]' /tmp/dc-pr-$PR.json 2>/dev/null || true)
 
+# A matching SHA alone is not enough: a blocker can arrive while Stage 02's
+# corpus work runs without moving the branch. Fail closed rather than promote a
+# verdict that did not consume the final comment set.
+if ! printf '%s' "$FINAL_COMMENT_CURSOR" | jq -e 'type == "array"' >/dev/null 2>&1 \
+  || [ "$(printf '%s' "$FINAL_COMMENT_CURSOR" | jq -cS . 2>/dev/null)" != \
+       "$(printf '%s' "$LIVE_COMMENT_CURSOR" | jq -cS . 2>/dev/null)" ]; then
+  DECISION=blocked
+  COMMENT_CURSOR_CHANGED=true
+fi
+
 if [ "$DECISION" = restart ]; then
   # This stable key makes repeated delivery/resume idempotent. It is not an approval receipt.
   MARKER="pylot:exact-head-restart pr=$PR from=$REVIEWED_HEAD_SHA to=$LIVE_HEAD_SHA receipt=$RECEIPT_ID"
@@ -99,7 +110,8 @@ if [ "$DECISION" = blocked ]; then
     gh pr comment $PR --repo $REPO --body "<!-- $MARKER -->
 ## Double-check blocked
 No approval was published: the exact-head receipt cannot be promoted (reviewed `$REVIEWED_HEAD_SHA`, live `${LIVE_HEAD_SHA:-unavailable}`, restart count `$RESTART_COUNT`)."
-  printf 'blocked: true\nreviewed_head_sha: %s\nlive_head_sha: %s\nreceipt_id: %s\n' \
+  printf 'blocked: true\nreason: %s\nreviewed_head_sha: %s\nlive_head_sha: %s\nreceipt_id: %s\n' \
+    "${COMMENT_CURSOR_CHANGED:+review comments changed after cohesive review}" \
     "$REVIEWED_HEAD_SHA" "${LIVE_HEAD_SHA:-unavailable}" "$RECEIPT_ID" \
     > .procedure-output/double-check/04-post/blocked.md
   echo "[pylot] outcome=\"double-check blocked: exact-head receipt unavailable or superseded\" status=blocked"
@@ -115,6 +127,41 @@ printf '%s\n' "$LIVE_FILES"
 
 # `promote` is possible only after the helper's full-SHA equality check above. The live comments
 # cursor is part of the receipt, so comments posted during long review work are auditable input.
+```
+
+### Executable mutation guard
+
+Use this guard immediately before every approving comment or label mutation. It reads GitHub
+again, so neither a cached JSON document nor the local checkout can authorize a promotion. If it
+does not print `promote`, do **not** run the mutation: take the deduplicated restart/blocked
+receipt path above with the freshly read state, then exit `3`/`2` respectively.
+
+```bash
+dc_require_promotable_head() {
+  local decision
+  decision=$(dc_live_promotion_decision "$PR" "$REPO" "$REVIEWED_HEAD_SHA" \
+    "$RESTART_COUNT" "/tmp/dc-final-pr-$PR.json" "$FINAL_COMMENT_CURSOR")
+  [ "$decision" = promote ] && return 0
+  local live_head_sha
+  live_head_sha=$(jq -r '.headRefOid // empty' /tmp/dc-final-pr-$PR.json 2>/dev/null || true)
+  echo "[stage-04] promotion mutation blocked: exact-head decision=$decision"
+  dc_stop_for_nonpromotion "$live_head_sha" "$decision"
+}
+
+dc_stop_for_nonpromotion() {
+  local live_head_sha=$1 decision=$2 cursor
+  cursor=$(jq -c '[.comments[] | {id, createdAt, updatedAt}]' /tmp/dc-final-pr-$PR.json 2>/dev/null || true)
+  if [ "$decision" = restart ]; then
+    printf 'restart_count: 1\nfrom_head_sha: %s\nto_head_sha: %s\nreceipt_id: %s\ncomment_cursor: %s\n' \
+      "$REVIEWED_HEAD_SHA" "$live_head_sha" "$RECEIPT_ID" "$cursor" \
+      > .procedure-output/double-check/04-post/restart.md
+    exit 3
+  fi
+  printf 'blocked: true\nreviewed_head_sha: %s\nlive_head_sha: %s\nreceipt_id: %s\n' \
+    "$REVIEWED_HEAD_SHA" "${live_head_sha:-unavailable}" "$RECEIPT_ID" \
+    > .procedure-output/double-check/04-post/blocked.md
+  exit 2
+}
 ```
 
 Then:
@@ -142,7 +189,9 @@ PROMOTION_MARKER="pylot:exact-head-promoted pr=$PR head=$LIVE_HEAD_SHA receipt=$
 PROMOTION_ALREADY_POSTED=$(gh pr view $PR --repo $REPO --json comments \
   --jq '.comments[].body' | grep -F "$PROMOTION_MARKER" || true)
 if [ -z "$PROMOTION_ALREADY_POSTED" ]; then
-gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
+# A promotion race is never repaired by posting the stale comment.
+dc_require_promotable_head
+gh pr comment $PR --repo $REPO --body "$(cat <<REVIEW_EOF
 <!-- $PROMOTION_MARKER -->
 ## Double-Check Review: PR #$PR — $PR_TITLE
 
@@ -195,6 +244,10 @@ describe what actually landed, or land the missing code. `double-checked` withhe
 
 REVIEW_EOF
 )"
+# The next label mutation must accept the comment just written but still reject a
+# newly-arrived external comment. Refresh the expected cursor after our own post.
+FINAL_COMMENT_CURSOR=$(gh pr view $PR --repo $REPO --json comments \
+  --jq '[.comments[] | {id, createdAt, updatedAt}]')
 else
   echo "[stage-04] exact-head promotion receipt already posted — skipping duplicate verdict"
 fi
@@ -225,17 +278,16 @@ Validate with `jq .` before posting — downstream cto-review parses it.
 Also append to the `verified` manifest:
 `{"what": "PR title/body claims reconciled against live changed files", "how": "gh pr view", "by": "double-check"}`
 
-Immediately before `gh pr comment`, fetch `headRefOid,comments` once more and re-run
-`dc_exact_head_decision`. If it is not `promote`, take the same restart/blocked receipt path
-above and do not post an approving comment. This prevents the tiny race between the first gate
-and `gh pr comment`; never post an approving comment before this final equality.
+The `dc_require_promotable_head` invocation directly above `gh pr comment` is mandatory. If it
+fails, take the same deduplicated restart/blocked receipt path above, never an approving comment.
+This prevents the tiny race between the first gate and `gh pr comment`.
 
 ### Apply labels (re-check vs first-check)
 
 Only after the review comment posts successfully and the final exact-head equality has passed.
-Immediately before every `gh pr edit` / `gh label` mutation, fetch `headRefOid,comments` again
-and require `dc_exact_head_decision` to still return `promote`; otherwise write the deduplicated
-restart/blocked receipt and return without a label mutation.
+Immediately before every `gh pr edit` / `gh label` mutation, call
+`dc_require_promotable_head`; otherwise write the deduplicated restart/blocked receipt and return
+without a label mutation.
 If the matching `PROMOTION_MARKER` already exists and `double-checked` is already present, leave
 the label untouched; never remove/re-add it merely to replay a receipt.
 
@@ -310,14 +362,17 @@ NOT re-trigger double-check directly. If cto-review subsequently fails, it re-ad
 echo "[stage-04] re-check PASS — removing needs-work, re-toggling double-checked"
 
 # Step 1: remove needs-work (clears the rework signal — MUST happen before step 3)
+dc_require_promotable_head
 gh pr edit $PR --repo $REPO --remove-label "needs-work" 2>/dev/null || true
 
 # Step 2: remove double-checked so re-add fires a fresh pull_request.labeled event
+dc_require_promotable_head
 gh pr edit $PR --repo $REPO --remove-label "double-checked" 2>/dev/null || true
 
 # Step 3: re-add double-checked → fires pull_request.labeled → cto-review-on-double-checked
 gh label create "double-checked" --repo $REPO --color "0075ca" \
   --description "Double-checked by agent" 2>/dev/null || true
+dc_require_promotable_head
 gh pr edit $PR --repo $REPO --add-label "double-checked"
 
 echo "[stage-04] loop closed — cto-review will re-fire via pull_request.labeled"
@@ -380,6 +435,7 @@ Existing behavior unchanged: apply `double-checked` label. cto-review handles ve
 echo "[stage-04] first-check — applying double-checked label"
 gh label create "double-checked" --repo $REPO --color "0075ca" \
   --description "Double-checked by agent" 2>/dev/null || true
+dc_require_promotable_head
 gh pr edit $PR --repo $REPO --add-label "double-checked"
 ```
 

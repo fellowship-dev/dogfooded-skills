@@ -58,7 +58,7 @@ never the full orchestrator context.
 Run one Task per stage, one after another. Do NOT launch any stages in parallel. Do not start the
 next stage until the current one completes. Start with `restart_count=0` and a fresh
 `receipt_id`. If stage 04 sees a different full remote SHA, it writes a restart receipt without
-posting a verdict or touching labels, then runs a new 01 → 02 cycle at that observed SHA with
+posting a verdict or touching labels, then runs a complete conditional 01 → 02 → 03 → 04 cycle at that observed SHA with
 `restart_count=1`. Stage 02 still receives only its new setup handoff: never orchestration
 history. A second transition, or any unreadable live head/comments, writes one deduplicated
 blocked receipt and stops.
@@ -102,9 +102,10 @@ skills/double-check/stages/04-post/CONTEXT.md
 Run the live claims-vs-diff and exact-head gates (`gh pr view`), then only for a matching receipt
 post the comment and apply the label. Verify labels/comment actually landed, write the report
 file, and emit the `[pylot] outcome=...` marker from the orchestrator (never from a subagent).
-If stage 04 exits `3`, read `04-post/restart.md`, set `RESTART_COUNT=1`, and run a new Stage 01
-then Stage 02 for its recorded `to_head_sha`; do not pass the old Stage 02 handoff. If it exits
-`2`, it is terminal blocked: retain the receipt and do not run a promotion path.
+If stage 04 exits `3`, read `04-post/restart.md`, set `RESTART_COUNT=1`, and run a new complete
+conditional Stage 01 → 02 → 03 → 04 cycle for its recorded `to_head_sha`; do not pass the old
+Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: retain the receipt and do
+not run a promotion path.
 
 ## Stage handoff chain
 

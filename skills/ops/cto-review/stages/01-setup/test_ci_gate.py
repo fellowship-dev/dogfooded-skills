@@ -16,9 +16,11 @@ GREEN = {"name": "test", "status": "completed", "conclusion": "success"}
 def evidence(**overrides):
     result = {
         "check_runs_ok": True,
+        "commit_statuses_ok": True,
         "expected_checks_ok": True,
         "pr_workflows_ok": True,
         "check_runs": [],
+        "commit_statuses": [],
         "expected_checks": [],
         "pr_workflows": [],
     }
@@ -44,17 +46,25 @@ def main() -> None:
     assert replay["reason"] == RECEIPT_NA
 
     expect("configured green", PASS, check_runs=[GREEN], expected_checks=["test"])
+    expect("legacy status context green", PASS,
+           commit_statuses=[{"context": "legacy-test", "state": "success"}],
+           expected_checks=["legacy-test"])
+    expect("legacy status context failing", BLOCK,
+           commit_statuses=[{"context": "legacy-test", "state": "failure"}])
     for conclusion in ("failure", "cancelled", "skipped", "neutral", "timed_out", "unknown"):
         expect(f"non-success conclusion {conclusion}", BLOCK,
                check_runs=[{**GREEN, "conclusion": conclusion}])
     expect("pending", BLOCK, check_runs=[{**GREEN, "status": "in_progress", "conclusion": None}])
     expect("expected but absent", BLOCK, check_runs=[GREEN], expected_checks=["required-lint"])
     expect("workflow configured but no run", BLOCK, pr_workflows=[".github/workflows/ci.yml"])
-    for source in ("check_runs", "expected_checks", "pr_workflows"):
+    for source in ("check_runs", "commit_statuses", "expected_checks", "pr_workflows"):
         expect(f"{source} lookup failure", BLOCK, **{f"{source}_ok": False})
     expect("malformed collection", BLOCK, check_runs={"total_count": 0})
     expect("malformed expected check", BLOCK, expected_checks=[{"context": "test"}])
-    print("ci_gate: 16 fixtures passed")
+    expect("nameless successful check run", BLOCK,
+           check_runs=[{"status": "completed", "conclusion": "success"}])
+    expect("malformed commit status", BLOCK, commit_statuses=[{"state": "success"}])
+    print("ci_gate: 21 fixtures passed")
 
 
 if __name__ == "__main__":

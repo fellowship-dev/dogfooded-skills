@@ -220,17 +220,36 @@ fi
 Only proceed to a merge if ALL hold:
 1. Stage 02 `merge_decision` is `merge` (verdict LGTM / "merge immediately").
 2. `MISSING` is empty — i.e. the lane's required labels from Step 3 are all present.
-3. Stage 01 `ci_classification` is `pass` or `na-no-configured-checks` (never re-run or
-   reinterpret `gh pr checks`; `block` is a hold).
+3. Stage 01 and a fresh, structured merge-time CI classification are both `pass` or
+   `na-no-configured-checks` (never interpret `gh pr checks`; `block` is a hold).
 4. Step 2 (owner gate) did NOT fire.
 
 ```bash
-# Consume the single, reviewed-head CI classification from Stage 01.
-CI_CLASSIFICATION=$(sed -n 's/^- ci_classification: //p' .procedure-output/cto-review/01-setup/handoff.md | head -1)
+# The stage-01 receipt establishes what was reviewed; it cannot authorize a changed head or a
+# configuration added while review ran. Re-read the head and collect the same structured evidence
+# immediately before merge. Any API, tree, parse, or classifier failure is a hold.
+REVIEWED_HEAD_SHA=$(sed -n 's/^- Current HEAD SHA: //p' .procedure-output/cto-review/01-setup/handoff.md | head -1)
+CURRENT_MERGE_HEAD_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null) || {
+  echo "[cto-review] CI merge prerequisite: BLOCKED (PR head lookup failed)"; exit 0;
+}
+if [ -z "$REVIEWED_HEAD_SHA" ] || [ "$CURRENT_MERGE_HEAD_SHA" != "$REVIEWED_HEAD_SHA" ]; then
+  echo "[cto-review] CI merge prerequisite: BLOCKED (head changed since review)"; exit 0
+fi
+BASE_BRANCH=$(gh pr view "$PR" --repo "$REPO" --json baseRefName --jq '.baseRefName' 2>/dev/null) || {
+  echo "[cto-review] CI merge prerequisite: BLOCKED (base branch lookup failed)"; exit 0;
+}
+CI_DIR="skills/cto-review/stages/01-setup"
+test -f "$CI_DIR/ci_gate.py" || CI_DIR="skills/ops/cto-review/stages/01-setup"
+CI_EVIDENCE=$(bash "$CI_DIR/collect_ci_evidence.sh" "$REPO" "$CURRENT_MERGE_HEAD_SHA" "$BASE_BRANCH") || {
+  echo "[cto-review] CI merge prerequisite: BLOCKED (evidence collection failed)"; exit 0;
+}
+CI_RESULT=$(printf '%s' "$CI_EVIDENCE" | python3 "$CI_DIR/ci_gate.py")
+CI_CLASSIFICATION=$(printf '%s' "$CI_RESULT" | jq -r '.classification // "block"' 2>/dev/null)
 case "$CI_CLASSIFICATION" in
   pass|na-no-configured-checks) ;;
   *) echo "[cto-review] CI merge prerequisite: BLOCKED ($CI_CLASSIFICATION)"; exit 0 ;;
 esac
+echo "[cto-review] CI merge prerequisite: $CI_CLASSIFICATION"
 
 # Verify required labels
 gh pr view $PR --repo $REPO --json labels --jq '.labels[].name'

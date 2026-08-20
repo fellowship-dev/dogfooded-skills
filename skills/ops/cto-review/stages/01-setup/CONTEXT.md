@@ -623,6 +623,11 @@ test -f "$CI_DIR/ci_gate.py" || CI_DIR="skills/ops/cto-review/stages/01-setup"
 CHECK_RUNS=$(gh api "repos/$REPO/commits/$CURRENT_HEAD_SHA/check-runs?per_page=100" 2>/dev/null) || CHECK_RUNS_OK=false
 : "${CHECK_RUNS_OK:=true}"
 
+# Legacy commit-status contexts are distinct from check-runs. Required contexts may be supplied by
+# either API, so omitting this response would falsely block a green external status or waive it.
+COMMIT_STATUSES=$(gh api "repos/$REPO/commits/$CURRENT_HEAD_SHA/status" 2>/dev/null) || COMMIT_STATUSES_OK=false
+: "${COMMIT_STATUSES_OK:=true}"
+
 # A 404 means no branch protection is configured; every other failure remains a block.
 REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_checks" 2>/tmp/cto-required.err) || REQUIRED_STATUS=$?
 if grep -q '404' /tmp/cto-required.err; then
@@ -649,13 +654,21 @@ WORKFLOW_TREE=$(gh api "repos/$REPO/git/trees/$CURRENT_HEAD_SHA?recursive=1" 2>/
 : "${WORKFLOW_TREE_OK:=true}"
 PR_WORKFLOWS='[]'
 if [ "$WORKFLOW_TREE_OK" = true ]; then
-  PR_WORKFLOWS=$(echo "$WORKFLOW_TREE" | python3 -c '
+  WORKFLOW_PATHS=$(echo "$WORKFLOW_TREE" | python3 -c '
 import json, sys
-for item in json.load(sys.stdin).get("tree", []):
+payload = json.load(sys.stdin)
+if payload.get("truncated") is True or not isinstance(payload.get("tree"), list):
+    sys.exit(1)
+for item in payload["tree"]:
+    if not isinstance(item, dict):
+        sys.exit(1)
     path = item.get("path", "")
     if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")):
         print(path)
-' | while IFS= read -r path; do
+') || WORKFLOW_TREE_OK=false
+fi
+if [ "$WORKFLOW_TREE_OK" = true ]; then
+  PR_WORKFLOWS=$(printf '%s\n' "$WORKFLOW_PATHS" | while IFS= read -r path; do
     content=$(gh api "repos/$REPO/contents/$path?ref=$CURRENT_HEAD_SHA" --jq .content 2>/dev/null | base64 -d) || exit 1
     if printf '%s\n' "$content" | python3 -c '
 import re, sys
@@ -669,10 +682,11 @@ fi
 
 CI_EVIDENCE=$(jq -n \
   --argjson runs "${CHECK_RUNS:-null}" \
+  --argjson statuses "${COMMIT_STATUSES:-null}" \
   --argjson required "${REQUIRED:-null}" \
   --argjson rulesets "${RULESETS:-null}" --argjson workflows "${PR_WORKFLOWS:-null}" \
-  --arg check_ok "$CHECK_RUNS_OK" --arg required_ok "$REQUIRED_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
-  '{check_runs_ok: ($check_ok == "true"), expected_checks_ok: ($required_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?]), pr_workflows: $workflows}')
+  --arg check_ok "$CHECK_RUNS_OK" --arg status_ok "$COMMIT_STATUSES_OK" --arg required_ok "$REQUIRED_OK" --arg workflow_ok "$WORKFLOW_TREE_OK" \
+  '{check_runs_ok: ($check_ok == "true"), commit_statuses_ok: ($status_ok == "true"), expected_checks_ok: ($required_ok == "true"), pr_workflows_ok: ($workflow_ok == "true"), check_runs: ($runs.check_runs // null), commit_statuses: ($statuses.statuses // null), expected_checks: (($required.contexts // []) + ($required.checks // [] | map(.context // .)) + [$rulesets[]?.rules[]? | select(.type == "required_status_checks") | .parameters.required_status_checks[]?]), pr_workflows: $workflows}')
 CI_RESULT=$(printf '%s' "$CI_EVIDENCE" | python3 "$CI_DIR/ci_gate.py")
 CI_CLASSIFICATION=$(echo "$CI_RESULT" | jq -r .classification)
 CI_REASON=$(echo "$CI_RESULT" | jq -r .reason)

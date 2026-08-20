@@ -6,6 +6,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/shared/exact-head-receipt.sh"
 # shellcheck source=../shared/nonpromotion-receipt.sh
 source "$ROOT/shared/nonpromotion-receipt.sh"
+# shellcheck source=../shared/promotion-verdict-gate.sh
+source "$ROOT/shared/promotion-verdict-gate.sh"
 
 A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -54,6 +56,43 @@ assert_eq 'blocked;no-label;no-downstream' "$(simulate_post "$B" "$C" 1)" second
 assert_eq 'blocked;no-label;no-downstream' "$(simulate_post "$B" unavailable 0)" read-failure-no-side-effects
 # Re-delivery uses the same terminal state, so it cannot create a new restart or label mutation.
 assert_eq 'blocked;no-label;no-downstream' "$(simulate_post "$B" "$C" 1)" terminal-replay-dedupes
+
+# #3192 / #3189: two confirmed ledger findings and a negative receipt must never become a
+# positive label or follow-on, even when a generic task path reports success.
+CONFIRMED_BLOCKERS_STATE=$(cat <<EOF
+{"v":1,"stage":"double-check","head_sha":"$A","findings":[{"id":"R1","status":"confirmed"},{"id":"R2","status":"confirmed"}]}
+EOF
+)
+assert_eq 'needs-work:blocking-findings' \
+  "$(dc_first_check_promotion_decision ready "$A" "$CONFIRMED_BLOCKERS_STATE")" \
+  issue-3189-confirmed-blockers-fail-closed
+assert_eq 'needs-work:negative-verdict' \
+  "$(dc_first_check_promotion_decision needs-work "$A" '{"v":1,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","findings":[]}')" \
+  negative-verdict-cannot-promote
+assert_eq 'needs-work:review-state-head-mismatch' \
+  "$(dc_first_check_promotion_decision ready "$A" '{"v":1,"head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","findings":[]}')" \
+  wrong-head-ledger-cannot-promote
+assert_eq 'needs-work:invalid-review-state' \
+  "$(dc_first_check_promotion_decision ready "$A" 'not-json')" \
+  invalid-ledger-cannot-promote
+assert_eq promote \
+  "$(dc_first_check_promotion_decision ready "$A" '{"v":1,"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","findings":[{"id":"R1","status":"fixed"}]}')" \
+  explicit-positive-blocker-free-receipt-promotes
+
+# The harness can model the #3192 terminal race: a negative comment is written, then mission
+# outcome parsing fails. That terminal status must not create a positive label or any follow-on.
+simulate_terminal_race() {
+  local verdict=$1 state=$2 terminal=$3 decision
+  decision=$(dc_first_check_promotion_decision "$verdict" "$A" "$state")
+  if [ "$decision" = promote ] && [ "$terminal" != parser-failed ]; then
+    printf 'double-checked,cto,flowchad,staging\n'
+  else
+    printf 'needs-work,no-positive-follow-ons\n'
+  fi
+}
+assert_eq 'needs-work,no-positive-follow-ons' \
+  "$(simulate_terminal_race ready "$CONFIRMED_BLOCKERS_STATE" parser-failed)" \
+  negative-comment-then-parser-failed-no-positive-follow-ons
 
 # Exercise the helper through a fake gh executable. This proves the final decision reads the live
 # API response rather than accepting a SHA supplied by a caller.
@@ -155,7 +194,7 @@ assert_eq 2 "$(mutation_count)" promotable-path-keeps-comment-and-label-mutation
 POST_CONTEXT="$ROOT/stages/04-post/CONTEXT.md"
 assert_contains() {
   local needle=$1 scenario=$2
-  rg -Fq "$needle" "$POST_CONTEXT" || {
+  rg -Fq -- "$needle" "$POST_CONTEXT" || {
     printf 'FAIL %s: missing %s\n' "$scenario" "$needle" >&2
     exit 1
   }
@@ -169,6 +208,10 @@ assert_contains 'dc_require_promotable_head' executable-comment-and-label-guard
 assert_contains 'COMMENT_CURSOR_CHANGED=true' same-sha-new-comment-fails-closed
 assert_contains 'final_comment_cursor:' review-receipt-cursor-is-consumed
 assert_contains 'cat <<REVIEW_EOF' promotion-marker-expands
+assert_contains 'dc_first_check_promotion_decision' first-check-verdict-gate-is-executable
+assert_contains '$FIRST_CHECK_DECISION" != "promote"' negative-first-check-takes-fail-closed-branch
+assert_contains '--remove-label "double-checked"' fail-closed-removes-positive-label
+assert_contains '--add-label "needs-work"' fail-closed-adds-needs-work
 if rg -Fq "cat <<'REVIEW_EOF'" "$POST_CONTEXT"; then
   printf 'FAIL promotion-marker-must-not-be-literal\n' >&2
   exit 1

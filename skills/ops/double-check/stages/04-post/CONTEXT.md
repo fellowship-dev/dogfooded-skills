@@ -162,6 +162,30 @@ Then:
 if [ "$CLAIMS" = "fail" ]; then VERDICT=needs-work; fi
 ```
 
+### Materialize the final review-state ledger and decide whether a first check may promote
+
+Before posting the curated comment, build `FINAL_REVIEW_STATE` exactly as described in
+**Updating `REVIEW_STATE_JSON`** below. It must be the valid JSON that will be embedded in this
+stage's comment — not the stale setup ledger — with `head_sha` set to `LIVE_HEAD_SHA` and every
+finding's final status recorded. Validate it before any label decision:
+
+```bash
+# FINAL_REVIEW_STATE is the validated JSON that will replace {REVIEW_STATE_JSON} below.
+printf '%s' "$FINAL_REVIEW_STATE" | jq . >/dev/null || {
+  echo "[stage-04] blocked: final review-state is invalid"
+  exit 2
+}
+
+source skills/ops/double-check/shared/promotion-verdict-gate.sh
+FIRST_CHECK_DECISION=$(dc_first_check_promotion_decision \
+  "$VERDICT" "$LIVE_HEAD_SHA" "$FINAL_REVIEW_STATE")
+echo "[stage-04] first-check promotion decision: $FIRST_CHECK_DECISION"
+```
+
+`promote` is the only result that may add `double-checked`. Every `needs-work:*` result is a
+negative or conflicting signal and must take Branch D below: remove/withhold `double-checked`,
+add or retain `needs-work`, and create no positive follow-on.
+
 ### Post the curated review comment
 
 Fill `shared/review-comment-template.md` from the stage-02 (curated findings, new issues, verdict)
@@ -278,54 +302,57 @@ the label untouched; never remove/re-add it merely to replay a receipt.
 
 ---
 
-#### Branch D — Claims mismatch (CLAIMS=fail AND IS_RECHECK=false) — takes precedence over C
+#### Branch D — First-check non-promotion (`IS_RECHECK=false` and `FIRST_CHECK_DECISION != promote`) — takes precedence over C
 
-When `CLAIMS=fail` on a **re-check** (IS_RECHECK=true), Branch B already does the right thing:
-`needs-work` stays, `double-checked` is not re-toggled. Branch D covers the first-check case,
-which otherwise applies `double-checked` and promotes the PR.
+This includes claims mismatches, an explicit `needs-work` verdict, a missing/malformed or
+wrong-head review-state ledger, and any `open` or `confirmed` finding. On a **re-check**
+(IS_RECHECK=true), Branch B already retains `needs-work` and does not re-toggle the positive
+label.
 
-The PR describes work its diff does not contain. Withhold `double-checked`: that label is what
-fires `cto-review-on-double-checked`, `flowchad-on-double-checked`, and
-`test-in-staging-on-double-checked`, so withholding it stops the promotion chain at this gate
-instead of handing a phantom delivery to the CTO stage.
-
-Do NOT apply `needs-work` here — `rework-on-needs-work` dispatches `/double-check`, so applying it
-from inside double-check loops the skill onto itself. The withheld label plus the comment is the
-signal.
+Fail closed: `double-checked` fires CTO, FlowChad, and staging, so remove it if present and do
+not add it. Add or retain `needs-work`. Do this only after the negative curated comment posts
+successfully, and call `dc_require_promotable_head` immediately before every label mutation. No
+positive follow-on may be created from a negative or conflicting review receipt.
 
 ```bash
-if [ "$IS_RECHECK" = "false" ]; then
-  # Branch D: claims not backed by the diff (first-check only)
-  echo "[stage-04] CLAIMS=fail — withholding double-checked, PR description does not match its diff"
+if [ "$IS_RECHECK" = "false" ] && [ "$FIRST_CHECK_DECISION" != "promote" ]; then
+  # Branch D: negative/conflicting first-check receipt — fail closed.
+  echo "[stage-04] $FIRST_CHECK_DECISION — withholding double-checked and retaining needs-work"
 
   MARKER_SEEN=$(gh pr view $PR --repo $REPO --json comments \
-    --jq '.comments[].body | select(contains("pylot:claims-mismatch"))' 2>/dev/null | head -1)
+    --jq '.comments[].body | select(contains("pylot:first-check-fail-closed"))' 2>/dev/null | head -1)
 
   if [ -z "$MARKER_SEEN" ]; then
-    gh pr comment $PR --repo $REPO --body "$(cat <<CLAIMS_EOF
-<!-- pylot:claims-mismatch pr=$PR repo=$REPO -->
-## Blocked: PR description does not match the diff
+    dc_require_promotable_head
+    gh pr comment $PR --repo $REPO --body "$(cat <<FAIL_CLOSED_EOF
+<!-- pylot:first-check-fail-closed pr=$PR repo=$REPO decision=$FIRST_CHECK_DECISION -->
+## Double-check blocked: negative or conflicting review receipt
 
-Live diff: $LIVE_STAT
+**Decision:** \`$FIRST_CHECK_DECISION\`
+**Verdict:** \`$VERDICT\`
+**Head reviewed:** \`$LIVE_HEAD_SHA\`
 
-The following claims in the PR title/body have no corresponding change in this PR:
-
-{one bullet per unbacked claim, from the Claims vs Diff table}
-
-\`double-checked\` is withheld, so cto-review / staging / FlowChad will not run.
+The review did not produce an explicitly positive, blocker-free exact-head receipt. The
+\`double-checked\` label is withheld or removed, and \`needs-work\` is retained.
 
 ### To unblock
-1. Land the missing code, **or** rewrite the PR body to describe what this diff actually does
-   (including any \`Closes\`/\`Implements\` refs and staging evidence that no longer apply).
+1. Resolve every open or confirmed blocker and update the review receipt for this exact head.
 2. Remove and re-add the \`reviewed\` label to re-run the review chain.
-CLAIMS_EOF
+FAIL_CLOSED_EOF
 )"
   else
-    echo "[stage-04] claims-mismatch marker already present — skipping duplicate comment"
+    echo "[stage-04] first-check fail-closed marker already present — skipping duplicate comment"
   fi
-  # Do NOT add double-checked. Do NOT add needs-work. Skip branches A/B/C.
+
+  dc_require_promotable_head
+  gh pr edit $PR --repo $REPO --remove-label "double-checked" 2>/dev/null || true
+  gh label create "needs-work" --repo $REPO --color "d93f0b" \
+    --description "Needs work before merge" 2>/dev/null || true
+  dc_require_promotable_head
+  gh pr edit $PR --repo $REPO --add-label "needs-work"
+  # Do NOT add double-checked. Skip branches A/B/C.
 fi
-# (CLAIMS=fail AND IS_RECHECK=true: falls through to Branch B, which retains needs-work correctly)
+# (Negative first-check signals take D; re-check failure falls through to B.)
 ```
 
 ---
@@ -409,13 +436,15 @@ fi
 
 ---
 
-#### Branch C — First-check (IS_RECHECK=false, CLAIMS != fail, any verdict)
+#### Branch C — First-check PASS (`IS_RECHECK=false`, `FIRST_CHECK_DECISION=promote`)
 
-Existing behavior unchanged: apply `double-checked` label. cto-review handles verdict routing.
+Apply `double-checked` only after an explicit `ready` verdict and a valid final exact-head
+review-state ledger with no `open` or `confirmed` findings. This is the only first-check path
+that may create positive follow-ons.
 
 ```bash
-# Branch C: first-check
-echo "[stage-04] first-check — applying double-checked label"
+# Branch C: explicitly positive, blocker-free first-check receipt
+echo "[stage-04] first-check PASS — applying double-checked label"
 gh label create "double-checked" --repo $REPO --color "0075ca" \
   --description "Double-checked by agent" 2>/dev/null || true
 dc_require_promotable_head
@@ -440,8 +469,8 @@ Confirm against the branch you ran:
 |--------|--------|
 | A (re-check PASS) | `double-checked` present, `needs-work` absent |
 | B (re-check FAIL) | `needs-work` present, `double-checked` unchanged, recheck-fail comment present |
-| C (first-check) | `double-checked` present |
-| D (claims mismatch) | `double-checked` **absent**, claims-mismatch comment present |
+| C (first-check PASS) | `double-checked` present, `needs-work` absent |
+| D (first-check fail closed) | `double-checked` **absent**, `needs-work` present, fail-closed comment present |
 
 Mismatch → log `[stage-04] verification FAIL — {what was expected vs seen}` and emit
 `status=failed` with that reason. Label propagation can lag a second; retry the read once before
@@ -476,14 +505,14 @@ Emit from the orchestrator (never a subagent). Branch on re-check context:
 [pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success
 ```
 
-**Claims mismatch** (Branch D):
+**First-check fail closed** (Branch D):
 ```
-[pylot] outcome="double-check BLOCKED {repo}#{pr} — {N} PR-body claims unbacked by the diff, double-checked withheld" status=success
+[pylot] outcome="double-check BLOCKED {repo}#{pr} — {FIRST_CHECK_DECISION}, double-checked withheld, needs-work retained" status=success
 ```
 
-**First-check** (IS_RECHECK=false, any verdict):
+**First-check PASS** (IS_RECHECK=false, FIRST_CHECK_DECISION=promote):
 ```
-[pylot] outcome="double-checked {repo}#{pr} — verdict {ready|needs-work}, {N} findings curated, {N} fixes pushed" status=success
+[pylot] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success
 ```
 
 If any step failed, emit `status=failed` with the reason instead.
@@ -491,9 +520,10 @@ If any step failed, emit `status=failed` with the reason instead.
 ## Success criteria
 - Live claims-vs-diff gate run (`gh pr view`) before posting, and its result reflected in `CLAIMS`
 - Curated review comment posted, including the Claims vs Diff table
-- Labels applied per the branch above (claims mismatch: double-checked withheld + mismatch comment;
-  re-check PASS: needs-work removed + double-checked re-toggled; re-check FAIL: no label change +
-  structured verdict comment posted; first-check: double-checked applied)
+- Labels applied per the branch above (first-check fail-closed: double-checked removed/withheld +
+  needs-work retained + fail-closed comment; re-check PASS: needs-work removed + double-checked
+  re-toggled; re-check FAIL: no label change + structured verdict comment posted; first-check PASS:
+  double-checked applied)
 - Post-action `gh pr view` confirms the expected labels/comments for the branch taken
 - Report file written to `reports/`
 - NO Quest POST anywhere

@@ -7,10 +7,43 @@ HEAD_SHA=${2:?usage: collect_ci_evidence.sh org/repo head-sha}
 # The caller supplies the PR base branch because required checks are branch-specific.
 BASE_BRANCH=${3:?usage: collect_ci_evidence.sh org/repo head-sha base-branch}
 
-CHECK_RUNS=$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" 2>/dev/null) || CHECK_RUNS_OK=false
+# Fetch every page and prove the response is complete. A green first page cannot
+# establish merge safety when GitHub reports more evidence than it returned there.
+collect_paginated() {
+  local endpoint=$1 item_key=$2 page=1 expected=-1 count=0 previous=0 response parsed total items
+  local collected='[]'
+  while :; do
+    response=$(gh api "${endpoint}?per_page=100&page=$page" 2>/dev/null) || return 1
+    parsed=$(printf '%s' "$response" | jq -ce --arg key "$item_key" '
+      if type != "object"
+         or (.total_count | type) != "number"
+         or (.total_count < 0)
+         or ((.total_count | floor) != .total_count)
+         or (.[$key] | type) != "array"
+      then error("malformed paginated CI response")
+      else {total_count, items: .[$key]}
+      end
+    ') || return 1
+    total=$(printf '%s' "$parsed" | jq -r .total_count)
+    items=$(printf '%s' "$parsed" | jq -c .items)
+    if [ "$expected" = -1 ]; then expected=$total; elif [ "$expected" != "$total" ]; then return 1; fi
+    previous=$count
+    collected=$(jq -cn --argjson prior "$collected" --argjson next "$items" '$prior + $next') || return 1
+    count=$(printf '%s' "$collected" | jq 'length') || return 1
+    if [ "$count" -gt "$expected" ]; then return 1; fi
+    if [ "$count" = "$expected" ]; then printf '%s\n' "$collected"; return 0; fi
+    # An empty page before total_count is reached is incomplete evidence.
+    if [ "$count" = "$previous" ]; then return 1; fi
+    page=$((page + 1))
+  done
+}
+
+CHECK_RUNS_ITEMS=$(collect_paginated "repos/$REPO/commits/$HEAD_SHA/check-runs" check_runs) || CHECK_RUNS_OK=false
 : "${CHECK_RUNS_OK:=true}"
-COMMIT_STATUSES=$(gh api "repos/$REPO/commits/$HEAD_SHA/status" 2>/dev/null) || COMMIT_STATUSES_OK=false
+CHECK_RUNS=$(jq -cn --argjson items "${CHECK_RUNS_ITEMS:-null}" '{check_runs: $items}')
+COMMIT_STATUS_ITEMS=$(collect_paginated "repos/$REPO/commits/$HEAD_SHA/status" statuses) || COMMIT_STATUSES_OK=false
 : "${COMMIT_STATUSES_OK:=true}"
+COMMIT_STATUSES=$(jq -cn --argjson items "${COMMIT_STATUS_ITEMS:-null}" '{statuses: $items}')
 
 REQUIRED=$(gh api "repos/$REPO/branches/$BASE_BRANCH/protection/required_status_checks" 2>/tmp/cto-required.err) || REQUIRED_STATUS=$?
 if grep -q '404' /tmp/cto-required.err; then
@@ -52,9 +85,11 @@ if [ "$WORKFLOW_TREE_OK" = true ]; then
     if printf '%s\n' "$content" | python3 -c '
 import re, sys
 text = sys.stdin.read()
-trigger = re.compile(r"^[ \\t]*(pull_request|pull_request_target|[\\\"\\x27](pull_request|pull_request_target)[\\\"\\x27])[ \\t]*:", re.M)
-inline = re.compile(r"^[ \\t]*on[ \\t]*:[^#\\n]*(pull_request|pull_request_target)", re.M)
-sys.exit(0 if trigger.search(text) or inline.search(text) else 1)
+event = r"(?:pull_request|pull_request_target)"
+mapping = re.compile(rf"^[ \\t]*(?:{event}|[\\\"\\x27]{event}[\\\"\\x27])[ \\t]*:", re.M)
+inline = re.compile(rf"^[ \\t]*on[ \\t]*:[^#\\n]*(?:{event})", re.M)
+block_list = re.compile(rf"^[ \\t]*on[ \\t]*:[ \\t]*(?:#.*)?$[\\s\\S]*?^[ \\t]+-[ \\t]*(?:[\\\"\\x27]?{event}[\\\"\\x27]?)(?:[ \\t]*(?:#.*)?)$", re.M)
+sys.exit(0 if mapping.search(text) or inline.search(text) or block_list.search(text) else 1)
 '; then printf '%s\n' "$path"; fi
   done | jq -Rsc 'split("\n") | map(select(length > 0))') || WORKFLOW_TREE_OK=false
 fi

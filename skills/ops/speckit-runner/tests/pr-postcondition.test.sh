@@ -102,4 +102,21 @@ make_fixture wrong-head "$SUPERVISOR_DISCLOSURE" wrong-branch yes
 assert_case wrong-head-rejected 1
 make_fixture missing-link "$SUPERVISOR_DISCLOSURE" "$BRANCH" no
 assert_case issue-linkage-remains-required 1
+
+# Regression: no-disclosure body with empty STALE_SUPERVISOR_DISCLOSURE must fail
+# closed.  This pins the fail-open that manifested when the inline SKILL.md Step 8
+# postcondition block ended on an if whose condition was false (C1 / first-review
+# R1 re-manifestation).
+SUPERVISOR_DISCLOSURE='### Supervisor verification receipts
+
+| Check | Command / identity | State |
+| --- | --- | --- |
+| unit-tests | npm test | passed |'
+STALE_SUPERVISOR_DISCLOSURE=
+export SUPERVISOR_DISCLOSURE STALE_SUPERVISOR_DISCLOSURE
+make_fixture no-disclosure 'This PR has no verification disclosure.' "$BRANCH" yes
+assert_case no-disclosure-fails-closed 1
+make_fixture empty-body '' "$BRANCH" yes
+assert_case empty-body-fails-closed 1
+
 printf 'PASS PR postcondition contract\n'

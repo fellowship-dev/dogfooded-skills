@@ -43,11 +43,17 @@ vr_write() {
 
 # Execute only from the supervisor/operator context.  A producer's prose never
 # calls this function, so it cannot manufacture a passed receipt.
+# Trust assumption: /speckit-runner must only be used against repositories whose
+# contributor, agent, and CI instruction files are trusted to the same degree as
+# the dispatch token.  Commands are discovered from those files and run here,
+# inside the supervisor session that holds PYLOT_DISPATCH_TOKEN, PYLOT_API, and
+# gh credentials.  bash -c (not -lc) keeps the operator login profile out of
+# scope; the trust boundary is at the repository level, not the shell level.
 vr_run() {
   local check=${1:?check identity required} command=${2:?command required} artifact=${3:-}
   local started ended status state
   started=$(vr_now)
-  if bash -lc "$command"; then status=0; else status=$?; fi
+  if bash -c "$command"; then status=0; else status=$?; fi
   ended=$(vr_now)
   state=failed
   [ "$status" -eq 0 ] && state=passed
@@ -80,17 +86,48 @@ vr_bind_current_head() {
 vr_mark_stale() {
   local current_head=${1:?current HEAD required}
   [ -f "$VR_RECEIPT_FILE" ] || return 1
-  awk -F '\t' -v OFS='\t' -v current="$current_head" 'NR == 1 { print; next } { $10="stale"; $11="receipt head " $2 " does not match current head " current; print }' "$VR_RECEIPT_FILE" >"$VR_RECEIPT_FILE.tmp"
-  mv "$VR_RECEIPT_FILE.tmp" "$VR_RECEIPT_FILE"
+  local stale_hex note_hex receipt_head_enc receipt_head
+  stale_hex=$(vr_field "stale")
+  receipt_head_enc=$(awk -F '\t' 'NR == 2 { print $2; exit }' "$VR_RECEIPT_FILE")
+  receipt_head=$(vr_unfield "$receipt_head_enc") || receipt_head="unknown"
+  note_hex=$(vr_field "receipt head $receipt_head does not match current head $current_head")
+  awk -F '\t' -v OFS='\t' -v stale="$stale_hex" -v note="$note_hex" \
+    'NR == 1 { print; next } { $10=stale; $11=note; print }' \
+    "$VR_RECEIPT_FILE" >"$VR_RECEIPT_FILE.tmp" && mv "$VR_RECEIPT_FILE.tmp" "$VR_RECEIPT_FILE"
+}
+
+# Decode a hex receipt field and escape Markdown-hostile bytes for table display.
+# Falls back to printing the raw value (e.g. legacy "stale") if decoding fails.
+_vr_decode_md() {
+  local d
+  if d=$(vr_unfield "$1" 2>/dev/null); then
+    printf '%s' "$d" | LC_ALL=C tr '\n\r' '  ' | sed 's/|/\\|/g; s/`/\\`/g'
+  else
+    printf '%s' "$1"
+  fi
 }
 
 vr_disclosure() {
   [ -f "$VR_RECEIPT_FILE" ] || return 1
+  local repo_f head_f repo_d head_d
+  repo_f=$(awk -F '\t' 'NR == 2 { print $1; exit }' "$VR_RECEIPT_FILE")
+  head_f=$(awk -F '\t' 'NR == 2 { print $2; exit }' "$VR_RECEIPT_FILE")
+  if repo_d=$(vr_unfield "$repo_f" 2>/dev/null) && head_d=$(vr_unfield "$head_f" 2>/dev/null); then
+    printf '**Repository:** %s · **HEAD:** %s\n\n' "$repo_d" "$head_d"
+  fi
   printf '### Supervisor verification receipts\n\n'
   printf '| Check | Command / identity | State | Exit | HEAD binding | Evidence | Note |\n|---|---|---|---|---|---|---|\n'
-  # Hex fields are safe to place directly in a Markdown table. Keep this POSIX
-  # awk: BSD awk rejects a ternary expression directly inside printf arguments.
-  awk -F '\t' 'NR > 1 { evidence = $8; if (evidence == "") evidence = "N/A"; printf "| %s | %s | %s | %s | %s | %s | %s |\n", $3, $4, $9, $7, $10, evidence, $11 }' "$VR_RECEIPT_FILE"
+  # Decode each hex-encoded field; escape Markdown-hostile bytes in the display
+  # layer only.  The TSV canonical form remains hex throughout.
+  local _f1 _f2 _check _cmd _f5 _f6 _exit _artifact _state _freshness _note _ev
+  while IFS=$'\t' read -r _f1 _f2 _check _cmd _f5 _f6 _exit _artifact _state _freshness _note; do
+    _ev=$(_vr_decode_md "$_artifact")
+    [ -z "$_ev" ] && _ev="N/A"
+    printf '| %s | %s | %s | %s | %s | %s | %s |\n' \
+      "$(_vr_decode_md "$_check")" "$(_vr_decode_md "$_cmd")" \
+      "$(_vr_decode_md "$_state")" "$(_vr_decode_md "$_exit")" \
+      "$(_vr_decode_md "$_freshness")" "$_ev" "$(_vr_decode_md "$_note")"
+  done < <(awk -F '\t' 'NR > 1' "$VR_RECEIPT_FILE")
 }
 
 vr_has_records_for_head() {

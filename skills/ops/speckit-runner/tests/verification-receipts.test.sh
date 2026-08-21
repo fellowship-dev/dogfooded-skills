@@ -51,8 +51,16 @@ assert_contains "$(vr_field integration-check)"$'\t'"$(vr_field 'tool login')" "
 assert_contains $'\t'"$(vr_field N/A)"$'\t'"$(vr_field '')"$'\t'"$(vr_field unavailable)"$'\t'"$(vr_field current)"$'\t'"$(vr_field 'credential unavailable')" "$RECEIPTS" unavailable-is-explicit
 
 vr_disclosure >"$TMP/disclosure.md"
-assert_contains "| $(vr_field producer-claim) | $(vr_field 'tests pass') | $(vr_field not-run) | $(vr_field N/A) | $(vr_field current) | $(vr_field '') | $(vr_field 'producer claim is not evidence') |" "$TMP/disclosure.md" not-run-disclosed
-assert_contains "| $(vr_field integration-check) | $(vr_field 'tool login') | $(vr_field unavailable) | $(vr_field N/A) | $(vr_field current) | $(vr_field '') | $(vr_field 'credential unavailable') |" "$TMP/disclosure.md" unavailable-disclosed
+# Disclosure must render decoded human-readable values, not hex-encoded ones.
+assert_contains "| producer-claim | tests pass | not-run | N/A | current | N/A | producer claim is not evidence |" "$TMP/disclosure.md" not-run-disclosed
+assert_contains "| integration-check | tool login | unavailable | N/A | current | N/A | credential unavailable |" "$TMP/disclosure.md" unavailable-disclosed
+assert_contains "| passing-check | printf observed | passed | 0 | current | N/A | supervisor-observed |" "$TMP/disclosure.md" passed-disclosed
+assert_contains "| failing-check | exit 23 | failed | 23 | current | N/A | supervisor-observed |" "$TMP/disclosure.md" failed-disclosed
+if grep -Fq 'hex:' "$TMP/disclosure.md"; then
+  printf 'FAIL disclosure-must-not-contain-hex\n' >&2
+  exit 1
+fi
+printf 'PASS disclosure-is-human-readable\n'
 
 HOSTILE_CHECK=$'check|`name\twith\nnewlines'
 HOSTILE_COMMAND=$'printf "pipe|backtick`\tline1\nline2"'
@@ -67,21 +75,40 @@ assert_status "$HOSTILE_CHECK" "$(vr_unfield "$HOSTILE_CHECK_ENCODED")" hostile-
 assert_status "$HOSTILE_COMMAND" "$(vr_unfield "$HOSTILE_COMMAND_ENCODED")" hostile-command-exact-round-trip
 assert_status "$HOSTILE_NOTE" "$(vr_unfield "$HOSTILE_NOTE_ENCODED")" hostile-note-exact-round-trip
 vr_disclosure >"$TMP/hostile-disclosure.md"
-assert_contains "| $HOSTILE_CHECK_ENCODED | $HOSTILE_COMMAND_ENCODED |" "$TMP/hostile-disclosure.md" hostile-markdown-uses-safe-encoding
-if grep -Fq -- "$HOSTILE_CHECK" "$TMP/hostile-disclosure.md" || grep -Fq -- 'pipe|backtick`' "$TMP/hostile-disclosure.md"; then
+# Unescaped hostile chars must not appear in the disclosure (injection protection).
+# Check for unescaped | and ` from the hostile check name and command.
+# ($HOSTILE_CHECK spans lines so we test the specific injection chars directly.)
+if grep -Fq -- 'check|' "$TMP/hostile-disclosure.md" \
+    || grep -Fq -- 'pipe|backtick`' "$TMP/hostile-disclosure.md"; then
   printf 'FAIL hostile-markdown-must-not-inject-table-or-code-span\n' >&2
   exit 1
 fi
 printf 'PASS hostile-markdown-must-not-inject-table-or-code-span\n'
+# Hex-encoded values must not appear in the disclosure (must be decoded for display).
+if grep -Fq -- "$HOSTILE_CHECK_ENCODED" "$TMP/hostile-disclosure.md"; then
+  printf 'FAIL hostile-disclosure-must-not-render-hex\n' >&2
+  exit 1
+fi
+printf 'PASS hostile-disclosure-must-not-render-hex\n'
+if grep -Fq 'hex:' "$TMP/hostile-disclosure.md"; then
+  printf 'FAIL hostile-disclosure-must-be-fully-decoded\n' >&2
+  exit 1
+fi
+printf 'PASS hostile-disclosure-is-fully-decoded\n'
 
 if vr_bind_current_head "$HEAD_B"; then
   printf 'FAIL moved-head-must-reject-old-receipts\n' >&2; exit 1
 fi
 printf 'PASS moved-head-must-reject-old-receipts\n'
 vr_mark_stale "$HEAD_B"
-assert_contains $'\tstale\t' "$RECEIPTS" stale-receipts-visible
+assert_contains $'\t'"$(vr_field stale)"$'\t' "$RECEIPTS" stale-receipts-visible
 vr_disclosure >"$TMP/stale-disclosure.md"
-assert_contains "| $(vr_field failing-check) | $(vr_field 'exit 23') | $(vr_field failed) | $(vr_field 23) | stale | $(vr_field '') | receipt head " "$TMP/stale-disclosure.md" stale-disclosed
+assert_contains "| failing-check | exit 23 | failed | 23 | stale | N/A | receipt head " "$TMP/stale-disclosure.md" stale-disclosed
+if grep -Fq 'hex:' "$TMP/stale-disclosure.md"; then
+  printf 'FAIL stale-disclosure-must-not-contain-hex\n' >&2
+  exit 1
+fi
+printf 'PASS stale-disclosure-is-human-readable\n'
 
 # A correction-head move retains a stale receipt separately and cannot proceed
 # until a new receipt at that exact head contains a fresh recorded check.
@@ -101,7 +128,7 @@ if ! vr_has_records_for_head "$HEAD_B"; then
   printf 'FAIL correction-head-fresh-receipt-must-bind\n' >&2
   exit 1
 fi
-assert_contains $'\tstale\t' "$STALE_COPY" correction-head-retains-stale-receipt
+assert_contains $'\t'"$(vr_field stale)"$'\t' "$STALE_COPY" correction-head-retains-stale-receipt
 if [ "$STALE_COPY" = "$VR_RECEIPT_FILE" ]; then
   printf 'FAIL correction-head-must-rotate-receipt-path\n' >&2
   exit 1

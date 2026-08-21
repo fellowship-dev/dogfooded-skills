@@ -232,7 +232,10 @@ the immutable pushed `HEAD_SHA`. Source the bundled helper:
 ```bash
 # The boot sync copies this with the skill. Keep receipts outside the producer
 # worktree: the producer must not edit, generate, or attest to this file.
-source ~/.claude/skills/speckit-runner/shared/verification-receipts.sh
+source ~/.claude/skills/speckit-runner/shared/verification-receipts.sh || {
+  echo '[speckit-runner] fatal: verification-receipts.sh not found — boot sync may be incomplete' >&2
+  exit 1
+}
 RECEIPT_DIR="${TMPDIR:-/tmp}/speckit-verification-$PYLOT_JOB_ID-$BRANCH"
 VR_RECEIPT_FILE="$RECEIPT_DIR/receipts.tsv"
 SUPERVISOR_CHECKOUT=$(mktemp -d)
@@ -555,31 +558,11 @@ emitting its terminal outcome.
 
 ```bash
 ISSUE_NUMBER="$0"
-PR_JSON=$(gh pr list --repo "$REPO" --state open --head "$BRANCH" \
-  --limit 1 --json number --jq '.[0] // empty')
-PR_NUM=$(printf '%s' "$PR_JSON" | jq -r '.number // empty')
-test -n "$PR_NUM"
-# Fetch the PR body exactly once. Every later assertion uses this same response.
-PR_VIEW=$(gh pr view "$PR_NUM" --repo "$REPO" \
-  --json url,headRefName,body,closingIssuesReferences)
-PR_URL=$(printf '%s' "$PR_VIEW" | jq -r '.url // empty')
-PR_HEAD=$(printf '%s' "$PR_VIEW" | jq -r '.headRefName // empty')
-test -n "$PR_URL" && test "$PR_HEAD" = "$BRANCH"
-printf '%s' "$PR_VIEW" | jq -e --argjson issue "$ISSUE_NUMBER" --arg repo "$REPO" \
-  'any(.closingIssuesReferences[]?; .number == $issue and .repository.nameWithOwner == $repo)' \
-  >/dev/null
-PR_BODY=$(printf '%s' "$PR_VIEW" | jq -r '.body // ""')
-# Quoting the expanded needle makes it literal in the shell pattern: no grep,
-# option parsing, or regular-expression interpretation of hostile data.
-pr_body_contains_literal() (
-  test -n "$2" || exit 1
-  LC_ALL=C; export LC_ALL
-  case "$1" in *"$2"*) exit 0 ;; *) exit 1 ;; esac
-)
-pr_body_contains_literal "$PR_BODY" "$SUPERVISOR_DISCLOSURE"
-if [ -n "${STALE_SUPERVISOR_DISCLOSURE:-}" ]; then
-  pr_body_contains_literal "$PR_BODY" "$STALE_SUPERVISOR_DISCLOSURE"
-fi
+source ~/.claude/skills/speckit-runner/shared/pr-postcondition.sh || {
+  echo '[speckit-runner] fatal: pr-postcondition.sh not found — boot sync may be incomplete' >&2
+  exit 1
+}
+verify_pr_postcondition || { echo '[speckit-runner] PR postcondition failed' >&2; exit 1; }
 ```
 
 ---
@@ -615,6 +598,12 @@ fi
   repository-owned instructions, execute them in the detached supervisor
   checkout, and preserve their HEAD-bound receipts. Producer prose can never
   create a passed receipt.
+- **Repository trust boundary** — `/speckit-runner` must only be used against
+  repositories whose contributor, agent, and CI instruction files are trusted to
+  the same degree as the dispatch token. `vr_run` executes repository-discovered
+  commands inside the supervisor session (holds `$PYLOT_DISPATCH_TOKEN`,
+  `$PYLOT_API`, and `gh` credentials); a hostile or compromised instruction file
+  in the target repository can exfiltrate those credentials.
 - **Suggestions never gate** — allow one producer correction pass, disclose anything residual, and continue to the PR boundary
 - **PR creation happens once and last** — verification, analyze/checklist, checkpoint push, and advisory review all precede `/create-compelling-prs`
 - **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting

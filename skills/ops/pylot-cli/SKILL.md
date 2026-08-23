@@ -51,6 +51,14 @@ for the receipts.
 | Resumable checkpoint | A private draft/report that must survive a turn ending | presign+finalize with `--conversation <id>`, then `pylot assets attach --conversation <id>` |
 | Published artifact | Evidence meant for a human or another repo (screenshot, PR proof) | the full presign → finalize → publish recipe below |
 
+A checkpoint's retention is not tied to `evidence_class` — there is no special
+TTL exemption for it. It defaults to indefinite retention like any other
+asset unless you pass `retention_policy`, and in staging every asset (any
+class) still auto-expires after 30 days regardless — see
+[Retention](https://github.com/fellowship-dev/pylot/blob/develop/docs/assets.md#retention).
+If a checkpoint needs to outlive that window, pass an explicit
+`retention_policy` (e.g. `indefinite`) when you presign it.
+
 Ephemeral scratch is not durable: a turn can end more abruptly than a normal
 function return drops it (see the [Lambda Freeze
 Convention](https://github.com/fellowship-dev/pylot/blob/develop/docs/lambda-freeze.md)

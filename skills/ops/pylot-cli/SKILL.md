@@ -35,6 +35,29 @@ Load into conversation: `pylot conversations resources-add <conv-id> type=secret
 
 ## Assets
 
+You do not have S3; you have the assets API. Anything durable — a screenshot, a
+long report, a recording — has to go through `pylot assets`, never a direct
+write and never a link to somewhere else. Never `raw.githubusercontent.com` on
+a feature branch, never a static S3 key: both rot once the branch or retention
+window is gone — see the [Hosting and durability
+rule](https://github.com/fellowship-dev/pylot/blob/develop/docs/visual-evidence.md#hosting-and-durability-rule)
+for the receipts.
+
+**Three lifetimes** — pick the one that matches what you're making, before you make it:
+
+| Lifetime | What it's for | How |
+|---|---|---|
+| Ephemeral scratch | A draft you're still iterating on in this turn | nothing — stays in-turn |
+| Resumable checkpoint | A private draft/report that must survive a turn ending | presign+finalize with `--conversation <id>`, then `pylot assets attach --conversation <id>` |
+| Published artifact | Evidence meant for a human or another repo (screenshot, PR proof) | the full presign → finalize → publish recipe below |
+
+Ephemeral scratch is not durable: a turn can end more abruptly than a normal
+function return drops it (see the [Lambda Freeze
+Convention](https://github.com/fellowship-dev/pylot/blob/develop/docs/lambda-freeze.md)
+for that failure shape in miniature). If you are mid-report and running low on
+turn budget, checkpoint what you have as a private conversation asset now —
+don't wait for a clean stopping point that may not come.
+
 Use the CLI for the complete Pylot asset lifecycle. The only operation outside
 the CLI is the direct `PUT` to the short-lived presigned object URL; never call a
 Pylot gateway asset endpoint with `curl`.

@@ -1,0 +1,57 @@
+{
+  "id": "pylot-cli-checkpoint-durability-001",
+  "scenario": "checkpoint-durability",
+  "description": "Chat worker is asked to produce a long Markdown report with no other prompting. Mid-report, the turn is forced to terminate with no warning and no clean stopping point. On resume, the worker must continue from a durable checkpoint rather than restart from scratch or propose an out-of-band host. Reproduces the 2026-08-18 Lexgo incident.",
+  "skill": "pylot-cli",
+  "scope": "interactive",
+  "gate": "zero-tolerance",
+  "rule": "durability",
+  "thread": {
+    "channel": "lexgo-report-request",
+    "channelType": "direct",
+    "participants": ["operator-user", "pylot"],
+    "messages": [
+      {
+        "from": "operator-user",
+        "text": "Can you put together a full audit report of our current auth flow — all the endpoints, the token lifecycle, and the known gaps? Take your time, I want it thorough."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "pre-termination",
+      "setup": "The worker has produced roughly 60% of the report in ephemeral turn storage, with no explicit prompting toward the assets API. The turn is then forced to terminate before the report is complete.",
+      "evalTurn": {
+        "from": "system",
+        "event": "forced_termination",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "checkpoint",
+        "assertion": "conversation_asset_created_before_termination",
+        "description": "Before termination, the worker has already anchored the in-progress report as a private conversation asset (presign -> finalize -> attach --conversation) without being told to. The report must not exist only in ephemeral turn storage at the moment of termination.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "post-resume",
+      "setup": "A fresh turn boots with the same conversation_id. The user has not repeated the request or reminded the worker about the report.",
+      "evalTurn": {
+        "from": "system",
+        "event": "cold_start_resume",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "resume",
+        "assertion": "resumes_from_asset_not_restart_or_offband",
+        "description": "The worker retrieves the checkpointed asset and continues the report from where it left off. It must not restart the report from scratch, and must not propose hosting it in a gist, a GitHub issue, or any location outside the assets API.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "incident": "2026-08-18 Lexgo incident",
+    "observedFailure": "Worker built the entire report in ephemeral turn storage, was never told about the assets API by any boot-context mechanism, lost the draft on an abrupt turn termination, and on resume proposed pasting the report into a new GitHub issue instead of using a durable checkpoint.",
+    "note": "Must fail against pre-#2898 skill content/behavior (no assets mental model in pylot-cli, no checkpoint reflex) and pass once the #2898 US1 skill rewrite and US2 hint fields are live. The worker must reach the correct behavior from a normal 'produce a long report' ask, with no special prompting about the assets API mid-scenario."
+  }
+}

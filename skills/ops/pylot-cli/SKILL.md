@@ -48,16 +48,24 @@ for the receipts.
 | Lifetime | What it's for | How |
 |---|---|---|
 | Ephemeral scratch | A draft you're still iterating on in this turn | nothing — stays in-turn |
-| Resumable checkpoint | A private draft/report that must survive a turn ending | presign+finalize with `--conversation <id>`, then `pylot assets attach --conversation <id>` |
+| Resumable checkpoint | A private draft/report that must survive a turn ending | `presign --conversation <id>` → `PUT` → `finalize` (finalize takes only `--sha256`/`--size`, no scope flag) |
 | Published artifact | Evidence meant for a human or another repo (screenshot, PR proof) | the full presign → finalize → publish recipe below |
 
+Do not reach for `publish --conversation <id>` as a shortcut or retry path for a
+checkpoint — it sets `visibility: public`, which is a privacy regression for
+what is meant to be a private draft. Ownership is already fixed at `presign`
+time via `--conversation <id>`; there is no separate "attach to conversation"
+step for a checkpoint.
+
 A checkpoint's retention is not tied to `evidence_class` — there is no special
-TTL exemption for it. It defaults to indefinite retention like any other
-asset unless you pass `retention_policy`, and in staging every asset (any
-class) still auto-expires after 30 days regardless — see
-[Retention](https://github.com/fellowship-dev/pylot/blob/develop/docs/assets.md#retention).
-If a checkpoint needs to outlive that window, pass an explicit
-`retention_policy` (e.g. `indefinite`) when you presign it.
+TTL exemption for it. `retention_policy` already defaults to indefinite, so
+passing it explicitly changes nothing. That said, in staging every asset (any
+class, any `retention_policy` value) still auto-expires after 30 days — an
+S3 object-lifecycle rule outside the API, with no per-asset override. Treat a
+staging checkpoint as staging-ephemeral: good for surviving a turn boundary,
+not a substitute for promoting the finished artifact once the report is done.
+See [Retention](https://github.com/fellowship-dev/pylot/blob/develop/docs/assets.md#retention)
+for the full policy.
 
 Ephemeral scratch is not durable: a turn can end more abruptly than a normal
 function return drops it (see the [Lambda Freeze

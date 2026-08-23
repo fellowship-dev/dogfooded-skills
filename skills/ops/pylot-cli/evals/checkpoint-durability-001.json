@@ -29,7 +29,7 @@
       "expectedBehavior": {
         "type": "checkpoint",
         "assertion": "conversation_asset_created_before_termination",
-        "description": "Before termination, the worker has already anchored the in-progress report as a private conversation asset (presign -> finalize -> attach --conversation) without being told to. The report must not exist only in ephemeral turn storage at the moment of termination.",
+        "description": "Before termination, the worker has already anchored the in-progress report as a private conversation asset (presign --conversation <id> -> PUT -> finalize) without being told to. The report must not exist only in ephemeral turn storage at the moment of termination.",
         "tolerancePct": 0
       }
     },

@@ -35,6 +35,49 @@ Load into conversation: `pylot conversations resources-add <conv-id> type=secret
 
 ## Assets
 
+You do not have S3; you have the assets API. Anything durable — a screenshot, a
+long report, a recording — has to go through `pylot assets`, never a direct
+write and never a link to somewhere else. Never `raw.githubusercontent.com` on
+a feature branch, never a static S3 key: both rot once the branch or retention
+window is gone — see the [Hosting and durability
+rule](https://github.com/fellowship-dev/pylot/blob/develop/docs/visual-evidence.md#hosting-and-durability-rule)
+for the receipts.
+
+**Three lifetimes** — pick the one that matches what you're making, before you make it:
+
+| Lifetime | What it's for | How |
+|---|---|---|
+| Ephemeral scratch | A draft you're still iterating on in this turn | nothing — stays in-turn |
+| Resumable checkpoint | A private draft/report that must survive a turn ending | `presign --conversation <id>` → `PUT` → `finalize` (finalize takes only `--sha256`/`--size`, no scope flag) |
+| Published artifact | Evidence meant for a human or another repo (screenshot, PR proof) | the full presign → finalize → publish recipe below |
+
+Do not reach for `publish --conversation <id>` as a shortcut or retry path for a
+checkpoint — it sets `visibility: public`, which is a privacy regression for
+what is meant to be a private draft. Ownership is already fixed at `presign`
+time via `--conversation <id>`; there is no separate "attach to conversation"
+step for a checkpoint.
+
+A checkpoint's retention is not tied to `evidence_class` — there is no special
+TTL exemption for it. `retention_policy` already defaults to indefinite, so
+passing it explicitly changes nothing. That said, in staging every asset (any
+class, any `retention_policy` value) still auto-expires after 30 days — an
+S3 object-lifecycle rule outside the API, with no per-asset override. Treat a
+staging checkpoint as staging-ephemeral: good for surviving a turn boundary,
+not a substitute for promoting the finished artifact once the report is done.
+See [Retention](https://github.com/fellowship-dev/pylot/blob/develop/docs/assets.md#retention)
+for the full policy.
+
+Ephemeral scratch is not durable: a turn can end more abruptly than a normal
+function return drops it (see the [Lambda Freeze
+Convention](https://github.com/fellowship-dev/pylot/blob/develop/docs/lambda-freeze.md)
+for that failure shape in miniature). Concrete trigger, don't wait for a
+vaguer sense of "running low": if a `context capacity` system message shows up
+in the conversation (fires at ~90% of context, per issue #944), that turn is
+your last chance — checkpoint what you have as a private conversation asset
+before you do anything else. If no such message has fired yet but you're
+about to end a turn with a report still incomplete, checkpoint anyway; the
+warning is a backstop, not a permission slip to wait for it.
+
 Use the CLI for the complete Pylot asset lifecycle. The only operation outside
 the CLI is the direct `PUT` to the short-lived presigned object URL; never call a
 Pylot gateway asset endpoint with `curl`.

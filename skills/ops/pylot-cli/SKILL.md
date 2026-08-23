@@ -62,9 +62,13 @@ If a checkpoint needs to outlive that window, pass an explicit
 Ephemeral scratch is not durable: a turn can end more abruptly than a normal
 function return drops it (see the [Lambda Freeze
 Convention](https://github.com/fellowship-dev/pylot/blob/develop/docs/lambda-freeze.md)
-for that failure shape in miniature). If you are mid-report and running low on
-turn budget, checkpoint what you have as a private conversation asset now —
-don't wait for a clean stopping point that may not come.
+for that failure shape in miniature). Concrete trigger, don't wait for a
+vaguer sense of "running low": if a `context capacity` system message shows up
+in the conversation (fires at ~90% of context, per issue #944), that turn is
+your last chance — checkpoint what you have as a private conversation asset
+before you do anything else. If no such message has fired yet but you're
+about to end a turn with a report still incomplete, checkpoint anyway; the
+warning is a backstop, not a permission slip to wait for it.
 
 Use the CLI for the complete Pylot asset lifecycle. The only operation outside
 the CLI is the direct `PUT` to the short-lived presigned object URL; never call a

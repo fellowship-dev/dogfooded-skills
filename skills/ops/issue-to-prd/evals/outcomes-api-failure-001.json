@@ -29,7 +29,7 @@
       "expectedBehavior": {
         "type": "fail-open",
         "assertion": "placeholder_baseline_no_block_no_throw",
-        "description": "The handoff still records Contract: linked-metric, Metric: dashboard_load_ms, and Target copied verbatim from the issue, but Status: placeholder and Baseline: 'not yet measured'. The stage does not error, exit early, or halt the procedure — it writes its handoff and lets stage 06 proceed exactly as it would on success.",
+        "description": "The handoff still records Contract: linked-metric, Metric: dashboard_load_ms, and Target copied verbatim from the issue, but Status: placeholder, Baseline: 'not yet measured', and Placeholder Reason: 'unreachable' (a curl-level connection timeout, not an auth rejection or an empty/non-matching metrics[] response). The stage does not error, exit early, or halt the procedure — it writes its handoff and lets stage 06 proceed exactly as it would on success.",
         "tolerancePct": 0
       }
     },

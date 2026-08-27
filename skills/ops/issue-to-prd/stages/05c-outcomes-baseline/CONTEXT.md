@@ -64,7 +64,14 @@ named `time_to_merge_hours`).
 
 - Curl fails (non-zero exit), HTTP status is not `200`, `metrics[]` is empty, no row's `metric`
   matches the named metric, or the matched row's `sample_count == 0` → `baseline = "not yet
-  measured"`, `status = placeholder`.
+  measured"`, `status = placeholder`. Record which case applied as `placeholder_reason`, so an
+  unresolved `PYLOT_OPERATOR_TOKEN` doesn't degrade silently and indistinguishably from a
+  transient outage:
+  - HTTP status is `401` or `403` → `placeholder_reason = auth` (the token isn't resolving —
+    flag this loudly, it's an operator-side config problem, not a real outcomes gap)
+  - curl fails (non-zero exit), or any other non-`200` status → `placeholder_reason = unreachable`
+  - HTTP `200` but `metrics[]` is empty, no row matches the named metric, or the matched row's
+    `sample_count == 0` → `placeholder_reason = no-matching-metric`
 - Otherwise → the baseline is the matched row's `avg_value`. Carry every field needed to source
   it into the handoff, read from that same row/envelope — never invented:
   - **source**: the envelope's `source` field (e.g. `outcomes_daily_rollup`)
@@ -111,6 +118,9 @@ not appear anywhere in this stage's output unless the issue itself named them.
 ## Baseline
 [metric: value, or "not yet measured", or "not applicable"]
 
+## Placeholder Reason
+[auth | unreachable | no-matching-metric — only set when Status is "placeholder"; "n/a" otherwise]
+
 ## Baseline Source
 [envelope `source` value / window (`days`, `first_day`–`last_day`) / cohort (row `scope` + envelope `org`) / `sample_count`, or "not applicable"]
 
@@ -128,5 +138,7 @@ not appear anywhere in this stage's output unless the issue itself named them.
 - No outcomes API call when `Contract: none`
 - When `Contract: linked-metric` and the API succeeds: baseline carries source, window, cohort,
   and sample size — not just a bare number
+- When `Status: placeholder`, `Placeholder Reason` is always one of `auth`/`unreachable`/
+  `no-matching-metric` — never left blank or generic
 - Target and eval criteria are always either the issue's own verbatim words or `"not applicable"`
   — never an agent-computed number

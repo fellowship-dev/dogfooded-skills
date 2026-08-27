@@ -13,12 +13,16 @@ There is no goal database, schema, or lookup service here — the contract is re
 the issue text stage 01 already fetched. If Max later stands up a goal system, this stage points
 at it; until then, the issue body/comments are the only source of truth.
 
-## Inputs
-- `stages/01-read-issue/output/handoff.md` — issue title, body, comments (the only place a
-  contract can come from)
-- `{org}` — the GitHub org owning the issue repo (from stage 01 handoff or the repo argument)
-- `$PYLOT_API` — gateway base URL (env)
-- `$PYLOT_OPERATOR_TOKEN` — auth token (env)
+## Required inputs and environment
+- `stages/01-read-issue/output/handoff.md` — the issue title, body, and comments; this is the
+  only source from which a causal measurement contract may be detected.
+- `ORG` — the GitHub organization owning the issue repository, obtained from that handoff or
+  from the procedure's `org/repo` argument.
+- `PYLOT_API` — the gateway base URL.
+- `PYLOT_OPERATOR_TOKEN` — the operator token used to authenticate the outcomes request.
+
+This stage makes one optional, fail-open HTTP request and does not spawn or drive a worker; it
+has no worker-turn or `PYLOT_JOB_ID` dependency.
 
 ## Task
 

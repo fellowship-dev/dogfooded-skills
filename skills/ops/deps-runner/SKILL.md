@@ -33,6 +33,15 @@ unchanged in every downstream stage's own handoff** — that is how a clean-cont
 in, say, stage 04 knows which worker stage 02 already warmed up, without ever seeing the
 orchestrator's shell state (Task subagents do not inherit the orchestrator's bash variables).
 
+### Required environment and worker-turn rule
+
+The worker procedure requires all three environment variables: `PYLOT_API` (gateway base URL),
+`PYLOT_JOB_ID` (the mission passed to every worker command), and `PYLOT_OPERATOR_TOKEN`
+(operator authentication for the gateway). Verify they are available before any worker action.
+`pylot workers output` returns **only the latest turn result**; read and record every
+load-bearing result before sending the next `pylot workers prompt`, because a later prompt
+replaces the output available to read.
+
 ```bash
 # Stage 01 — preflight (no task_def => no built image => cannot spawn)
 pylot devboxes project "$REPO"

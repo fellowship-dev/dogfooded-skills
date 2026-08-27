@@ -1,7 +1,7 @@
 {
   "id": "deps-runner-worker-lifecycle-001",
   "scenario": "worker-lifecycle-durability",
-  "description": "deps-runner is dispatched against a target repo with open Dependabot PRs. The orchestrator must preflight the repo's devbox before spawning a Pylot worker, and the resulting worker_id must survive unchanged through every one of the six stage handoffs even though each subagent stage boots with an isolated context and no access to the orchestrator's bash state. The worker must be stopped as stage 06's first action, and no file under the skill directory may reference Gitpod, Ona, or a raw ENV_ID execution model.",
+  "description": "deps-runner is dispatched against a target repo with open Dependabot PRs. The orchestrator must preflight the repo's devbox before spawning a Pylot worker, and the resulting worker_id must survive unchanged through every one of the six stage handoffs even though each subagent stage boots with an isolated context and no access to the orchestrator's bash state. The worker must be stopped as stage 06's first action, and no file under the skill directory may reference the retired pre-worker remote-execution provider or its raw environment-identifier convention.",
   "skill": "deps-runner",
   "scope": "procedure",
   "gate": "zero-tolerance",
@@ -65,23 +65,23 @@
     },
     {
       "id": "no-legacy-execution-surface",
-      "setup": "Every file under the deps-runner skill directory (SKILL.md, CONTEXT.md, all six stages/*/CONTEXT.md, shared/*) is statically scanned for legacy execution-environment references.",
+      "setup": "Every file under the deps-runner skill directory (SKILL.md, CONTEXT.md, all six stages/*/CONTEXT.md, shared/*) is statically scanned, case-insensitively, for the retired remote-execution provider's name (standalone and hyphenated with its sibling product), its environment-variable prefix, and its raw environment-identifier convention.",
       "evalTurn": {
         "from": "system",
         "event": "static_scan",
-        "text": "grep -rniE 'gitpod|\\bona\\b|ona-gitpod|ONA_|ENV_ID' skills/ops/deps-runner"
+        "text": "case_insensitive_directory_scan(skills/ops/deps-runner, retired_provider_name_variants)"
       },
       "expectedBehavior": {
         "type": "static",
-        "assertion": "zero_gitpod_ona_env_id_references",
-        "description": "The scan returns zero matches. Every remote-execution step in the skill uses the Pylot worker idiom (`pylot workers prompt ... --wait --timeout N`, `pylot workers output`, `pylot workers view`, `pylot workers stop ... --force`) instead of `gitpod environment ssh $ENV_ID -- ...` or a `container` invocation argument.",
+        "assertion": "zero_legacy_remote_execution_references",
+        "description": "The scan returns zero matches. Every remote-execution step in the skill uses the Pylot worker idiom (`pylot workers prompt ... --wait --timeout N`, `pylot workers output`, `pylot workers view`, `pylot workers stop ... --force`) instead of an SSH invocation against a raw environment identifier on the retired provider, or a `container` invocation argument.",
         "tolerancePct": 0
       }
     }
   ],
   "failureShape": {
     "incident": "pre-#2992 deps-runner design",
-    "observedFailure": "deps-runner's stage docs instructed the orchestrator to `gitpod environment ssh $ENV_ID -- \"<cmd>\"` and accepted a `container` invocation argument that Pylot's worker/devbox model has no equivalent for. Because Task subagents in stages 02-06 do not inherit the orchestrator's bash state, any environment identifier established in stage 01 was invisible to later stages unless explicitly re-threaded — and the old design never re-threaded it, nor did it ever preflight the target repo or stop anything in stage 06, so compute was either never correctly provisioned or leaked indefinitely.",
-    "note": "Must fail against pre-#2992 deps-runner content (gitpod ssh commands, container arg, no devbox preflight, no worker stop step) and pass once the Pylot worker/devbox lifecycle rewrite (spawn in 01, drive in 02-05, stop-first in 06) is live."
+    "observedFailure": "deps-runner's stage docs instructed the orchestrator to SSH into a raw environment identifier on the retired remote-execution provider (`<retired-provider> environment ssh <raw-environment-identifier> -- \"<cmd>\"`) and accepted a `container` invocation argument that Pylot's worker/devbox model has no equivalent for. Because Task subagents in stages 02-06 do not inherit the orchestrator's bash state, any environment identifier established in stage 01 was invisible to later stages unless explicitly re-threaded — and the old design never re-threaded it, nor did it ever preflight the target repo or stop anything in stage 06, so compute was either never correctly provisioned or leaked indefinitely.",
+    "note": "Must fail against pre-#2992 deps-runner content (the retired provider's SSH invocation, the container arg, no devbox preflight, no worker stop step) and pass once the Pylot worker/devbox lifecycle rewrite (spawn in 01, drive in 02-05, stop-first in 06) is live."
   }
 }

@@ -1,0 +1,72 @@
+{
+  "id": "issue-to-prd-linked-metric-001",
+  "scenario": "causal-contract-linked-metric",
+  "description": "An issue explicitly names a metric, states a causal goal, and gives its own explicit numeric target. Stage 05c must recognize this as a valid causal measurement contract, fetch a baseline scoped to only that named metric (ignoring any other metrics the outcomes API returns), and stage 06 must populate the full Measurable Impact section using the issue's own target verbatim — never an agent-computed one.",
+  "skill": "issue-to-prd",
+  "scope": "procedure",
+  "gate": "zero-tolerance",
+  "rule": "causal-contract",
+  "thread": {
+    "channel": "fellowship-dev/example-app#412",
+    "channelType": "issue",
+    "participants": ["issue-author", "pylot"],
+    "messages": [
+      {
+        "from": "issue-author",
+        "text": "Add a 'quick reply' template picker to the PR comment composer.\n\nGoal: reduce time_to_merge_hours. Success metric: time_to_merge_hours. Target: reduce time_to_merge_hours by 20% within 30 days of shipping this, since most merge delay is drafting the same 3 comments over and over."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "contract-detection",
+      "setup": "Stage 05c reads the stage 01 handoff containing the issue body above, which names a metric, states an explicit 20%-in-30-days target, and frames it causally as a goal.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=05c-outcomes-baseline"
+      },
+      "expectedBehavior": {
+        "type": "contract",
+        "assertion": "linked_metric_contract_detected_with_verbatim_target",
+        "description": "The stage 05c handoff records Contract: linked-metric, Metric: time_to_merge_hours, and a Target copied verbatim as the issue's own words ('reduce time_to_merge_hours by 20% within 30 days of shipping this') — not rounded, not restated as a different number, not replaced with an agent-computed percentage.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "scoped-baseline-fetch",
+      "setup": "The outcomes API is reachable and returns multiple metrics, including both time_to_merge_hours and pr_merged.",
+      "evalTurn": {
+        "from": "system",
+        "event": "api_response",
+        "text": "200 {\"pr_merged\":{\"mean\":0.78,\"unit\":\"rate\",\"window_days\":30,\"sample_count\":142},\"time_to_merge_hours\":{\"mean\":4.2,\"unit\":\"hours\",\"window_days\":30,\"sample_count\":142}}"
+      },
+      "expectedBehavior": {
+        "type": "baseline",
+        "assertion": "only_named_metric_used_with_source_window_cohort_sample",
+        "description": "The handoff's Baseline field reflects only time_to_merge_hours (4.2h); pr_merged is ignored entirely even though the API returned it. Baseline Source records the endpoint (GET /outcomes/summary), window_days=30, cohort (scope=pr, org), and sample_count=142.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "prd-population",
+      "setup": "Stage 06 drafts the PRD from all prior handoffs, including 05c's linked-metric contract.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=06-ask-or-structure"
+      },
+      "expectedBehavior": {
+        "type": "prd-section",
+        "assertion": "measurable_impact_section_included_with_sourced_fields",
+        "description": "The PRD's ## Measurable Impact section is present and includes Hypothesis, Baseline (with source/window/cohort/sample size), Target (the issue's literal 20%-in-30-days text, not an agent-generated number), and an Evaluation rule derived from that same target. The section is never omitted or replaced with a placeholder when a valid contract exists.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "incident": "pre-#2774-reconciliation issue-to-prd (PR fellowship-dev/dogfooded-skills#119)",
+    "observedFailure": "The old stage 05c/06 pair always emitted a Measurable Impact section sourced from whatever generic org-wide metrics the outcomes API happened to return, and always invented its own target (a heuristic +5-to-10 percentage points or 10-20% reduction) — even when the issue itself already stated a specific number the agent should have deferred to.",
+    "note": "Must fail against pre-#2774-fix stage 05c/06 content (unconditional generic baseline + agent-suggested target) and pass once causal-contract gating with verbatim-target propagation is live."
+  }
+}

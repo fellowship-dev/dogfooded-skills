@@ -26,13 +26,23 @@ ANY of the following triggers questions:
 3. Weave in stage 02 context additions to relevant sections
 4. Add stage 04 guardrails as "Implementation Constraints" section
 5. Add stage 05 test plan as "Testing Strategy" section
-6. Populate `## Measurable Impact` from stage 05c handoff:
-   - **Hypothesis**: generate one sentence from the issue goal (e.g. "Implementing this feature will increase pr_merged rate")
-   - **Baseline**: copy `Baseline` field from stage 05c handoff verbatim
-   - **Target**: copy `Target` field from stage 05c handoff verbatim
-   - **Experiment plan**: `"Monitor via outcomes API post-merge; link to relevant Phase 2 experiment if applicable"`
-   - **Eval criteria**: copy `Eval Criteria` field from stage 05c handoff verbatim
-   - If stage 05c handoff is missing or unreadable: use placeholder values (`"not yet measured"` / `"TBD"`) — do not fail
+6. Populate `## Measurable Impact` from stage 05c handoff, gated on `Contract`:
+   - `Contract: linked-metric` → include the full section:
+     - **Hypothesis**: one sentence built from the issue's own `Source Text` (e.g. "Implementing
+       this feature will increase pr_merged rate") — never invent a hypothesis unrelated to what
+       the issue said
+     - **Baseline**: copy `Baseline` field from stage 05c handoff verbatim
+     - **Baseline source**: copy `Baseline Source` field verbatim (endpoint / window / cohort /
+       sample size)
+     - **Target**: copy `Target` field verbatim — this is the issue's own stated target, never an
+       agent computation
+     - **Evaluation rule**: copy `Eval Criteria` field verbatim
+   - `Contract: none` → replace the whole section with one line: "Not applicable — no goal, eval,
+     or outcome contract is established for this issue." Do not include Hypothesis/Baseline/
+     Target/Evaluation rule fields, and do not mention any metric name.
+   - If stage 05c's `Contract` field itself is ambiguous, missing, or unreadable → treat as
+     "needs a goal decision": one line, "Needs a goal decision — outcomes baseline stage did not
+     produce a clear contract verdict." Never fall back to a generic metric or a computed target.
 7. Write draft to `stages/06-ask-or-structure/output/handoff.md`
 
 ## Routing stage 05b's verdict

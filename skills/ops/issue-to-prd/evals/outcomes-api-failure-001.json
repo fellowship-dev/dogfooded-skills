@@ -1,0 +1,57 @@
+{
+  "id": "issue-to-prd-outcomes-api-failure-001",
+  "scenario": "outcomes-api-fail-open",
+  "description": "An issue DOES carry a valid causal measurement contract (named metric, explicit target, causal framing), but the outcomes API is unreachable when stage 05c calls it. PRD generation must still proceed fail-open: the Measurable Impact section is still included (the contract is valid), but the baseline is a placeholder — the run must never block, throw, or divert to the questions path solely because the outcomes API is down.",
+  "skill": "issue-to-prd",
+  "scope": "procedure",
+  "gate": "zero-tolerance",
+  "rule": "fail-open",
+  "thread": {
+    "channel": "fellowship-dev/example-app#455",
+    "channelType": "issue",
+    "participants": ["issue-author", "pylot"],
+    "messages": [
+      {
+        "from": "issue-author",
+        "text": "Cache the /repos list response to cut dashboard load time.\n\nGoal: reduce dashboard_load_ms. Target: dashboard_load_ms p95 under 800ms within 2 weeks of shipping."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "contract-valid-api-down",
+      "setup": "Stage 05c detects a valid linked-metric contract (dashboard_load_ms, explicit target, causal framing) and issues the outcomes API call, which times out.",
+      "evalTurn": {
+        "from": "system",
+        "event": "api_response",
+        "text": "curl: (28) Connection timed out after 10000 milliseconds"
+      },
+      "expectedBehavior": {
+        "type": "fail-open",
+        "assertion": "placeholder_baseline_no_block_no_throw",
+        "description": "The handoff still records Contract: linked-metric, Metric: dashboard_load_ms, and Target copied verbatim from the issue, but Status: placeholder and Baseline: 'not yet measured'. The stage does not error, exit early, or halt the procedure — it writes its handoff and lets stage 06 proceed exactly as it would on success.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "prd-still-drafted",
+      "setup": "Stage 06 runs immediately after the fail-open stage 05c handoff.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=06-ask-or-structure"
+      },
+      "expectedBehavior": {
+        "type": "prd-section",
+        "assertion": "prd_completes_with_placeholder_baseline_not_blocked",
+        "description": "Stages 06 and 07 complete normally. The PRD's ## Measurable Impact section is present (the contract is valid) with Baseline: 'not yet measured', the issue's own Target still copied verbatim, and an Evaluation rule derived from that target. The run never stalls waiting on the outcomes API and never routes to the questions path solely because of the API failure.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "incident": "outcomes API availability risk flagged across pylot#2774 / pylot#3124",
+    "observedFailure": "A stage 05c implementation that is not fail-open could let an outcomes API 5xx/timeout raise an exception that aborts the entire issue-to-prd run instead of yielding a placeholder baseline — turning a metrics-service blip into an org-wide PRD-generation outage.",
+    "note": "Distinct from the no-causal-contract scenario, where the API is never called at all — this scenario specifically covers a valid contract whose baseline fetch fails, and must still complete the PRD with a placeholder baseline rather than blocking."
+  }
+}

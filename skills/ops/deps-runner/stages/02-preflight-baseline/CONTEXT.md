@@ -57,18 +57,21 @@ reference point for stage 04.
 > Stage 04 verifies via `docker build container/` instead.
 
 ### 4. Booster remote sync (downstream sites only)
+Both checks below are LLM-mediated (the worker's own agent parses and reports, rather than a
+raw shell handing back a deterministic exit status), so prompt for a strict single-token/numeric
+response and treat anything else as unparseable rather than loosely pattern-matching prose.
 ```bash
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
-  "Run: git remote | grep -c '^booster$' || echo 0. Report the number only."
-HAS_BOOSTER=$(pylot workers output "$WID" --mission "$PYLOT_JOB_ID")
+  "Run: git remote | grep -c '^booster$' || echo 0. Reply with ONLY the resulting number as a bare digit — no words, no punctuation, nothing else on the line."
+HAS_BOOSTER=$(pylot workers output "$WID" --mission "$PYLOT_JOB_ID" | tr -d '[:space:]')
 
 if [ "$HAS_BOOSTER" = "1" ]; then
   echo "==> booster remote detected — syncing booster/main before deps run"
   pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 120 \
-    "Run: git fetch booster && git merge booster/main --no-edit. Report the exact output and exit code."
+    "Run: git fetch booster && git merge booster/main --no-edit; echo \"EXIT_CODE=\$?\". Report the exact command output, then on its own final line report ONLY the text EXIT_CODE=<N> with the real numeric exit code substituted for <N> — no other words on that line."
   MERGE_RESULT=$(pylot workers output "$WID" --mission "$PYLOT_JOB_ID")
 
-  if echo "$MERGE_RESULT" | grep -q "exit code: 0\|exit code 0"; then
+  if echo "$MERGE_RESULT" | grep -qE "EXIT_CODE=0$"; then
     echo "==> booster/main merged successfully"
     BOOSTER_SYNC_STATUS="synced"
   else

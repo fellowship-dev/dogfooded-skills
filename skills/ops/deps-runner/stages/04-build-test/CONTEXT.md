@@ -49,15 +49,30 @@ If build fails → record **flag for Max, do not merge**, set result `build:fail
 > repos rather than killing the prompt prematurely.
 
 ### 3. Restart services if runtime dep
+The worker-prompt instruction is executed by the worker's own agent, not a raw SSH shell — a
+plain trailing `&` only backgrounds correctly if that agent's shell tool returns control
+immediately after launching the process rather than blocking until it exits. Do NOT rely on
+`--wait --timeout 60` racing an indefinitely-running foreground dev server; if the shell tool
+waits for the command to complete, a `develop &`/`server -d` process that never exits will hang
+the prompt until the 60s timeout fires. Instead, explicitly instruct the worker to detach the
+process (`nohup ... & disown`) and print a fixed sentinel string as soon as the backgrounding
+command itself returns, and treat that sentinel text — not the `--wait` call completing on its
+own — as the "it started" signal:
 ```bash
 # Strapi / Node servers:
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
-  "Run: pkill -f 'node.*strapi\|node.*server' 2>/dev/null; npm run develop &. Report whether it started."
+  "Run: pkill -f 'node.*strapi\|node.*server' 2>/dev/null; nohup npm run develop > /tmp/deps-runner-dev.log 2>&1 & disown; echo started. Confirm the shell returned control immediately after backgrounding (did not block on the dev server process), then report the 'started' line and exit code."
 # Rails:
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
-  "Run: pkill -f puma 2>/dev/null; bundle exec rails server -d. Report whether it started."
+  "Run: pkill -f puma 2>/dev/null; nohup bundle exec rails server -d > /tmp/deps-runner-dev.log 2>&1 & disown; echo started. Confirm the shell returned control immediately after backgrounding (did not block on the dev server process), then report the 'started' line and exit code."
 pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
+Treat the `started` sentinel text in the reported output as the signal that backgrounding
+succeeded. If the prompt instead times out at 60s with no `started` sentinel reported, treat
+that as evidence the worker's shell tool blocked on the foreground process rather than a
+transient timeout — flag for Max rather than retrying with a longer timeout, since a longer
+timeout would still eventually hit an indefinitely-running process.
+
 Dev/build deps (linters, test tools, build plugins): no restart — just verify build passed.
 
 ### 4. Run tests

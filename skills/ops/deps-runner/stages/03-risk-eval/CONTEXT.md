@@ -29,6 +29,13 @@ WID="<worker_id from stage 02 handoff>"
 
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
   "Run: git fetch origin <pr-branch>:refs/remotes/origin/<pr-branch> && git diff main..origin/<pr-branch> --name-only. Report the file list."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
+```
+Read the file-list result back BEFORE sending the next prompt — per the pylot-cli worker
+contract, `output` returns only the latest turn's result, so a second prompt sent before reading
+this one silently discards the changed-file list that feeds the Direct-usage risk column below.
+
+```bash
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
   "Run: git diff main..origin/<pr-branch> -- package.json Gemfile requirements.txt pyproject.toml. Report the diff verbatim."
 pylot workers output "$WID" --mission "$PYLOT_JOB_ID"

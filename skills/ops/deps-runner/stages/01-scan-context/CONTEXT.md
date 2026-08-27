@@ -58,15 +58,37 @@ pylot devboxes project "$REPO"
 ```bash
 SPAWN=$(pylot workers spawn --mission "$PYLOT_JOB_ID" repo="$REPO" \
   name="deps-runner-$(echo "$REPO" | tr '/' '-')")
-WID=$(printf '%s' "$SPAWN" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))')
+printf '%s' "$SPAWN" > .procedure-output/deps-runner/01-scan-context/.spawn-raw.json
+WID=$(printf '%s' "$SPAWN" | python3 -c 'import sys,json
+try:
+    print(json.load(sys.stdin).get("worker_id",""))
+except Exception:
+    print("")')
 ```
-   Record `worker_id` in the handoff below — every downstream stage reads it from there (or
-   from the immediately-prior stage's handoff, since each stage forwards it unchanged).
+   The raw spawn response is written to disk **before** parsing is attempted, so a live worker
+   is never traceable only through a variable that a crashed parse could lose — if `python3`
+   raises on malformed/unexpected JSON, the `except` still prints an empty string (never lets
+   the parse failure abort the step), and `.spawn-raw.json` remains on disk as the recovery
+   record regardless of what `WID` ends up holding.
+
    201 means the spawn was accepted; boot to `RUNNING` takes ~1-2 min but prompts queue
    server-side, so stage 02 does not need to wait idle before sending its first prompt.
 
-8. Write handoff immediately after the spawn returns — do not run any further lookups or
-   reconnaissance between step 7 and the handoff write.
+   - If `SPAWN` was non-empty (the API call itself succeeded) but `WID` comes back empty — the
+     201 body didn't parse the way expected — do NOT treat this as `devbox_ready: false` and do
+     NOT silently drop it: a worker may genuinely be running with no recorded id. Record
+     `worker_id: UNKNOWN — spawn accepted but response did not parse; raw response saved to
+     .spawn-raw.json` in the handoff, and instruct the orchestrator to resolve it before driving
+     any further stage (`pylot workers list --mission "$PYLOT_JOB_ID"` to find the just-spawned
+     worker by name and recover its id by hand).
+
+8. Write handoff immediately after step 7 returns — do not run any further lookups or
+   reconnaissance between step 7 and the handoff write. **Verify the write succeeded** (read the
+   file back, or check the write command's own exit status) before considering stage 01 done. If
+   the write fails, retry once; if it still fails, do not lose the worker's identity to a failed
+   file write — surface `worker_id` (and, if `WID` was empty, the `.spawn-raw.json` path) directly
+   in the orchestrator's own reply to the operator as an explicit blocker, so a human can stop the
+   worker manually even though the durable handoff never landed.
 
 ## Output: handoff.md
 
@@ -80,7 +102,7 @@ Path: `.procedure-output/deps-runner/01-scan-context/handoff.md`
 
 ## Worker
 devbox_ready: {true|false}
-worker_id: {id, or "none — devbox unavailable"}
+worker_id: {id, or "none — devbox unavailable", or "UNKNOWN — spawn accepted but response did not parse; raw response saved to .spawn-raw.json"}
 devbox_note: {task_def summary, or the blocker reason if devbox_ready is false}
 
 ## Repo Type
@@ -107,7 +129,10 @@ has_booster_remote: {unknown — checked in stage 02}
 - Devbox preflight run and recorded: either a live `worker_id`, or `devbox_ready: false` with
   a reason
 - Repo type and merge_strategy recorded
-- handoff.md written before any Task is spawned
+- The raw spawn response is persisted to `.spawn-raw.json` before parsing is attempted, whenever
+  a spawn call is made — the recovery record exists independent of whether parsing succeeds
+- handoff.md written before any Task is spawned, and its write is verified (read back or exit
+  status checked) — a failed write is retried once, then surfaced directly to the operator
 
 ## Failure
 - `gh pr list` fails (auth/repo error) → record the error in handoff, set PR list empty, let
@@ -115,3 +140,12 @@ has_booster_remote: {unknown — checked in stage 02}
 - `pylot devboxes project` reports no `task_def` (or a `404 no_project`/`no_repo`) → set
   `devbox_ready: false`, do NOT attempt a spawn, and note in the handoff that stages 02-05
   are skipped — the orchestrator routes straight to 06-report (blocked).
+- Spawn call succeeds (non-empty `SPAWN`) but `worker_id` parsing fails or returns empty → do
+  NOT report `devbox_ready: false` (a worker may be live and unrecorded). Record
+  `worker_id: UNKNOWN — spawn accepted but response did not parse; raw response saved to
+  .spawn-raw.json` and treat it as a blocker requiring manual recovery before stages 02-05 drive
+  anything, exactly as if worker identity could not be established.
+- The handoff.md write itself fails after a successful spawn → retry once; if it still fails,
+  do not let the worker go unrecorded anywhere — surface `worker_id` (and `.spawn-raw.json`'s
+  path if `worker_id` was never parsed) directly in the orchestrator's reply to the operator as
+  an explicit blocker.

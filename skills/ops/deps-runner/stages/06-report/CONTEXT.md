@@ -31,6 +31,34 @@ pylot workers stop "$WID" --mission "$PYLOT_JOB_ID" --force
 even on an already-idle/never-driven worker is safe. Do NOT skip this — a leaked worker keeps
 burning Fargate compute until manually stopped or reaped.
 
+**Confirm terminal state — a successful `stop` call only means the request was accepted, not
+that the Fargate task has actually wound down.** Poll for confirmation on a bounded budget (5
+attempts, 5 s apart, ~25 s total — the same order of magnitude as the documented boot window,
+never open-ended):
+```bash
+CONFIRMED=false
+for i in 1 2 3 4 5; do
+  ECS_STATUS=$(pylot workers list --mission "$PYLOT_JOB_ID" | \
+    python3 -c 'import sys,json
+try:
+    for w in json.load(sys.stdin):
+        if w.get("worker_id") == "'"$WID"'":
+            print(w.get("ecs_status",""))
+except Exception:
+    print("")')
+  if [ "$ECS_STATUS" = "STOPPED" ]; then CONFIRMED=true; break; fi
+  sleep 5
+done
+```
+- `stop` call itself errors → retry once (see Failure below); if it still errors, do not poll —
+  go straight to the `FAILED` handoff state.
+- `stop` call accepted but `CONFIRMED` never becomes `true` within the 5-attempt budget → this is
+  NOT `stopped: yes`. Record it honestly as `unconfirmed` with the last-observed `ECS_STATUS`
+  (or `unknown` if the poll itself never returned a status), and flag it for manual reaping —
+  same as an explicit stop failure. Never write `stopped: yes` on an assumption; only on an
+  observed terminal state.
+- `CONFIRMED=true` → `stopped: yes`.
+
 ### 2. Write the local report file
 Use the template at `shared/report-template.md`. One file per dependency PR processed, at:
 ```
@@ -58,8 +86,8 @@ Path: `.procedure-output/deps-runner/06-report/handoff.md`
 - ...
 
 ## Worker
-worker_id: {the id that was stopped, or "none — devbox unavailable, nothing spawned"}
-stopped: {yes / FAILED: reason}
+worker_id: {the id that was (attempted to be) stopped, or "none — devbox unavailable, nothing spawned"}
+stopped: {yes — confirmed STOPPED via bounded poll / unconfirmed — stop accepted, last observed ecs_status={status or "unknown"} after 5 attempts / FAILED: reason}
 
 ## Final Tally
 total PRs: {N}
@@ -70,7 +98,9 @@ merged: {N}   labeled-pipeline: {N}   tests-written: {N}   flagged: {N}   blocke
 ```
 
 ## Success criteria
-- Worker stopped (or confirmed there was never one to stop) BEFORE the report is written
+- Worker stop confirmed via the bounded terminal-state poll — or honestly recorded as
+  `unconfirmed`/`FAILED` — BEFORE the report is written. Never claim `stopped: yes` without an
+  observed `ecs_status: STOPPED` (or confirming there was never a worker to stop).
 - At least one report file written (or a single summary file if zero PRs, or blocked)
 - Report begins with the Source PRs
 - `[pylot] outcome=...` marker emitted from the orchestrator (never a subagent)
@@ -78,5 +108,9 @@ merged: {N}   labeled-pipeline: {N}   tests-written: {N}   flagged: {N}   blocke
 
 ## Failure
 - `pylot workers stop` errors → retry once, then still emit the outcome marker, but note the
-  leaked worker in the report and flag it for manual reaping (`pylot workers view "$WID"
-  --mission "$PYLOT_JOB_ID"` to check its live status).
+  leaked worker in the report and flag it for manual reaping (`pylot workers list --mission
+  "$PYLOT_JOB_ID"` to check its live `ecs_status`).
+- `pylot workers stop` is accepted but the bounded terminal-state poll never observes `STOPPED`
+  within its 5-attempt budget → record `stopped: unconfirmed` with the last-observed status,
+  still emit the outcome marker, and flag the worker for manual reaping exactly as on an
+  explicit stop failure — an accepted-but-unconfirmed stop is not a cleanup success.

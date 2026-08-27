@@ -40,14 +40,21 @@ pylot devboxes project "$REPO"
 # Stage 01 — spawn (only if devboxes project reported a task_def)
 SPAWN=$(pylot workers spawn --mission "$PYLOT_JOB_ID" repo="$REPO" \
   name="deps-runner-$(echo "$REPO" | tr '/' '-')")
-WID=$(printf '%s' "$SPAWN" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))')
+printf '%s' "$SPAWN" > .procedure-output/deps-runner/01-scan-context/.spawn-raw.json  # recovery record before parsing
+WID=$(printf '%s' "$SPAWN" | python3 -c 'import sys,json
+try:
+    print(json.load(sys.stdin).get("worker_id",""))
+except Exception:
+    print("")')
 
 # Stages 02-05 — drive (each stage reads worker_id from the prior stage's handoff)
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 600 "<instruction>"
 pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 
-# Stage 06 — stop, FIRST action, before writing the report
+# Stage 06 — stop, FIRST action, before writing the report, then confirm terminal state
 pylot workers stop "$WID" --mission "$PYLOT_JOB_ID" --force
+# poll `pylot workers list --mission "$PYLOT_JOB_ID"` for this worker's ecs_status == STOPPED
+# on a bounded budget before recording stopped: yes — see stage 06's CONTEXT.md
 ```
 
 If `pylot devboxes project "$REPO"` reports no `task_def`, the repo has no built worker

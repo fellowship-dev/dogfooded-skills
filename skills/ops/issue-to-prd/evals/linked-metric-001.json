@@ -39,12 +39,12 @@
       "evalTurn": {
         "from": "system",
         "event": "api_response",
-        "text": "200 {\"pr_merged\":{\"mean\":0.78,\"unit\":\"rate\",\"window_days\":30,\"sample_count\":142},\"time_to_merge_hours\":{\"mean\":4.2,\"unit\":\"hours\",\"window_days\":30,\"sample_count\":142}}"
+        "text": "200 {\"org\":\"fellowship-dev\",\"days\":30,\"source\":\"outcomes_daily_rollup\",\"metrics\":[{\"scope\":\"pr\",\"metric\":\"pr_merged\",\"days\":30,\"sample_count\":142,\"sum_value\":110.76,\"avg_value\":0.78,\"min_value\":0.0,\"max_value\":1.0,\"first_day\":\"2026-07-28\",\"last_day\":\"2026-08-26\"},{\"scope\":\"pr\",\"metric\":\"time_to_merge_hours\",\"days\":30,\"sample_count\":142,\"sum_value\":596.4,\"avg_value\":4.2,\"min_value\":0.5,\"max_value\":48.0,\"first_day\":\"2026-07-28\",\"last_day\":\"2026-08-26\"}]}"
       },
       "expectedBehavior": {
         "type": "baseline",
         "assertion": "only_named_metric_used_with_source_window_cohort_sample",
-        "description": "The handoff's Baseline field reflects only time_to_merge_hours (4.2h); pr_merged is ignored entirely even though the API returned it. Baseline Source records the endpoint (GET /outcomes/summary), window_days=30, cohort (scope=pr, org), and sample_count=142.",
+        "description": "The handoff's Baseline field reflects only the time_to_merge_hours row's avg_value (4.2); the pr_merged row is ignored entirely even though it is also present in metrics[]. Baseline Source records the envelope's source (outcomes_daily_rollup), window (days=30, first_day=2026-07-28, last_day=2026-08-26), cohort (row scope=pr plus envelope org=fellowship-dev), and sample_count=142.",
         "tolerancePct": 0
       }
     },

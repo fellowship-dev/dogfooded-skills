@@ -18,7 +18,7 @@ at it; until then, the issue body/comments are the only source of truth.
   contract can come from)
 - `{org}` — the GitHub org owning the issue repo (from stage 01 handoff or the repo argument)
 - `$PYLOT_API` — gateway base URL (env)
-- `$PYLOT_DISPATCH_TOKEN` — auth token (env)
+- `$PYLOT_OPERATOR_TOKEN` — auth token (env)
 
 ## Task
 
@@ -45,24 +45,39 @@ up, and calling it would only tempt a generic baseline into filling the gap.
 ```bash
 curl -sf -w "\n__STATUS__:%{http_code}" \
   "${PYLOT_API}/outcomes/summary?scope=pr&org=${ORG}" \
-  -H "Authorization: Bearer ${PYLOT_DISPATCH_TOKEN}" \
+  -H "Authorization: Bearer ${PYLOT_OPERATOR_TOKEN}" \
   2>/dev/null
 ```
-where `ORG` is the GitHub org (e.g. `fellowship-dev`). From the response, pull out **only the
-named metric** from step 1 — ignore every other metric the API returns, even if present.
-
-- Curl fails (non-zero exit), HTTP status is not `200`, or the named metric is absent / has no
-  samples (`sample_count == 0`) → `baseline = "not yet measured"`, `status = placeholder`.
-- Otherwise → format the one metric's baseline, carrying every field needed to source it:
-  **source** (`GET /outcomes/summary?scope=pr&org=<org>`), **window** (`window_days`), **cohort**
-  (`scope=pr, org=<org>`), **sample size** (`sample_count`), and the **mean**.
-
-**Formatting example** — issue named `time_to_merge_hours`, API returns:
+where `ORG` is the GitHub org (e.g. `fellowship-dev`). The response is an envelope:
 ```json
-{"time_to_merge_hours":{"mean":4.2,"unit":"hours","window_days":30,"sample_count":142}}
+{"org": "fellowship-dev", "days": 30, "source": "outcomes_daily_rollup", "metrics": [ {row}, ... ]}
 ```
-→ `baseline = "time_to_merge_hours: 4.2h"`, with source/window/cohort/sample size carried
-separately into the handoff fields below (not collapsed into one string).
+Each element of `metrics[]` is one row:
+```json
+{"scope": "pr", "metric": "time_to_merge_hours", "days": 30, "sample_count": 142,
+ "sum_value": 596.4, "avg_value": 4.2, "min_value": 0.5, "max_value": 48.0,
+ "first_day": "2026-07-28", "last_day": "2026-08-26"}
+```
+Find the one row in `metrics[]` whose `metric` field equals the named metric from step 1 —
+ignore every other row, even if present (e.g. don't touch a `pr_merged` row when the issue
+named `time_to_merge_hours`).
+
+- Curl fails (non-zero exit), HTTP status is not `200`, `metrics[]` is empty, no row's `metric`
+  matches the named metric, or the matched row's `sample_count == 0` → `baseline = "not yet
+  measured"`, `status = placeholder`.
+- Otherwise → the baseline is the matched row's `avg_value`. Carry every field needed to source
+  it into the handoff, read from that same row/envelope — never invented:
+  - **source**: the envelope's `source` field (e.g. `outcomes_daily_rollup`)
+  - **window**: the envelope's `days`, plus the matched row's `first_day`–`last_day`
+  - **cohort**: the matched row's `scope` plus the envelope's `org`
+  - **sample size**: the matched row's `sample_count`
+
+**Formatting example** — issue named `time_to_merge_hours`, API returns the envelope above (with
+a second `pr_merged` row also present in `metrics[]`, ignored):
+→ `baseline = "time_to_merge_hours: 4.2 (avg_value)"`. Source/window/cohort/sample size are
+carried separately into the handoff fields below (not collapsed into one string). Do not invent
+a unit (no "h", no "%") unless the issue's own target text already used one — the API contract
+carries no unit field.
 
 ### 3. Target and eval rule (linked-metric contract only)
 Never compute or suggest a target — copy the one the issue already stated, verbatim, from step 1.
@@ -97,7 +112,7 @@ not appear anywhere in this stage's output unless the issue itself named them.
 [metric: value, or "not yet measured", or "not applicable"]
 
 ## Baseline Source
-[source endpoint / window_days / cohort (scope+org) / sample_count, or "not applicable"]
+[envelope `source` value / window (`days`, `first_day`–`last_day`) / cohort (row `scope` + envelope `org`) / `sample_count`, or "not applicable"]
 
 ## Target
 [the issue's stated target, copied verbatim, or "not applicable"]

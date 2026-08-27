@@ -144,6 +144,14 @@ build/test failure on every PR), continue per that stage's Failure rules — typ
 blocker is recorded and flagged, but the run proceeds to 06-report so the report is always
 produced.
 
+If the Task call itself fails — the subagent errors, times out, or otherwise exits without ever
+writing `handoff.md` — that is NOT a graceful stage failure and none of the above applies (there
+is no handoff to read Failure rules from). Treat it as a hard blocker directly: do not retry the
+stage, do not attempt to continue to the next stage, and do not leave the run open. Go straight to
+stage 06, reading `worker_id` from the most recent handoff that has one (the crashed stage's own
+handoff does not exist, so use the prior stage's). Stage 06 still stops that worker as its first
+action and writes a blocked report — a crashed subagent must never leave the worker running.
+
 ### Stage 06 (inline)
 
 Run stage 06 yourself (orchestrator context). Read CONTEXT.md:
@@ -224,6 +232,11 @@ In all cases stage 06 still writes the local report file before the marker is em
     stage 06 without spawning.
 12. **Always stop the worker in stage 06, as its first action, before writing the report.**
     A leaked worker keeps burning Fargate compute until manually stopped or reaped.
+13. **A stage-level exception is a hard blocker, not a retry.** If a Task subagent for stages
+    02-05 errors, times out, or exits without writing `handoff.md`, do not retry it and do not
+    advance to the next stage — route straight to stage 06 using `worker_id` from the most
+    recent handoff that has one, so the worker is stopped even when a stage crashes outright
+    rather than failing gracefully.
 
 ## Reference files
 

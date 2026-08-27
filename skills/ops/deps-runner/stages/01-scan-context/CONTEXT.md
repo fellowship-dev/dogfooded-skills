@@ -38,7 +38,23 @@ pylot devboxes project "$REPO"
    reason, and skip step 5 (no spawn). The orchestrator routes straight to stage 06 once this
    handoff is written.
 
-5. If `devbox_ready` is true, spawn the worker this run will use through stage 05:
+5. Group the PRs for evaluation in stage 03 (e.g. by package family / companion packages such
+   as react + react-dom, @strapi/strapi + @strapi/plugin-*). Grouping is for ORDERED cohesion,
+   NOT for fan-out — stage 03 still processes all groups in a single sequential pass.
+   Order groups lowest-risk-first (frontend devDeps/patches before backend runtime deps).
+
+6. Detect repo type for the verification path (inline via `gh api`, no worker needed):
+```bash
+# Node repo: repos/$REPO/contents/package.json exists
+# Rails repo: repos/$REPO/contents/Gemfile exists
+# Python repo = requirements.txt or pyproject.toml exists; no test suite = no test_*.py files
+# (recorded here so stage 04 knows to use docker build instead of a test suite)
+```
+
+7. If `devbox_ready` is true, spawn the worker this run will use through stage 05. This is the
+   LAST side-effecting step before the handoff write — every read-only lookup (PR list, CLAUDE.md,
+   grouping, repo-type detection) happens first, so a spawn is never left unrecorded behind
+   later reconnaissance work:
 ```bash
 SPAWN=$(pylot workers spawn --mission "$PYLOT_JOB_ID" repo="$REPO" \
   name="deps-runner-$(echo "$REPO" | tr '/' '-')")
@@ -49,20 +65,8 @@ WID=$(printf '%s' "$SPAWN" | python3 -c 'import sys,json; print(json.load(sys.st
    201 means the spawn was accepted; boot to `RUNNING` takes ~1-2 min but prompts queue
    server-side, so stage 02 does not need to wait idle before sending its first prompt.
 
-6. Group the PRs for evaluation in stage 03 (e.g. by package family / companion packages such
-   as react + react-dom, @strapi/strapi + @strapi/plugin-*). Grouping is for ORDERED cohesion,
-   NOT for fan-out — stage 03 still processes all groups in a single sequential pass.
-   Order groups lowest-risk-first (frontend devDeps/patches before backend runtime deps).
-
-7. Detect repo type for the verification path (inline via `gh api`, no worker needed):
-```bash
-# Node repo: repos/$REPO/contents/package.json exists
-# Rails repo: repos/$REPO/contents/Gemfile exists
-# Python repo = requirements.txt or pyproject.toml exists; no test suite = no test_*.py files
-# (recorded here so stage 04 knows to use docker build instead of a test suite)
-```
-
-8. Write handoff.
+8. Write handoff immediately after the spawn returns — do not run any further lookups or
+   reconnaissance between step 7 and the handoff write.
 
 ## Output: handoff.md
 

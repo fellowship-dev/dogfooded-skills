@@ -59,6 +59,11 @@ live.
   may write targeted tests. Enforces the review pipeline (reviewed → double-checked).
 - Stage 06: inline. Stops the worker, writes the local report file(s), and MUST emit
   `[pylot] outcome=...` from the orchestrator. **No Quest POST.**
+- A stage-level exception (subagent errors, times out, or exits without writing handoff.md) is
+  distinct from a graceful stage failure recorded in a handoff — there is no handoff to read
+  Failure rules from. The orchestrator treats it as a hard blocker directly and routes straight
+  to stage 06, using `worker_id` from the most recent handoff that has one, so the worker is
+  stopped even when a stage crashes outright.
 
 ## Resume-from-stage
 

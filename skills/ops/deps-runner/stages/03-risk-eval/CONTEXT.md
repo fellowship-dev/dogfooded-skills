@@ -63,7 +63,7 @@ pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ### c) Used directly in the codebase?
 ```bash
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
-  "Run: grep -r '<package-name>' --include='*.{js,ts,jsx,tsx,rb,py}' -l | grep -v node_modules | grep -v vendor. Report the file list, or 'none' if empty."
+  "Run: grep -r '<package-name>' --include='*.js' --include='*.ts' --include='*.jsx' --include='*.tsx' --include='*.rb' --include='*.py' -l | grep -v node_modules | grep -v vendor. Report the file list, or 'none' if empty."
 pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 

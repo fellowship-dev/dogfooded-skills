@@ -23,7 +23,7 @@ WID="<worker_id from stage 03 handoff>"
 BRANCH="<pr-branch-name>"
 
 pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
-  "Run: git config --unset user.name 2>/dev/null; git config --unset user.email 2>/dev/null; git fetch origin $BRANCH && git checkout $BRANCH; echo EXIT_CODE=\$?. Report the exact output and the EXIT_CODE line."
+  "Run: git config --unset user.name 2>/dev/null; git config --unset user.email 2>/dev/null; git fetch origin \"refs/heads/$BRANCH:refs/remotes/origin/$BRANCH\" && git checkout -B \"$BRANCH\" \"origin/$BRANCH\"; echo EXIT_CODE=\$?. Report the exact output and the EXIT_CODE line."
 pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 Gate on the `EXIT_CODE=<N>` sentinel before proceeding — read the checkout result back BEFORE
@@ -31,7 +31,9 @@ sending the merge prompt, per the pylot-cli worker contract ("read the output be
 the next prompt — a failed phase should not be built on"). If the reported output does not
 contain `EXIT_CODE=0`, the fetch/checkout failed: record **flag for Max** (`checkout:fail`), set
 this PR's result to `blocked`, skip to reset/next PR. Do NOT proceed to the merge step below on a
-failed or unread checkout.
+failed or unread checkout. The explicit fetch refspec refreshes `origin/$BRANCH`; `checkout -B`
+then makes the local branch exactly that freshly fetched remote ref, rather than retaining a
+possibly stale local branch.
 
 ```bash
 # CRITICAL: Merge main into the branch so it has latest changes

@@ -12,6 +12,10 @@ Exercises, without any live pylot dispatch:
      evals/worker-lifecycle-001.json, run here instead of as a one-off manual
      grep.
   4. That every eval fixture under evals/ still parses as JSON.
+  5. The stage-04 checkout contract always creates the local branch from the
+     freshly fetched remote ref, rather than retaining a stale local branch.
+  6. The direct-usage search contract covers every supported source extension,
+     including TypeScript and Python files.
 
 Run: python3 worker_lifecycle_harness.py
 """
@@ -162,6 +166,49 @@ for f in eval_files:
         ok = False
         print(f"  {f.name}: {e}")
     check(f"{f.name} parses as valid JSON", ok)
+
+
+# --- 5. Fresh remote checkout contract (stage 04) --------------------------
+
+stage04 = (SKILL_ROOT / "stages" / "04-build-test" / "CONTEXT.md").read_text()
+stage04_command = stage04.replace('\\"', '"')
+fresh_checkout = (
+    'git fetch origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" '
+    '&& git checkout -B "$BRANCH" "origin/$BRANCH"'
+)
+check(
+    "stage 04 force-refreshes origin/$BRANCH and creates the local branch from it",
+    fresh_checkout in stage04_command,
+)
+
+
+# --- 6. Direct-usage extension coverage (stage 03) -------------------------
+
+stage03 = (SKILL_ROOT / "stages" / "03-risk-eval" / "CONTEXT.md").read_text()
+supported_extensions = ("js", "ts", "jsx", "tsx", "rb", "py")
+check(
+    "stage 03 supplies one grep include filter for each supported source extension",
+    all(f"--include='*.{extension}'" in stage03 for extension in supported_extensions),
+)
+
+
+def direct_usage_files(files, package_name):
+    """Model the documented extension filter over candidate source files."""
+    return [
+        name for name, contents in files.items()
+        if name.rsplit(".", 1)[-1] in supported_extensions and package_name in contents
+    ]
+
+
+usage_fixture = {
+    "src/client.ts": "import pkg from 'example-package'",
+    "tools/worker.py": "import example-package",
+    "README.md": "example-package is documented here",
+}
+check(
+    "direct-usage detection includes direct TypeScript and Python imports but excludes prose",
+    direct_usage_files(usage_fixture, "example-package") == ["src/client.ts", "tools/worker.py"],
+)
 
 
 print()

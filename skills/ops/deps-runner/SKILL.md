@@ -13,66 +13,78 @@ build-test → merge-decision → report. Each stage runs in isolated context; t
 judgement (risk evaluation) gets a clean-context stage of its own. Behaviorally equivalent
 to the monolithic `deps-runner` skill, just stage-partitioned.
 
-**This skill runs in the OPERATOR session** and owns its worker lifecycle. Stages that
-require a repo environment (preflight, build-test) spawn and drive a repo devbox worker via
-the gateway worker API (see `pylot-cli` skill, § Workers). Stages that only need `gh` CLI
-(scan-context, risk-eval, merge-decision, report) run inline in the operator session.
+**This skill runs in the OPERATOR session** and owns its worker lifecycle. Stage 01
+preflights the target repo's devbox image and spawns the worker that stages 02-05 drive
+via the gateway worker API (see the `pylot-cli` skill, § Workers); stage 06 stops it.
+Stages that only need `gh` CLI (scan-context, merge-decision's label/merge step, report)
+run inline in the operator session without touching the worker.
 
 **This procedure is SEQUENTIAL. There is NO fan-out and NO parallel Task launches.** Risk
 evaluation runs as ONE stage over every dependency group — never one subagent per group. The
 ICM win here is clean-context isolation of the judgement step plus resume-from-stage, not
 parallelism.
 
-## Worker Setup
+## Worker Lifecycle
 
-Stages 02-preflight-baseline and 04-build-test require a repo devbox. Spawn a worker at
-the start of the procedure and stop it after stage 05:
-
-```bash
-REPO="${0:-$PYLOT_REPO}"
-SPAWN_RESP=$(curl -s --max-time 90 -X POST \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"repo\": \"$REPO\"}" \
-  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
-WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))' 2>/dev/null)
-```
-
-Use the `pylot-cli` drive loop (§ Workers → Drive; the raw-`curl` form above is § Workers →
-Fallback when there is no usable CLI) to send each repo-access stage as a prompt and
-poll to idle before proceeding to the next stage. Stop the worker before stage 06-report:
+A worker is a Fargate devbox running the target repo (see `pylot-cli` § Workers). Stage 01
+preflights the repo and spawns the worker; stages 02-05 drive it; stage 06 stops it. The
+worker's identity (`worker_id`) is established in stage 01's handoff and then **forwarded
+unchanged in every downstream stage's own handoff** — that is how a clean-context subagent
+in, say, stage 04 knows which worker stage 02 already warmed up, without ever seeing the
+orchestrator's shell state (Task subagents do not inherit the orchestrator's bash variables).
 
 ```bash
-curl -s --max-time 30 -X POST \
-  -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
-  "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${WID}/stop" >/dev/null 2>&1 || true
+# Stage 01 — preflight (no task_def => no built image => cannot spawn)
+pylot devboxes project "$REPO"
+
+# Stage 01 — spawn (only if devboxes project reported a task_def)
+SPAWN=$(pylot workers spawn --mission "$PYLOT_JOB_ID" repo="$REPO" \
+  name="deps-runner-$(echo "$REPO" | tr '/' '-')")
+WID=$(printf '%s' "$SPAWN" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))')
+
+# Stages 02-05 — drive (each stage reads worker_id from the prior stage's handoff)
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 600 "<instruction>"
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
+
+# Stage 06 — stop, FIRST action, before writing the report
+pylot workers stop "$WID" --mission "$PYLOT_JOB_ID" --force
 ```
+
+If `pylot devboxes project "$REPO"` reports no `task_def`, the repo has no built worker
+image. Building one (`pylot deploy build-worker <org/repo> --wait`) needs an admin
+credential — an operator gets `403` — so this procedure cannot self-heal that. Record
+`devbox_ready: false` in stage 01's handoff and skip straight to stage 06: there is nothing
+to build or test without a devbox, and stage 06 still writes a blocked report.
+
+If a resumed run's recorded `worker_id` is no longer live
+(`pylot workers view "$WID" --mission "$PYLOT_JOB_ID"` shows `stopped`/`reaped`), spawn a
+replacement worker for the same repo, record the new `worker_id` in that stage's handoff,
+and continue — the fresh devbox starts from a clean checkout, so the rest of the pipeline
+is unaffected.
 
 ## Arguments
 
 | Param | Required | Default | Notes |
 |-------|----------|---------|-------|
 | `repo` | yes | — | Target `org/repo` (positional `$0`) |
-| `container` | no | — | Ona/Gitpod container or environment name (positional `$1`) |
 | `resume_from` | no | (start fresh) | Stage to resume at, e.g. `04-build-test`. Reuses on-disk handoffs from completed stages and skips them. |
 
 Parse from `$ARGUMENTS`. Forms accepted:
 - `org/repo` → fresh run
-- `org/repo container-name` → fresh run with explicit container
-- `org/repo container-name resume_from=04-build-test` → resume run
+- `org/repo resume_from=04-build-test` → resume run
 
 ## What it does
 
 6-stage SEQUENTIAL ICM procedure:
 
 | Stage | Mode | Description |
-|-------|------|-------------|
-| 01-scan-context | inline | Fetch candidate dep PRs, read repo + team CLAUDE.md, resolve container, group PRs |
-| 02-preflight-baseline | subagent | Verify main compiles + tests pass; record baseline; booster remote sync |
+|-------|------|--------------|
+| 01-scan-context | inline | Fetch candidate dep PRs, read repo + team CLAUDE.md, preflight the repo devbox and spawn the worker, group PRs |
+| 02-preflight-baseline | subagent | Verify main compiles + tests pass on the worker; record baseline; booster remote sync |
 | 03-risk-eval | subagent | SINGLE stage: classify every dependency group (diff, dep type, direct usage, risk) |
 | 04-build-test | subagent | Per PR: checkout+merge main, install+build, restart if runtime, run tests vs baseline |
 | 05-merge-decision | subagent | Apply merge matrix per PR: auto-merge/label, write targeted tests, or flag for Max |
-| 06-report | inline | Write local report file(s); release the environment; emit outcome marker |
+| 06-report | inline | Stop the worker; write local report file(s); emit outcome marker |
 
 No stage fans out. Stage 03 evaluates ALL dependency groups in one cohesive pass — do not
 spawn one subagent per group.
@@ -96,6 +108,9 @@ Run stage 01 yourself (orchestrator context). Read CONTEXT.md:
 .claude/skills/deps-runner/stages/01-scan-context/CONTEXT.md
 ```
 Write handoff to `.procedure-output/deps-runner/01-scan-context/handoff.md`.
+
+If stage 01 records `devbox_ready: false`, skip stages 02-05 entirely and go straight to
+stage 06 — there is no worker to drive.
 
 ### Stages 02 → 05 (sequential subagents — ONE AT A TIME)
 
@@ -135,9 +150,9 @@ Run stage 06 yourself (orchestrator context). Read CONTEXT.md:
 ```
 .claude/skills/deps-runner/stages/06-report/CONTEXT.md
 ```
-Write the local report file(s) and release the environment. Emit the `[pylot] outcome=...`
-marker from the orchestrator (not from a subagent). **There is NO Quest POST — write the
-local report file only.**
+Stop the worker (first action), then write the local report file(s). Emit the
+`[pylot] outcome=...` marker from the orchestrator (not from a subagent). **There is NO Quest
+POST — write the local report file only.**
 
 ## Resume-from-stage
 
@@ -151,6 +166,9 @@ When `resume_from={NN-name}` is set:
 3. Begin execution at the named stage and continue sequentially to 06-report.
 4. If a required upstream handoff is missing, STOP and report which one — the resume point is
    invalid; the run must start from an earlier stage.
+5. If resuming at a stage that drives the worker (02-05), verify the recorded `worker_id` is
+   still live (`pylot workers view "$WID" --mission "$PYLOT_JOB_ID"`) before proceeding —
+   respawn if it shows `stopped`/`reaped` and record the new id in that stage's handoff.
 
 Stage names for `resume_from`: `02-preflight-baseline`, `03-risk-eval`, `04-build-test`,
 `05-merge-decision`, `06-report`. (`01-scan-context` = a fresh run, no resume needed.)
@@ -158,20 +176,24 @@ Stage names for `resume_from`: `02-preflight-baseline`, `03-risk-eval`, `04-buil
 ## Stage handoff chain
 
 ```
-01-scan-context (inline)
+01-scan-context (inline, preflights + spawns worker)
       │
       ▼
 02-preflight-baseline ──► 03-risk-eval ──► 04-build-test ──► 05-merge-decision ──► 06-report (inline)
-   (subagent)              (subagent,         (subagent)        (subagent)            reads all
-                          ALL groups,                                                 handoffs,
-                          single pass)                                                writes report)
+   (subagent, drives        (subagent,         (subagent,        (subagent,            stops worker,
+    worker)                ALL groups,          drives            drives                reads all
+                          single pass)          worker)           worker)               handoffs,
+                                                                                         writes report)
 ```
+
+`worker_id` is forwarded unchanged in every stage's own handoff from 01 through 06.
 
 ## Exit paths
 
 - **Success**: stage 06 emits `[pylot] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
 - **Failure**: failing stage's blocker → orchestrator emits `[pylot] outcome="deps-runner failed at stage NN: {reason}" status=failed`
-- **Blocked**: preflight failure (main does not compile) → `[pylot] outcome="deps-runner blocked: preflight failed" status=blocked`
+- **Blocked**: preflight failure (main does not compile) or the target repo has no devbox
+  image → `[pylot] outcome="deps-runner blocked: {reason}" status=blocked`
 
 In all cases stage 06 still writes the local report file before the marker is emitted.
 
@@ -181,18 +203,27 @@ In all cases stage 06 still writes the local report file before the marker is em
    NO parallel Task launches anywhere.
 2. **NO fan-out** — stage 03 evaluates ALL dependency groups in a single cohesive pass; do
    NOT spawn one subagent per group/PR/dimension. A PR is reasoned about as a whole.
-3. **Stage 01 runs inline** — context (PR list, CLAUDE.md, container) is established here.
+3. **Stage 01 runs inline** — context (PR list, CLAUDE.md, devbox preflight + worker spawn)
+   is established here.
 4. **Stage 06 runs inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator.
 5. **NO QUEST** — no Quest DB POST, no `127.0.0.1:4242`, no `quest.fellowship.dev`, no
    `QUEST_TOKEN`. Reporting is the local report file only.
 6. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
-7. **Each stage writes handoff.md before the next stage reads it.**
+7. **Each stage writes handoff.md before the next stage reads it**, and forwards `worker_id`
+   unchanged so it stays durable through the chain.
 8. **Do not skip stages** — every stage executes even if its action is "nothing to do"
-   (e.g. zero candidate PRs still runs preflight and produces a report).
+   (e.g. zero candidate PRs still runs preflight and produces a report), UNLESS stage 01
+   recorded `devbox_ready: false`, in which case 02-05 are skipped entirely (nothing to
+   build or test without a worker) and the run goes straight to 06.
 9. **resume_from reuses on-disk handoffs** — completed stages are not re-run; missing upstream
-   handoff = invalid resume point, stop and report.
+   handoff = invalid resume point, stop and report. Verify the carried-forward `worker_id` is
+   still live before driving it again.
 10. **Never auto-merge high risk.** Always flag for Max. **[skip ci] on all merges.**
-11. **Always release the environment in stage 06.** Leaked Ona environments burn credits.
+11. **Preflight the repo devbox before spawning** (`pylot devboxes project`). A repo with no
+    built image cannot be spawned — record `devbox_ready: false` and route straight to
+    stage 06 without spawning.
+12. **Always stop the worker in stage 06, as its first action, before writing the report.**
+    A leaked worker keeps burning Fargate compute until manually stopped or reaped.
 
 ## Reference files
 

@@ -4,37 +4,51 @@
 - `.procedure-output/deps-runner/01-scan-context/handoff.md`
 
 ## Task
-Verify the environment is healthy on `main` BEFORE touching any PR branch, record the baseline,
+Verify the worker is healthy on `main` BEFORE touching any PR branch, record the baseline,
 and sync the booster remote if this is a downstream booster-pack site. If preflight fails,
 the environment is broken — record the blocker; downstream stages must not merge anything.
 
+This stage assumes stage 01 already reported `devbox_ready: true` and a live `worker_id` — if
+it did not, the orchestrator does not run this stage at all (see SKILL.md Hard Rule 8).
+
 ## Steps
 
-Use `ENV_ID` from the input handoff. If it was "none", spin up an Ona environment first
-(via the `ona-gitpod` skill) and record the new ID.
+Read `worker_id` from the stage 01 handoff. If a drive call below reports the worker as
+`stopped`/`reaped` (check with `pylot workers view "$WID" --mission "$PYLOT_JOB_ID"`),
+spawn a replacement (`pylot workers spawn --mission "$PYLOT_JOB_ID" repo="$REPO" name=...`)
+and use the new id for the rest of this stage and the handoff.
 
 ### 1. Verify main compiles
 ```bash
-ENV_ID="<ona-environment-id>"
+WID="<worker_id from stage 01 handoff>"
 
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && git stash; git checkout main && git pull"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 120 \
+  "Run: git stash; git checkout main && git pull. Report the exact output and exit code."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
-(`git stash` first — devcontainer lifecycle may leave modified files, e.g. devcontainer.json.)
+(`git stash` first — the devbox image's lifecycle may leave modified files, e.g. lockfiles
+touched by a prior boot script.)
 
 ### 2. Install deps & build (baseline)
 ```bash
 # Node/JS:
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && npm install && npm run build"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 600 \
+  "Run: npm install && npm run build. Report the exact output and exit code."
 # Rails:
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && bundle install && bundle exec rails assets:precompile"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 600 \
+  "Run: bundle install && bundle exec rails assets:precompile. Report the exact output and exit code."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 
 ### 3. Run test suite (baseline)
 ```bash
 # Node/JS:
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && npm test"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 900 \
+  "Run: npm test. Report the exact pass/fail counts and exit code."
 # Rails:
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && bundle exec rspec"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 900 \
+  "Run: bundle exec rspec. Report the exact pass/fail counts and exit code."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 Record the baseline: number of passing tests, build time, any existing warnings. This is the
 reference point for stage 04.
@@ -44,22 +58,26 @@ reference point for stage 04.
 
 ### 4. Booster remote sync (downstream sites only)
 ```bash
-# Check for booster remote
-HAS_BOOSTER=$(gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && git remote | grep -c '^booster$'" || echo "0")
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+  "Run: git remote | grep -c '^booster$' || echo 0. Report the number only."
+HAS_BOOSTER=$(pylot workers output "$WID" --mission "$PYLOT_JOB_ID")
 
 if [ "$HAS_BOOSTER" = "1" ]; then
   echo "==> booster remote detected — syncing booster/main before deps run"
-  MERGE_RESULT=$(gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && git fetch booster && git merge booster/main --no-edit 2>&1"; echo "EXIT:$?")
+  pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 120 \
+    "Run: git fetch booster && git merge booster/main --no-edit. Report the exact output and exit code."
+  MERGE_RESULT=$(pylot workers output "$WID" --mission "$PYLOT_JOB_ID")
 
-  if echo "$MERGE_RESULT" | grep -q "EXIT:0"; then
+  if echo "$MERGE_RESULT" | grep -q "exit code: 0\|exit code 0"; then
     echo "==> booster/main merged successfully"
     BOOSTER_SYNC_STATUS="synced"
   else
     echo "==> booster/main merge CONFLICT — aborting"
-    gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && git merge --abort 2>/dev/null || true"
-    gh issue create --repo $ORG_REPO \
+    pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+      "Run: git merge --abort. Report the exit code."
+    gh issue create --repo "$REPO" \
       --title "deps-runner: booster/main merge conflict on $(date +%Y-%m-%d)" \
-      --body "The deps-runner detected a merge conflict when syncing \`booster/main\` into \`main\` on \`$ORG_REPO\`.
+      --body "The deps-runner detected a merge conflict when syncing \`booster/main\` into \`main\` on \`$REPO\`.
 
 **Action required**: Resolve the conflict manually, then re-run deps.
 
@@ -88,9 +106,11 @@ Path: `.procedure-output/deps-runner/02-preflight-baseline/handoff.md`
 ```markdown
 # Stage 02: Preflight Baseline
 
+## Worker
+worker_id: {WID — forwarded from stage 01, or the replacement id if respawned}
+
 ## Status
 preflight_ok: {true|false}
-env_id: {ENV_ID}
 
 ## Baseline
 - Build: {pass / FAILED: reason}
@@ -110,10 +130,12 @@ env_id: {ENV_ID}
 
 ## Success criteria
 - `preflight_ok: true` only if main compiles AND (tests pass OR docker-build repo)
-- env_id recorded
+- `worker_id` forwarded (or a respawned replacement recorded)
 - Booster sync status recorded
 
 ## Failure
 - Main does not compile / baseline tests fail → `preflight_ok: false`, `proceed: false`. STOP
   fixing nothing — the orchestrator routes straight to 06-report (blocked).
 - Booster conflict → issue filed, `proceed: false`, route to report.
+- Worker unreachable / reaped and a respawn also fails → record as a hard blocker, `proceed:
+  false`, route to report.

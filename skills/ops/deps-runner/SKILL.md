@@ -62,8 +62,9 @@ pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 
 # Stage 06 — stop, FIRST action, before writing the report, then confirm terminal state
 pylot workers stop "$WID" --mission "$PYLOT_JOB_ID" --force
-# poll `pylot workers list --mission "$PYLOT_JOB_ID"` for this worker's ecs_status == STOPPED
-# on a bounded budget before recording stopped: yes — see stage 06's CONTEXT.md
+# poll `pylot workers list --mission "$PYLOT_JOB_ID"` for this worker's confirmed-stop shape —
+# ecs_status == STOPPED, or (ecs_status null/absent and status == stopped with a non-empty
+# stopped_at) — on a bounded budget before recording stopped: yes — see stage 06's CONTEXT.md
 ```
 
 If `pylot devboxes project "$REPO"` reports no `task_def`, the repo has no built worker

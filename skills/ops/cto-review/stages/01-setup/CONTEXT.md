@@ -591,17 +591,7 @@ The notice text MUST still name the self-serve path, and MUST NOT contain a lite
 Evidence` markdown heading at column 0 (the comment scan would otherwise read the notice back as
 evidence on the next run and grade its own homework).
 
-6. Extract the LAST `review-state v1` block from the PR comments (#2210) — the machine ledger the
-   earlier pipeline stages accumulated (findings with statuses + verification manifest + risk tier):
-```bash
-REVIEW_STATE=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
-  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
-echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE="none"
-```
-   Record it verbatim in the handoff's `## Review State` section (`none` if absent/unparseable —
-   pre-#2210 PRs).
-
-7. Fetch the FULL diff (the review reads this whole, in cohesion):
+6. Fetch the FULL diff (the review reads this whole, in cohesion):
 ```bash
 gh pr diff $PR --repo $REPO
 ```
@@ -610,7 +600,7 @@ Also pull dependency-manifest changes explicitly so they are easy to spot:
 gh pr diff $PR --repo $REPO -- "**/package.json" "**/Gemfile" "**/requirements.txt" "**/go.mod" "**/pyproject.toml"
 ```
 
-8. Classify CI once at the reviewed head (the review and act stages consume this authoritative
+7. Classify CI once at the reviewed head (the review and act stages consume this authoritative
    result; never substitute `gh pr checks` exit status). The classifier is fail-closed: an API,
    authorization, JSON, workflow-parsing, or required-context lookup failure is `block`, not an
    empty check set. Collect all three expected-check sources at `CURRENT_HEAD_SHA`:
@@ -634,7 +624,7 @@ pending, failing, cancelled, skipped, neutral, unknown, or missing expected chec
 zero-check response with no required context and no pull-request workflow is
 `na-no-configured-checks`; render its receipt exactly as `CI: N/A — no configured checks`.
 
-9. Resolve the team merge strategy from Pylot's DB-authoritative live team
+8. Resolve the team merge strategy from Pylot's DB-authoritative live team
    configuration. Automated merge authority is explicit: only
    `deploy.release_mode=ship` maps to `auto`; `propose`, missing, malformed,
    ambiguous, or unavailable configuration maps to `label-only`:
@@ -647,7 +637,7 @@ echo "merge_strategy=$MERGE_STRATEGY"
 Do not read `crew.yml`: live Pylot team configuration is stored in the database.
 Do not infer merge authority from a missing file or from the model's judgement.
 
-10. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
+9. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
 
 ## Output: handoff.md
 
@@ -707,9 +697,6 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 
 ## PR Description / Linked Issue
 {PR body; linked issue number+title if extractable from body or branch}
-
-## Review State
-{the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
 
 ## Spec
 - spec_ref: {SPEC_REF — e.g. #42 | fellowship-dev/pylot#42 | none}

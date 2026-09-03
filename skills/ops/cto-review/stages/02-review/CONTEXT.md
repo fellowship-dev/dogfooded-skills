@@ -21,22 +21,21 @@ If the setup handoff has `merge_state: merged`, frame the output as a **post-mer
 (findings + follow-ups), not a merge gate. If `short_circuit: closed-no-merge` is present this stage
 should not have been invoked — write a no-op handoff and exit.
 
-## The CTO review is strategic, not code-level — scoped by the verification manifest (#2210)
-Read the setup handoff's `## Review State` first. Its `verified` manifest states exactly what the
-`reviewed` and `double-checked` phases checked and HOW (`read` vs `executed`), and its findings
-ledger shows what they caught and what status each finding is in. Trust what the manifest covers;
-**spot-check what it doesn't**:
-- a dimension below that the manifest doesn't cover → check it yourself against the diff
-- ledger findings still `"status": "open"` → they are unresolved; weigh them in your verdict
-  (an open bug-severity finding is REWORK material, not something to re-litigate)
-- everything marked `"how": "read"` means NOBODY has executed this code — factor that into
-  production-impact judgement on HIGH-tier PRs
-- `## Review State: none` (pre-#2210 PR) → fall back to the old assumption that code quality was
-  covered by the earlier phases, and note that in your output
-- compare its `head_sha` with `Current HEAD SHA` from PR Identity. If they differ, the manifest is
-  historical evidence only: preserve finding IDs/status history, but do not trust it as coverage
-  of current HEAD. Review the complete current diff at normal depth and continue; do not reject or
-  restart the pipeline solely because the earlier receipt is stale.
+## The CTO review is strategic, not code-level — scoped by the earlier reviews' comments
+The review-pr and double-check comments are captured verbatim in `## All PR Comments`. Read them
+first: they state what the earlier phases checked and what they found. Trust what they cover;
+**spot-check what they don't**:
+- a dimension below that no earlier review covers → check it yourself against the diff
+- findings the earlier reviews raised and nothing since resolved → they are unresolved; weigh
+  them in your verdict (an open bug-severity finding is REWORK material, not something to
+  re-litigate)
+- unless a review states it executed something (tests run, staging smoke), assume NOBODY has
+  executed this code — factor that into production-impact judgement on HIGH-tier PRs
+- compare each review comment's `Head reviewed` line with `Current HEAD SHA` from PR Identity.
+  If they differ, that review is historical evidence only: preserve its findings and history,
+  but do not trust it as coverage of current HEAD. Review the complete current diff at normal
+  depth and continue; do not reject or restart the pipeline solely because the earlier receipt
+  is stale.
 
 Focus on: docs gaps, ops holes, downstream risk, security, and merge strategy — reading the WHOLE
 diff in one pass.
@@ -63,7 +62,7 @@ comment and influences the verdict.
 | `needs-work` | Changes requested | Check if follow-up commits or comments show the issues were addressed; if yes → resolved; if no → unresolved blocker |
 | `waiting-on-owner` | Owner hold | Unresolved unless the owner has since commented with approval or label was removed; machine cannot clear this |
 | `security` | Auth/security hold | Unresolved unless owner has explicitly cleared it; machine cannot clear this |
-| `chad-rejects` | FlowChad QA failure | Unresolved unless a subsequent FlowChad comment shows PASS; look for it in comments |
+| `chad-rejects` | FlowChad QA failure | Unresolved unless a subsequent FlowChad verdict comment (`<!-- flowchad:verdict ... -->` / "FlowChad Results") shows PASSED; look for it in comments |
 | `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
 | `lane:fast`, `lane:staging` | #2996 pipeline lane | Not blockers. `lane:fast` means double-check, flowchad and test-in-staging were deliberately NOT dispatched. Their **absence is expected**, not an unresolved blocker — do not record "missing double-check" or "no staging evidence" as a blocker on a `lane:fast` PR, and do not let it lower the verdict. |
 
@@ -222,8 +221,8 @@ Wrong-but-plausible: {none | list of findings}
 ## Correctness & Security
 - {findings, or "none — no correctness/security concerns"}
 
-## Ledger Reconciliation
-- open findings from review-state: {IDs still open + how each affected the verdict, or "none open" / "no review-state"}
+## Earlier-Review Reconciliation
+- open findings from earlier reviews: {IDs/descriptions still open + how each affected the verdict, or "none open" / "no earlier reviews"}
 - executed-vs-read: {e.g. "tests executed by double-check; all else read-only" — or "nothing executed (read-only pipeline)"}
 
 ## Receipts (#2918)
@@ -231,7 +230,7 @@ Labels seen: {comma-separated list, or "none"}
 Lane: {fast | staging | none — from the setup handoff}
 {If lane is `fast`, add verbatim — the trade must be stated, never assumed:}
 Fast lane (#2996): double-check and the pre-merge staging deploy did not run. Compensating
-controls in force: review-pr findings + review-state ledger, this cohesive review, the #2918
+controls in force: review-pr's findings, this cohesive review, the #2918
 owner hard-stop (lane-independent), CI green, and the in-deploy full corpus gate that still
 guards prod on every release train. If CI is N/A, replace "CI green" with `CI: N/A — no configured
 checks`; lane test receipts and the deploy-time release corpus gate remain the applicable controls.

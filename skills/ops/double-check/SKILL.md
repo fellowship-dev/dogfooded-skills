@@ -35,10 +35,10 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch PR metadata including current HEAD, classify the incoming review receipt as current/stale/absent, capture comments + full diff, and checkout PR branch + merge base |
+| 01-setup | subagent | Fetch PR metadata including current HEAD, classify the incoming first-review receipt (its `Head reviewed` line) as current/stale/absent, capture comments + full diff, and checkout PR branch + merge base |
 | 02-review | subagent | ONE cohesive critical review in clean context: reconcile the PR's claims against the diff, verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
-| 04-post | inline | Re-fetch the live head and comments, promote only an exact reviewed-head receipt, or perform one clean restart; then post curated review comment and apply labels only for the matching head |
+| 04-post | inline | Re-fetch the live head, promote only when it equals the exact 40-hex head stage 02 reviewed, or perform one clean restart; then post curated review comment and apply labels only for the matching head |
 
 ## Handoff locations
 
@@ -56,12 +56,11 @@ never the full orchestrator context.
 ### Exact-head cycles (sequential subagents)
 
 Run one Task per stage, one after another. Do NOT launch any stages in parallel. Do not start the
-next stage until the current one completes. Start with `restart_count=0` and a fresh
-`receipt_id`. If stage 04 sees a different full remote SHA, it writes a restart receipt without
-posting a verdict or touching labels, then runs a complete conditional 01 → 02 → 03 → 04 cycle at that observed SHA with
+next stage until the current one completes. Start with `restart_count=0`. If stage 04 sees a
+different full remote SHA, it stops without posting a verdict or touching labels, and the
+orchestrator runs a complete conditional 01 → 02 → 03 → 04 cycle at the observed SHA with
 `restart_count=1`. Stage 02 still receives only its new setup handoff: never orchestration
-history. A second transition, or any unreadable live head/comments, writes one deduplicated
-blocked receipt and stops.
+history. A second transition, or any unreadable live head, stops blocked.
 
 Each Task prompt must be self-contained:
 - Include only the stage's input handoff paths
@@ -99,13 +98,12 @@ Run stage 04 yourself in the orchestrator context — do NOT spawn a Task. Read 
 ```
 skills/double-check/stages/04-post/CONTEXT.md
 ```
-Run the live claims-vs-diff and exact-head gates (`gh pr view`), then only for a matching receipt
+Run the live claims-vs-diff and exact-head gates (`gh pr view`), then only for a matching head
 post the comment and apply the label. Verify labels/comment actually landed, write the report
 file, and emit the `[pylot] outcome=...` marker from the orchestrator (never from a subagent).
-If stage 04 exits `3`, read `04-post/restart.md`, set `RESTART_COUNT=1`, and run a new complete
-conditional Stage 01 → 02 → 03 → 04 cycle for its recorded `to_head_sha`; do not pass the old
-Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: retain the receipt and do
-not run a promotion path.
+If stage 04 exits `3`, set `RESTART_COUNT=1` and run a new complete conditional
+Stage 01 → 02 → 03 → 04 cycle at the current live head; do not pass the old
+Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not run a promotion path.
 
 ## Stage handoff chain
 
@@ -117,11 +115,10 @@ not run a promotion path.
 
 ## Exit paths
 
-- **First-check fail closed** (negative verdict, claims mismatch, invalid/wrong-head ledger, or
-  open/confirmed finding): stage 04 posts a `<!-- pylot:first-check-fail-closed -->` comment,
-  removes/withholds `double-checked`, adds or retains `needs-work`, and creates no positive
-  follow-on. It emits:
-  `[pylot] outcome="double-check BLOCKED {repo}#{pr} — {reason}, double-checked withheld, needs-work retained" status=success`
+- **First-check fail closed** (negative verdict or claims mismatch): stage 04 posts a
+  `<!-- pylot:first-check-fail-closed -->` comment, removes/withholds `double-checked`, adds or
+  retains `needs-work`, and creates no positive follow-on. It emits:
+  `[pylot] outcome="double-check {repo}#{pr} — verdict {verdict}, double-checked withheld, needs-work retained" status=success`
 - **Re-check PASS** (PR had `needs-work`, verdict=ready): stage 04 removes `needs-work`, re-toggles
   `double-checked` (remove + re-add), and emits:
   `[pylot] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
@@ -129,12 +126,14 @@ not run a promotion path.
   does NOT re-toggle `double-checked`, posts a structured verdict comment with a
   `<!-- pylot:recheck-fail -->` marker (idempotent — skipped if marker already present), and emits:
   `[pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success`
-- **First-check success**: only an explicit `ready` verdict plus a valid exact-head review-state
-  ledger with no `open` or `confirmed` findings may apply `double-checked`; it emits:
+- **First-check success**: only an explicit `ready` verdict at the exact live 40-hex head may
+  apply `double-checked`; it emits:
   `[pylot] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success`
 - **Failure**: failing stage emits `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
-- **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR) →
-  `[pylot] outcome="double-check blocked: {reason}" status=blocked`
+- **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR), the live
+  head cannot be read, or a second head transition occurs →
+  `[pylot] outcome="double-check blocked: {reason}" status=blocked` (a deliberate stop — `blocked`
+  is its own terminal state, not a failure)
 
 ## Hard Rules
 
@@ -161,26 +160,23 @@ not run a promotion path.
 11. **Stage 04 verifies its own side effects** — after labelling, `gh pr view` the PR and confirm
     the expected labels/comment are actually there. Reporting success on unverified side effects
     is the failure this skill exists to catch in others.
-12. **Extend the review-state ledger, never fork it** (#2210) — setup extracts the LAST
-    `review-state v1` block; stage 02 curates by ledger ID at tier-scaled depth (escalate-only);
-    stage 04 re-posts the updated block as valid JSON. No block found → pre-#2210 fallback
-    (verbatim first-review curation, full depth).
+12. **Curate the first review, never re-derive it blind** — setup captures the first review's
+    comments verbatim and its `Head reviewed` receipt line; stage 02 curates those findings at
+    tier-scaled depth (escalate-only). No first review found → full-depth fresh review.
 13. **A stale first review is historical evidence, not a blocker or current coverage** — compare
     its `head_sha` with the post-rebase PR HEAD. Continue the cohesive review against the complete
     current diff, re-check prior findings, and post a new current-head receipt. Never restart the
     whole pipeline merely because the incoming receipt is stale.
 14. **Promotion binds to the final full SHA** — immediately before every verdict comment or label
-    mutation, fetch `headRefOid` and comments. The 40-character live SHA must equal the Stage 02
-    `reviewed_head_sha`. On the first mismatch restart cleanly; on a second mismatch or failed
-    retrieval write one blocked receipt. A delta inspection, file list, short SHA, or local HEAD
-    never substitutes for equality. Stale and blocked receipts never mutate `double-checked` or
-    trigger downstream automation.
+    mutation, fetch `headRefOid`. The 40-character live SHA must equal the Stage 02
+    `reviewed_head_sha`, fail closed. On the first mismatch restart cleanly; on a second mismatch
+    or failed retrieval stop blocked. A delta inspection, file list, short SHA, or local HEAD
+    never substitutes for equality. A stale or blocked run never mutates `double-checked` or
+    triggers downstream automation.
 15. **First-check promotion is explicitly positive only** — apply `double-checked` only when the
-    reviewer verdict is exactly `ready` and the final valid `review-state v1` ledger is bound to
-    the exact live head with no `open` or `confirmed` findings. Any negative, missing, malformed,
-    stale, or conflicting signal fails closed: remove/withhold `double-checked`, add or retain
-    `needs-work`, and do not create CTO, FlowChad, staging, or merge follow-ons. A terminal or
-    parser-failed mission never turns an already-written negative receipt into a positive gate.
+    reviewer verdict is exactly `ready` and bound to the exact live head. Any negative, missing,
+    malformed, stale, or conflicting signal fails closed: remove/withhold `double-checked`, add or
+    retain `needs-work`, and do not create CTO, FlowChad, staging, or merge follow-ons.
 
 ## Reference files
 

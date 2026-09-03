@@ -42,27 +42,16 @@ printf '%s' "$INITIAL_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || {
 gh pr checks $PR --repo $REPO 2>/dev/null || echo "CI checks not accessible via token"
 ```
 
-### Extract the review-state block (#2210) + read existing review comments
+### Read existing review comments + the first review's head receipt
 
-First try to extract the LAST `review-state v1` block from the PR comments — review-pr embeds a
-machine ledger (findings with IDs + verification manifest + risk tier) so this stage extends it
-instead of re-deriving everything cold:
-
-```bash
-REVIEW_STATE=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
-  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
-echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE=""   # unparseable → treat as absent
-```
-
-- **Block found**: put it verbatim in the handoff's `## Review State` section. Carry over any OTHER
-  bot/CI findings NOT already in the ledger (compare by file/description) verbatim as before.
-- **Block absent or invalid** (pre-#2210 review, or review-pr failed): fall back to the original
-  behavior — capture ALL existing review comments verbatim, and write `## Review State` as `none`.
+Capture ALL existing review comments verbatim, and extract the head SHA the latest first review
+(review-pr) was bound to — its comment carries a `**Head reviewed:** \`<40-hex>\`` line:
 
 ```bash
 gh pr view $PR --repo $REPO --json comments --jq '.comments[].body'
 gh pr view $PR --repo $REPO --json reviews --jq '.reviews[].body'
-INITIAL_COMMENT_CURSOR=$(gh pr view $PR --repo $REPO --json comments --jq '[.comments[] | {id, createdAt, updatedAt}] | @json')
+REVIEW_HEAD_SHA=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
+  | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 ```
 
 Capture every finding from automated CI / the Claude GitHub App / bots verbatim — the review
@@ -123,7 +112,6 @@ fi
 
 CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 printf '%s' "$CURRENT_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || REBASE_FAILED=true
-REVIEW_HEAD_SHA=$(echo "$REVIEW_STATE" | jq -r '.head_sha // empty' 2>/dev/null || true)
 if [ -z "$REVIEW_HEAD_SHA" ]; then
   REVIEW_RECEIPT_STATUS="absent"
 elif [ "$REVIEW_HEAD_SHA" = "$CURRENT_HEAD_SHA" ]; then
@@ -156,7 +144,6 @@ setup_ok: {true|false}
 - Initial HEAD SHA: {INITIAL_HEAD_SHA}
 - Current HEAD SHA: {CURRENT_HEAD_SHA after any rebase}
 - Setup head SHA: {CURRENT_HEAD_SHA, exactly 40 lowercase hex characters}
-- Initial comment cursor: {INITIAL_COMMENT_CURSOR}
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
@@ -170,8 +157,7 @@ setup_ok: {true|false}
 {PR body verbatim and UNTRUNCATED — this is the claims source stage 02 reconciles against the
 diff. Never summarise, trim, or paraphrase it.}
 
-## Review State
-{the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
+## First-Review Receipt
 - Receipt status: {current | stale | absent}
 - Receipt head SHA: {REVIEW_HEAD_SHA or none}
 
@@ -180,8 +166,7 @@ the old verification manifest as coverage of current HEAD.
 
 ## First Review (existing comments + reviews, verbatim)
 {every finding from CI / bots / reviewers, verbatim — or "No existing review comments found".
-When Review State is present, findings already in its ledger may be summarized by ID instead of
-repeated verbatim.}
+}
 
 ## Changed Files
 {TOTAL line, then one row per file with +additions/-deletions — verbatim from the `gh pr view
@@ -195,7 +180,7 @@ repeated verbatim.}
 ## Success criteria
 - `setup_ok: true`
 - PR metadata, CI status, first review (verbatim), changed files, and full diff all captured
-- Full remote setup head and complete initial comment cursor recorded; a failed live read is blocked
+- Full remote setup head recorded; a failed live read is blocked
 - PR body captured untruncated; changed-file manifest carries per-file line counts
 - Any diff truncation flagged explicitly (never silent)
 - PR branch checked out in REPO_DIR, rebased onto base, and pushed; REPO_DIR recorded for downstream stages

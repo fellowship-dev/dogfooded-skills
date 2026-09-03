@@ -44,10 +44,9 @@ NOT parallelism. There is no fan-out anywhere in this proc.
 - Stage 02 is ONE cohesive review — never split per-file or per-dimension.
 - The PR body is a claim; the diff is the evidence. Unbacked claims ⇒ `needs-work` and
   `double-checked` is withheld. Never waived by intent, tier, or a clean findings table.
-- A first check may apply `double-checked` only for an explicit `ready` verdict and a valid
-  exact-head final review-state ledger with no `open` or `confirmed` findings. Any negative or
-  conflicting signal removes/withholds `double-checked`, adds or retains `needs-work`, and
-  creates no positive follow-on.
+- A first check may apply `double-checked` only for an explicit `ready` verdict whose reviewed
+  head equals the live 40-hex head. Any negative or conflicting signal removes/withholds
+  `double-checked`, adds or retains `needs-work`, and creates no positive follow-on.
 - Stage 03 is the only stage that mutates code; it is conditional on `fixes_needed: true`.
 - The `double-checked` label is applied only after the comment posts (stage 04).
 - Stage 04 verifies its own side effects with `gh pr view` before reporting success.

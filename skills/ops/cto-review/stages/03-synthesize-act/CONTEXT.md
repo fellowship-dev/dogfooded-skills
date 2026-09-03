@@ -51,10 +51,6 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'COMMENT_EOF'
 {... or "_No blockers found_"}
 
 {VISUAL_EVIDENCE_NOTICE — omit this line entirely unless stage 01 recorded `notice: yes`}
-
-<!-- review-state v1
-{REVIEW_STATE_JSON}
--->
 COMMENT_EOF
 )"
 ```
@@ -81,14 +77,6 @@ own homework. Keep the token split or in prose, exactly as above.
 
 The notice never applies a label, never changes the verdict, and never affects the merge bar in
 Step 3.
-
-**Finalizing `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
-`## Review State` (or a fresh `{"v":1,"findings":[]}` if `none`), set `"stage": "cto-review"`,
-set `"head_sha"` to the stage-01 `Current HEAD SHA` (never preserve a stale upstream SHA),
-update finding statuses per stage 02's Ledger Reconciliation (a REWORK verdict leaves its driving
-findings `open`; LGTM with dismissals records the dismissal reasons in `note`), and append
-`verified` entries for the dimensions this review covered. Validate with `jq .` before posting —
-the block is the pipeline's permanent audit trail (close-audit and re-checks read it).
 
 ### Step 2: Security / Owner Gate — RUNS BEFORE VERDICT LABEL (#2918, #3009)
 
@@ -192,7 +180,7 @@ would be waiting on a mission that the pipeline deliberately did not run. **A mi
 
 **What still guards a fast-lane merge** — name these in the receipts, they are the compensating
 controls the owner traded the staging net for:
-1. review-pr's findings and the `review-state v1` ledger (still-open findings are verdict inputs).
+1. review-pr's findings in its review comment (still-open findings are verdict inputs).
 2. This stage's own cohesive whole-diff judgement.
 3. The #2918 owner hard-stop at Step 2 — lane-independent, above.
 4. CI pass or `CI: N/A — no configured checks` — unchanged as a merge prerequisite, and never

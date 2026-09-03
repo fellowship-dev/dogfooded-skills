@@ -152,6 +152,37 @@ never accepted-and-dropped (the round-trip corpus test enforces this; team-level
 under `operators.<role>.skills`). If a write "succeeds" but reads back null,
 that is a bug — file it; do not retry with creative payloads.
 
+### Per-Cron Edits
+
+Patch one named entry in place — no full-array replace (#3231). The endpoint
+accepts `{enabled?, schedule?, task?, agent?, repo?, operator?}` (six fields,
+at least one required); `name` and any unknown key are rejected with 400. The
+`teams crons` CLI subcommand only exposes `--enable`/`--disable`/`--schedule`,
+so retuning `task`/`agent`/`repo`/`operator` via this CLI still requires the
+full-array path below (not an API limitation — just this subcommand's surface).
+`--schedule` composes with `--enable`/`--disable` in one request:
+
+```bash
+pylot teams crons <team> <name> --disable                        # pause, keep schedule
+pylot teams crons pylot auto-pylot --schedule "0 */4 * * *"      # hourly → every 4 h
+pylot teams crons <team> <name> --schedule "0 * * * *" --enable  # both in one PATCH
+```
+
+Schedule is a 5-field cron string, validated server-side; the entry is addressed
+by its `name` field. Renames, add/remove, and multi-entry edits still go through
+the full `cron` array (`pylot teams update <team> --file` with the complete
+array; `cron=null` clears all).
+
+Requires **both** pylot-cli ≥ 0.6.4 **and** a gateway at or past the #3231
+deploy — these are separate failure modes:
+- Client-side (CLI < 0.6.4): `--schedule` doesn't exist yet; the command fails
+  locally with `error: unknown option '--schedule'` before any HTTP request.
+  Diagnose with `pylot --version`; the read-back below cannot see this failure.
+- Server-side (gateway pre-#3231): older gateways 400 on `--schedule` alone and
+  **silently drop** `schedule` sent alongside `--enable`/`--disable` (skills
+  sync can ship this doc ahead of the deploy). Diagnose by reading the entry
+  back with `teams get <team> --fields cron` if unsure.
+
 ## Workers — Spawn, Drive, Stop
 
 A worker is a Fargate devbox running the target repo. Ownership is by scope:

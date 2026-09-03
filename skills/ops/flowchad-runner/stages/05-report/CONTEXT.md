@@ -38,8 +38,12 @@ every surface; the wrapping link guarantees the receipt is at least reachable, a
 permanent (see evidence-upload's retention section). Do not strip the link form back to a bare
 `![](URL)` until the gateway's disposition fix lands.
 
+The comment opens with a machine-readable verdict marker — cto-review reads the verdict from
+this comment (issue #149: the comment, not a label, is the verdict's canonical surface):
+
 ```bash
-gh pr comment $PR_NUMBER --repo $REPO --body "## FlowChad Results: ${FLOW_NAME}
+gh pr comment $PR_NUMBER --repo $REPO --body "<!-- flowchad:verdict pr=${PR_NUMBER} sha=${TARGET_SHA} status=${STATUS} -->
+## FlowChad Results: ${FLOW_NAME}
 **Status**: PASSED / FAILED / BLOCKED / N/A
 **Date**: ${REPORT_DATE}
 **Browser**: Playwright headless (worker devbox) / Navvi (auto-switched)
@@ -74,6 +78,16 @@ failure this stage exists to prevent.
 
 If the run is `BLOCKED` on capture host (no worker, no browser), say so plainly and name the
 missing capability rather than implying the UI was inspected.
+
+**Verdict labels (still load-bearing — do NOT drop).** After the comment posts, apply the
+verdict label the dispatching automation instructs: `chad-approves` on PASSED or N/A,
+`chad-rejects` on FAILED (BLOCKED gets neither — it is a capability problem, not a QA verdict).
+The dedicated `cto-review-on-chad-*` trigger rules were retired (pylot#3305/#3309), but the
+labels themselves are still required by the gateway's `stagingCtoReadiness` predicate — the
+consolidated staging-ready rule fires on whichever label completes the readiness set. Dropping
+the labels before the readiness predicate reads this verdict comment instead would strand every
+staging-lane PR. The verdict is advisory either way: `chad-rejects` is NOT a stop, it is a flag
+the CTO weighs.
 
 ### 2a. Deliver the verdict to the requesting thread (only when stage 04 recorded a `conversation_id`)
 
@@ -202,7 +216,8 @@ Failures: {file → reason, or "none"}
 
 ## Success criteria
 - Local report file written at `report_path`.
-- If `pr_number` set, PR comment posted.
+- If `pr_number` set, PR comment posted, opening with the `<!-- flowchad:verdict ... -->` marker,
+  and the verdict label applied (`chad-approves` on PASSED/N/A, `chad-rejects` on FAILED).
 - **Every step with an uploaded screenshot has that URL embedded in the PR comment**, and the
   evidence-status line reflects the stage 04 `upload_ok`/counts verbatim.
 - If stage 04 recorded a `conversation_id`, exactly one `slack-post` made with the verdict and one

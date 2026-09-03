@@ -75,7 +75,7 @@ upgrading `.flowchad/config.yml` and flow definitions.
 | 02-load-flows | subagent | Read `.flowchad/config.yml`, validate each flow file exists, load flow YAML, resolve the evidence backend |
 | 03-walk-flows | subagent | **Spawn a worker devbox** (the operator has no browser), then a **sequential loop**: for each flow one-at-a-time — connect browser, run steps, per-step screenshot, expect-judgement, CAPTCHA→Navvi, transcript |
 | 04-upload-evidence | subagent | Upload screenshots/GIFs with `evidence_class: visual` (permanent URLs), record per-file success/failure, attach an unclassed copy to the requesting conversation when there is one, stop the worker |
-| 05-report | inline | Aggregate results, **embed the screenshot URLs per step**, post PR comment, post the verdict to the requesting Slack thread when there is one, create issues on failure, write local report, emit outcome marker |
+| 05-report | inline | Aggregate results, **embed the screenshot URLs per step**, post the verdict PR comment (opens with the machine-readable `<!-- flowchad:verdict -->` marker) + apply the still-load-bearing `chad-approves`/`chad-rejects` label, post the verdict to the requesting Slack thread when there is one, create issues on failure, write local report, emit outcome marker |
 
 ### Where the browser actually runs
 

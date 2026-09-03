@@ -182,11 +182,10 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     recorded in the handoff, and appended by stage 03 as an advisory line. It never short-circuits,
     never applies a label, and never gates the merge bar. Its notice MUST still name the self-serve
     path; a bare "add screenshots" message is the defect it exists to fix.
-12. **Scope by the verification manifest, don't assume** (#2210) — setup extracts the LAST
-    `review-state v1` block; the review trusts what the manifest covers, spot-checks what it
-    doesn't, treats still-open ledger findings as verdict inputs, and stage 03 re-posts the
-    finalized block as valid JSON. No block found → pre-#2210 fallback (assume earlier phases
-    covered code quality).
+12. **Scope by the earlier reviews' comments, don't assume** — setup captures all PR comments;
+    the review trusts what the review-pr/double-check comments cover, spot-checks what they
+    don't, and treats their still-open findings as verdict inputs. No earlier review found →
+    assume nothing was covered and review at full depth.
 13. **Owner gate is unconditional (#2918)** — stage 03 step 3.0 reads labels fresh from GitHub
     at merge time. If `security` OR `waiting-on-owner` is present, the gate fires regardless of
     verdict, CI status, or any prose in the PR. LGTM verdict cannot override the gate. The labels

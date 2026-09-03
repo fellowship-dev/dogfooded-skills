@@ -43,7 +43,7 @@ chmod +x "$BIN/jq"
 
 make_fixture() {
   PR_FIXTURE="$TMP/$1.json"
-  python3 -c 'import json, sys; print(json.dumps({"url":"https://example.test/pr/141", "headRefName":sys.argv[1], "body":sys.argv[2], "closingIssuesReferences":([] if sys.argv[3] == "no" else [{"number":141,"repository":{"nameWithOwner":"fellowship-dev/example"}}])}))' "$3" "$2" "$4" >"$PR_FIXTURE"
+  python3 -c 'import json, sys; print(json.dumps({"url":"https://example.test/pr/141", "headRefName":sys.argv[1], "closingIssuesReferences":([] if sys.argv[2] == "no" else [{"number":141,"repository":{"nameWithOwner":"fellowship-dev/example"}}])}))' "$2" "$3" >"$PR_FIXTURE"
   export PR_FIXTURE
 }
 
@@ -53,70 +53,18 @@ assert_case() {
   if verify_pr_postcondition; then actual=0; else actual=$?; fi
   [ "$actual" = "$expected" ] || { printf 'FAIL %s: expected %s, got %s\n' "$name" "$expected" "$actual" >&2; exit 1; }
   views=$(wc -l <"$GH_CALL_LOG" | tr -d ' ')
-  [ "$views" = 1 ] || { printf 'FAIL %s: expected one PR body fetch, got %s\n' "$name" "$views" >&2; exit 1; }
+  [ "$views" = 1 ] || { printf 'FAIL %s: expected one PR fetch, got %s\n' "$name" "$views" >&2; exit 1; }
   printf 'PASS %s\n' "$name"
 }
 
 REPO=fellowship-dev/example BRANCH=141-supervisor-postcondition ISSUE_NUMBER=141
 export REPO BRANCH ISSUE_NUMBER
-SUPERVISOR_DISCLOSURE='### Supervisor verification receipts
 
-| Check | Command / identity | State |
-| --- | --- | --- |
-| -n `pipe|tab	line | passed |'
-STALE_SUPERVISOR_DISCLOSURE=
-export SUPERVISOR_DISCLOSURE STALE_SUPERVISOR_DISCLOSURE
-
-make_fixture accepted "prefix
-$SUPERVISOR_DISCLOSURE
-suffix" "$BRANCH" yes
-assert_case full-current-disclosure-accepted 0
-make_fixture heading-only '### Supervisor verification receipts' "$BRANCH" yes
-assert_case heading-only-rejected 1
-make_fixture truncated "${SUPERVISOR_DISCLOSURE%| passed |}" "$BRANCH" yes
-assert_case truncated-disclosure-rejected 1
-make_fixture altered "${SUPERVISOR_DISCLOSURE%passed |}failed |" "$BRANCH" yes
-assert_case altered-disclosure-rejected 1
-
-make_fixture no-stale "$SUPERVISOR_DISCLOSURE" "$BRANCH" yes
-assert_case empty-stale-disclosure-not-required 0
-STALE_SUPERVISOR_DISCLOSURE='### Stale supervisor verification receipts
-
-| old | `run|this` | stale |'
-export STALE_SUPERVISOR_DISCLOSURE
-assert_case populated-stale-disclosure-required 1
-make_fixture with-stale "$SUPERVISOR_DISCLOSURE
-$STALE_SUPERVISOR_DISCLOSURE" "$BRANCH" yes
-assert_case populated-stale-disclosure-accepted 0
-
-HOSTILE_DISCLOSURE='### -n [hostile] `literal|block`
-
-	line with -- and | pipes |'
-SUPERVISOR_DISCLOSURE=$HOSTILE_DISCLOSURE STALE_SUPERVISOR_DISCLOSURE=
-export SUPERVISOR_DISCLOSURE STALE_SUPERVISOR_DISCLOSURE
-make_fixture hostile "before
-$HOSTILE_DISCLOSURE
-after" "$BRANCH" yes
-assert_case hostile-fields-round-trip-literally 0
-make_fixture wrong-head "$SUPERVISOR_DISCLOSURE" wrong-branch yes
+make_fixture matching-head "$BRANCH" yes
+assert_case head-and-linkage-accepted 0
+make_fixture wrong-head wrong-branch yes
 assert_case wrong-head-rejected 1
-make_fixture missing-link "$SUPERVISOR_DISCLOSURE" "$BRANCH" no
+make_fixture missing-link "$BRANCH" no
 assert_case issue-linkage-remains-required 1
-
-# Regression: no-disclosure body with empty STALE_SUPERVISOR_DISCLOSURE must fail
-# closed.  This pins the fail-open that manifested when the inline SKILL.md Step 8
-# postcondition block ended on an if whose condition was false (C1 / first-review
-# R1 re-manifestation).
-SUPERVISOR_DISCLOSURE='### Supervisor verification receipts
-
-| Check | Command / identity | State |
-| --- | --- | --- |
-| unit-tests | npm test | passed |'
-STALE_SUPERVISOR_DISCLOSURE=
-export SUPERVISOR_DISCLOSURE STALE_SUPERVISOR_DISCLOSURE
-make_fixture no-disclosure 'This PR has no verification disclosure.' "$BRANCH" yes
-assert_case no-disclosure-fails-closed 1
-make_fixture empty-body '' "$BRANCH" yes
-assert_case empty-body-fails-closed 1
 
 printf 'PASS PR postcondition contract\n'

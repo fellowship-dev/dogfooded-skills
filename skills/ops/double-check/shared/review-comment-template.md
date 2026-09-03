@@ -10,7 +10,6 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 **Reviewer:** Automated double-check
 **Branch:** `$PR_BRANCH` → `$BASE_BRANCH`
 **Head reviewed:** `$LIVE_HEAD_SHA` (exact 40-character SHA)
-**Exact-head receipt:** `$RECEIPT_ID` (restart `$RESTART_COUNT`; comment cursor `$LIVE_COMMENT_CURSOR`)
 
 ---
 

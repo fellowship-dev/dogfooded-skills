@@ -134,17 +134,16 @@ Path: `.procedure-output/review-pr/01-cohesive-review/handoff.md`
 | R2 | 🟡 Warning | `path/other.ts#L23` | [description] | 85 | no |
 | R3 | ℹ️ Info | `path/util.ts#L45` | [description] | 80 | no |
 
-[IDs are `R{n}` — they persist into the review-state ledger that double-check and cto-review
-update, so never renumber. If no findings ≥ 80 confidence: "No issues found above confidence
-threshold."]
+[IDs are `R{n}` — double-check and cto-review key their curation to them, so never renumber.
+If no findings ≥ 80 confidence: "No issues found above confidence threshold."]
 
 ## Security Classification
 - has_security_findings: {true|false} — true if ANY finding above has Security Class = yes
 - security_finding_ids: {comma-separated R-IDs, or "none"}
 
 ## Verified
-[What you actually checked and how — this feeds the review-state manifest that tells later
-stages what is already covered. `how` is always `read` in this stage (this skill never executes).]
+[What you actually checked and how — later stages read this to know what is already covered.
+`how` is always `read` in this stage (this skill never executes).]
 | What | How |
 |------|-----|
 | {e.g. "whole diff, cross-file cohesion"} | read |

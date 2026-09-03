@@ -261,7 +261,7 @@ SQ() { sqlite3 "$SEED_DB" "$1"; }
 
 grep -q '^email' "$SEED_HOME/identity/identity-overrides.tsv" 2>/dev/null \
   && ok "seed installed when no override file exists" || bad "seed installed"
-chk "seed file is chmod 600" "$(stat -f '%Lp' "$SEED_HOME/identity/identity-overrides.tsv" 2>/dev/null || stat -c '%a' "$SEED_HOME/identity/identity-overrides.tsv")" "600"
+chk "seed file is chmod 600" "$(stat -c '%a' "$SEED_HOME/identity/identity-overrides.tsv" 2>/dev/null || stat -f '%Lp' "$SEED_HOME/identity/identity-overrides.tsv")" "600"
 chk "glob override matched both EC2 hostnames" \
   "$(SQ "SELECT COUNT(*) FROM identity_emails e JOIN identities i USING(identity_id) WHERE i.login='dxm-machine-ec2-devbox';")" "2"
 chk "glob override did NOT insert the pattern as an address" \

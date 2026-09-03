@@ -1,0 +1,68 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  run-all-test-entry-points:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (ripgrep, PyYAML)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ripgrep
+          python3 -m pip install --quiet pyyaml
+
+      - name: Guard — every test file must be in the explicit list below
+        run: |
+          found=$(find . -path ./.git -prune -o \( -name '*.test.sh' -o -name 'test_*.py' \) -print | sort)
+          listed=$(grep -oE '^\s+\./skills/\S+' .github/workflows/tests.yml | tr -d ' ' | sort -u)
+          if [ "$found" != "$listed" ]; then
+            echo "Test entry points on disk do not match the list in tests.yml."
+            echo "Add/remove the file(s) below in the 'Run all test entry points' step:"
+            diff <(echo "$found") <(echo "$listed") || true
+            exit 1
+          fi
+
+      - name: Run all test entry points
+        run: |
+          tests='
+            ./skills/ops/cto-review/stages/01-setup/test_ci_gate.py
+            ./skills/ops/cto-review/stages/01-setup/test_collect_ci_evidence.py
+            ./skills/ops/cto-review/stages/01-setup/test_evidence_gate.py
+            ./skills/ops/cto-review/stages/01-setup/test_visual_gate.py
+            ./skills/ops/double-check/tests/exact-head-receipt.test.sh
+            ./skills/ops/dx-metrics/scripts/dxm-aggregate.test.sh
+            ./skills/ops/dx-metrics/scripts/dxm-dashboard.test.sh
+            ./skills/ops/dx-metrics/scripts/dxm-identity.test.sh
+            ./skills/ops/dx-metrics/scripts/dxm-trends.test.sh
+            ./skills/ops/flowchad-runner/scripts/test_validate_contract.py
+            ./skills/ops/seo-ops/scripts/test_audit.py
+            ./skills/ops/speckit-runner/tests/pr-postcondition.test.sh
+            ./skills/ops/speckit-runner/tests/verification-receipts.test.sh
+          '
+          failed=""
+          for t in $tests; do
+            case "$t" in
+              *.py) interp=python3 ;;
+              *)    interp=bash ;;
+            esac
+            echo "::group::$t"
+            if "$interp" "$t"; then
+              echo "PASS $t"
+            else
+              echo "FAIL $t"
+              failed="$failed $t"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed entry points:"
+            for t in $failed; do echo "  $t"; done
+            exit 1
+          fi
+          echo "All test entry points passed."

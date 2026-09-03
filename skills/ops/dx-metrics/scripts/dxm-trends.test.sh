@@ -189,7 +189,7 @@ has   "the not-a-performance-tool notice is present" "$OUT_D" "must"
 eq "svg elements were emitted" \
    "$(grep -c '<svg ' "$OUT_D")" "$(grep -c '</svg>' "$OUT_D")"
 eq "no placeholder survived" "$(grep -c '__[A-Z][A-Z]*__' "$OUT_D")" "0"
-eq "file mode is 600" "$(stat -f '%Lp' "$OUT_D" 2>/dev/null || stat -c '%a' "$OUT_D")" "600"
+eq "file mode is 600" "$(stat -c '%a' "$OUT_D" 2>/dev/null || stat -f '%Lp' "$OUT_D")" "600"
 
 echo
 echo "== 6. PRIVACY: the default file names nobody =="

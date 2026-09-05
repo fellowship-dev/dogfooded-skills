@@ -13,11 +13,41 @@ ANY of the following triggers questions:
 - Stage 04 has failure modes requiring human clarification to guardrail
 - Stage 05 has open questions blocking the test plan
 
+## Ask-path dedup guard — run before any write
+
+`issue-to-prd` re-fires on every answered question (`rechallenge-after-answers`), so a fresh pass
+can land on an issue that is already correctly parked and still waiting on the owner. Before
+batching questions, check whether that is exactly what is happening. This is a manual read of
+labels and comment authorship/timestamps via the `gh` calls this skill already uses — the same
+deliberately low-tech detection style as `stages/05b-prototype-gate/CONTEXT.md` § P, and the same
+"stop before writing" shape as the precondition in `stages/07-publish/CONTEXT.md`.
+
+```bash
+LABELS=$(gh issue view {number} --repo {repo} --json labels -q '[.labels[].name] | join(",")')
+LAST_BOT_Q=$(gh api "repos/{repo}/issues/{number}/comments?per_page=100" --paginate \
+  --jq '.[] | select(.user.type == "Bot") | "\(.id)\t\(.created_at)"' | tail -1)
+```
+
+All three must hold, or the guard does not apply and normal routing (the ask/PRD steps below)
+proceeds:
+
+1. The `open-questions` label is present on the issue.
+2. A prior bot-authored question comment exists (`LAST_BOT_Q` is non-empty).
+3. No comment created after that bot comment's timestamp comes from a non-bot author.
+
+**All three hold** → the issue is exactly where the last pass left it: post nothing, apply no
+label (it is already there), and exit early with:
+`[pylot:$PYLOT_OUTCOME_NONCE] outcome="already parked on open-questions, no new comment needed" status=success`.
+Do not proceed to the ask/PRD steps below.
+
+**Any one fails** → proceed to the normal ask/PRD routing below (a new answer arrived, the label
+was removed, or no bot question exists yet — this pass owns the write).
+
 **If questions → exit early:**
 1. Batch ALL gaps into a single numbered list Q1-Qn (one comment only — never two)
 2. Post comment: `gh issue comment {number} --repo {repo} --body "..."`
 3. Add label: `gh issue edit {number} --repo {repo} --add-label "open-questions"`
-4. Emit: `[pylot] outcome="questions posted" status=success`
+4. Emit: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="questions posted" status=success`
 5. STOP — do not proceed to stage 07
 
 **If all clear → PRD draft:**
@@ -107,3 +137,5 @@ Full PRD draft (see `shared/prd-template.md` for structure).
 - Questions: single comment, `open-questions` label applied, exit emitted, stage stops
 - PRD: all sections populated, no unresolved TBD/TODO
 - Stage 05b's verdict is routed into the existing comment or PRD — **never into a second comment**
+- Dedup guard: when all three conditions hold, zero comments posted, zero labels applied, and the
+  stage exits success on that alone — never a second questions comment on an already-parked issue

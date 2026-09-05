@@ -55,7 +55,7 @@ three consecutive failures — a correctly-skipped epic must never count toward 
 `challenge-new-issue` for the whole org:
 
 ```text
-[pylot] outcome="skipped: <label|state> — issue-to-prd does not structure this issue" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="skipped: <label|state> — issue-to-prd does not structure this issue" status=success
 ```
 
 Post **no** comment and apply **no** label. Silence is the whole point of the guard.

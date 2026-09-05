@@ -124,7 +124,7 @@ npx skills add fellowship-dev/dogfooded-skills/skills/ops/hookshot
 # Periodic doc drift sensor (run in cron)
 npx skills add fellowship-dev/dogfooded-skills/skills/ops/entropy-check
 
-# Remove dead/duplicate code that confuses agents
+# Investigate material product, code, and operational surfaces for evidence-backed retirement
 npx skills add fellowship-dev/dogfooded-skills/skills/ops/trash-truck
 
 # Structured issue-to-PR pipeline for doc-gated features

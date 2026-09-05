@@ -1,0 +1,54 @@
+{
+  "ranking_cases": [
+    {
+      "name": "material candidates rank by risk-adjusted expected payoff",
+      "candidates": [
+        {"fingerprint": "acme/app:legacy-export", "confidence": 0.9, "payoff": 4, "effort": 1, "risk": 1, "eligible": true},
+        {"fingerprint": "acme/app:tiny-helper", "confidence": 1.0, "payoff": 1, "effort": 0, "risk": 0, "eligible": true},
+        {"fingerprint": "acme/app:unused-admin", "confidence": 0.8, "payoff": 3, "effort": 1, "risk": 0, "eligible": true},
+        {"fingerprint": "acme/app:seasonal-billing", "confidence": 0.95, "payoff": 4, "effort": 1, "risk": 1, "eligible": false}
+      ],
+      "expected": ["acme/app:legacy-export", "acme/app:unused-admin"]
+    },
+    {
+      "name": "ranking returns fewer than three without padding",
+      "candidates": [
+        {"fingerprint": "acme/app:old-worker", "confidence": 0.85, "payoff": 3, "effort": 1, "risk": 1, "eligible": true}
+      ],
+      "expected": ["acme/app:old-worker"]
+    },
+    {
+      "name": "no eligible candidate is a healthy no-change result",
+      "candidates": [
+        {"fingerprint": "acme/app:active-hook", "confidence": 0.9, "payoff": 3, "effort": 1, "risk": 1, "eligible": false}
+      ],
+      "expected": []
+    }
+  ],
+  "evidence_cases": [
+    {
+      "name": "failed telemetry remains unknown",
+      "source_status": "failed",
+      "claimed_zero_usage": false,
+      "eligible_from_static_only": false
+    },
+    {
+      "name": "positive deployed usage blocks retirement",
+      "source_status": "observed",
+      "positive_usage": true,
+      "eligible": false
+    }
+  ],
+  "mode_cases": [
+    {"name": "scheduled stops after persistence", "mode": "scheduled", "may_execute": false, "may_open_retirement_pr": false},
+    {"name": "interactive discovery stops before selection", "mode": "interactive-discovery", "selected": false, "may_execute": false},
+    {"name": "named target cannot broaden", "mode": "interactive-target", "may_nominate_unrelated": false},
+    {"name": "stale approval invalidates execution", "mode": "interactive-target", "selection_stale": true, "may_execute": false},
+    {"name": "open PR is not retired", "mode": "interactive-target", "pr_open": true, "deployed": false, "state": "selected"}
+  ],
+  "issue_cases": [
+    {"name": "repeated schedules converge", "matching_markers": 1, "canonical_issues_after": 1},
+    {"name": "first no-candidate run creates nothing", "issue_exists": false, "material_change": false, "should_write": false},
+    {"name": "owner prose is preserved", "owner_text_before": "Owner context", "owner_text_after": "Owner context"}
+  ]
+}

@@ -1,76 +1,167 @@
 ---
 name: trash-truck
-description: Use when scanning for and cleaning up code slop — duplicate patterns, dead code, misplaced files, and accidentally committed files.
-allowed-tools: Read, Write, Bash, Glob, Grep
-user-invocable: true
-argument-hint: "[org/repo] (focus: dead-code|duplicates|drift|misplaced|committed-by-error|unused-functions)"
+description: Investigate and retire unused product, code, operational, or infrastructure surfaces using real usage evidence. Use when a repository needs active pruning, when a specific capability may no longer be necessary, or when a scheduled review should preserve retirement candidates without executing them. Do not use for routine lint cleanup, broad refactoring, or dependency updates.
 ---
 
-# trash-truck
+# Trash Truck
 
-Finds and removes code slop without changing behavior. Opens small, reviewable PRs. Inspired by the real cost of AI-generated entropy: teams that skip cleanup spend 20% of their week on slop.
+Challenge whether a surface should continue to exist. Prefer deleting over simplifying, simplifying over optimizing, and optimizing over automating. A well-supported `keep`, `insufficient evidence`, or no-change result is complete work.
 
 ## Invocation
 
-```
-/trash-truck [org/repo]
-/trash-truck [org/repo] focus:dead-code
-/trash-truck [org/repo] focus:duplicates
-/trash-truck [org/repo] focus:drift
-/trash-truck [org/repo] focus:misplaced
-/trash-truck [org/repo] focus:committed-by-error
-/trash-truck [org/repo] focus:unused-functions
+```text
+/trash-truck OWNER/REPO mode:interactive
+/trash-truck OWNER/REPO mode:interactive candidate:<description>
+/trash-truck OWNER/REPO mode:scheduled
 ```
 
-## Targets
+`OWNER/REPO` is required. `candidate:<description>` is optional and only valid in interactive mode.
 
-| Category | What to look for |
-|----------|-----------------|
-| **dead-code** | Unused exports, orphaned imports, debug `console.log`/`print`, commented-out code blocks |
-| **duplicates** | Same concept implemented multiple ways across the codebase |
-| **inconsistent** | Same operation done differently in different modules (error handling, fetch patterns, config access) |
-| **drift** | Deviations from golden principles documented in `CLAUDE.md`, `docs/`, or established skill files |
-| **misplaced** | Files in wrong directories — test files outside test dirs, configs buried in source trees |
-| **committed-by-error** | Files that shouldn't be in version control — `.env`, `.DS_Store`, swap files, compiled bytecode, IDE configs, database files |
-| **unused-functions** | Functions/methods defined but never called or referenced anywhere in the codebase (Python via `ast`, JS/TS via export/import analysis) |
+Resolve mode before investigating:
 
-## How It Works
+| Situation | Mode | Allowed outcome |
+|---|---|---|
+| A user is present and `mode:interactive` is explicit | Interactive discovery or named-target review | Present a recommendation, STOP for selection, then execute at most one approved manifest |
+| A schedule or automation invokes the skill | Scheduled | Investigate, optionally persist one canonical review issue, then STOP |
+| Presence of an interactive owner is unclear | Scheduled fail-safe | Report only; never mutate product or repository state |
 
-1. Clone or enter the target repo
-2. **Run pre-scan** for cheap static analysis before spending tokens on LLM review
-3. Review pre-scan results — filter false positives, group into cleanup units
-4. Open each PR with a focused, reviewable diff
+## Non-Negotiable Boundaries
 
-### Pre-scan (Step 2)
+- Scheduled mode never edits code, deletes anything, opens a retirement PR, disables a job, changes a schema or data, mutates infrastructure, merges, deploys, or syncs a live skill.
+- Interactive investigation is read-only until the owner selects the exact candidate fingerprint and retirement manifest shown to them.
+- Selection is not blanket deletion authority. Schema, data, infrastructure, external integrations, merge, deployment, and other owner-gated actions still require their own explicit authorization.
+- A GitHub issue, prior opinion, stale approval, or candidate score is evidence, not execution authority.
+- Never interpret unavailable, failed, stale, or wrong-environment telemetry as zero use.
+- Never pad the result. Return zero to three candidates.
 
-> **Run the pre-scan yourself, in the foreground.** Invoke `pre-scan.sh` directly with the Bash tool and wait for its JSON output inline. Do **not** dispatch a worker, background the scan (`&`/`nohup`), or hand it off and "wait for a notification" — it is a fast, bounded local scan (seconds). In a headless/operator runner there is no background-completion wake-up, so backgrounding deadlocks the session and the mission fails with no outcome marker. This is hands-on work: do it yourself, do not delegate it.
+## Workflow
 
-The `pre-scan.sh` script in this skill's directory uses `rg` + Python `ast` to find candidates cheaply before Claude reviews them. This cuts token cost by 5-10x compared to having Claude grep the entire codebase.
+### 1. Preflight the Repository and Authority
 
-```bash
-# Run from the repo root — outputs structured JSON
-SKILL_DIR="$(dirname "$(readlink -f "$0")")"  # or wherever the skill was synced
-bash "$SKILL_DIR/pre-scan.sh" [focus] [repo-root]
+1. Read the target repository's active instructions, issue-filing policy, and destructive-action rules.
+2. Confirm the repository identity, current revision, default branch, dirty state, and available read-only evidence capabilities.
+3. In scheduled mode, confirm whether issue writes are explicitly allowed before relying on GitHub persistence.
+4. Keep secrets out of commands, worker briefs, evidence packets, and issue content.
 
-# Examples:
-bash pre-scan.sh all /path/to/repo          # everything except unused-functions
-bash pre-scan.sh dead-code /path/to/repo     # just debug stmts + commented code
-bash pre-scan.sh unused-functions /path/to/repo  # deeper analysis, slower
-```
+If the repository cannot be identified or the requested scope violates its policy, stop with the blocker.
 
-The script outputs JSON with findings grouped by category. Each finding has `file`, `kind`, and usually `line` and `detail`. Use this output to guide which files to read and what to clean up — don't re-scan what the script already found.
+### 2. Bound the Investigation
 
-**What pre-scan does NOT do:** It finds candidates, not confirmed slop. Claude still needs to verify each finding (is the "unused" function actually called via reflection? is the "debug" print actually a user-facing log?). The script is intentionally aggressive — false positives are filtered by Claude, not suppressed at scan time.
+Start with the named repository. Follow only direct operational dependencies identified by its configuration, deployment manifests, runtime identifiers, or authoritative documentation, such as:
 
-## PR Rules
+- deployed services and revisions;
+- jobs, schedules, queues, and workers;
+- databases, buckets, topics, and infrastructure directly owned by the surface;
+- analytics events, logs, integrations, and external callbacks emitted or consumed by it;
+- directly referenced repositories or packages.
 
-- **One PR per logical cleanup** — keep diffs small and reviewable
-- **Title format:** `chore: [what was cleaned] in [file/module]`
-- **No behavior changes** — if a change could alter runtime behavior, skip it and open an issue instead
-- **CTO reviews process** (was the right pattern followed?), not the code itself
+Do not fan out into vendor-wide accounts, unrelated repositories, or transitive dependencies. If `candidate:<description>` is present, investigate that target only; record unrelated findings as out of scope without nominating them.
 
-## What NOT to Do
+### 3. Gather Evidence and Try to Disprove Retirement
 
-- Do not refactor logic — only remove or consolidate dead/duplicate patterns
-- Do not open a single giant PR — small diffs or nothing
-- Do not touch tests unless the test itself is dead or duplicated
+Read [references/candidate-packet.md](references/candidate-packet.md) before collecting evidence.
+
+Use the evidence surfaces that actually exist. Prefer independent read-only workers for separable surfaces when the harness supports them:
+
+| Surface | Useful evidence |
+|---|---|
+| Code and dependencies | References, imports, routes, feature flags, generated clients, dynamic lookup, tests, configuration |
+| GitHub and git | Open and closed issues, merged and abandoned PRs, commits, blame, code owners, deprecation decisions, successor work |
+| Runtime | Deployed revision, service inventory, traffic, invocation logs, errors, queue or job activity |
+| Product analytics | PostHog, Mixpanel, or equivalent events and funnels with identity, denominator, environment, and adequate time window |
+| Operations | CloudWatch or equivalent logs, schedules, alerts, runbooks, infrastructure state, integration delivery records |
+| People and ownership | Known consumers, owner confirmation, support or compliance obligations, exceptional or seasonal use |
+
+Each worker receives one bounded read-only question and returns evidence envelopes. Workers do not rank candidates, mutate state, or decide retirement. One curator reconciles identities, environments, contradictions, freshness, and recurrence windows.
+
+For every lead, actively search for counterevidence. A code-only absence of references is not enough. Positive verified use makes the lead ineligible for retirement.
+
+### 4. Build Candidate Packets and Rank
+
+Use the eligibility, materiality, scoring, tie-breaking, and approval rules in [references/candidate-packet.md](references/candidate-packet.md).
+
+For discovery, rank all eligible candidates and present only the top zero to three. For a named target, do not build an alternatives list; return one of:
+
+- `retire` — evidence supports removing the complete declared slice;
+- `prune/simplify` — part of the surface remains necessary;
+- `keep` — verified use or obligation defeats retirement;
+- `insufficient evidence` — the evidence cannot support a safe decision.
+
+Every presented candidate includes its fingerprint, score components, evidence for and against retirement, unresolved gaps, known owners and consumers, last verified use, retirement manifest, exclusions, reversibility, and owner gates.
+
+### 5. Branch by Mode
+
+#### Scheduled
+
+Read [references/canonical-issue.md](references/canonical-issue.md). Persist only when repository policy and current authority allow it.
+
+1. Converge on at most one canonical retirement-review issue.
+2. Record only a materially changed investigation.
+3. Read the stored issue or comment back and verify the marker and content.
+4. Report persistence as verified, blocked, or failed.
+5. STOP.
+
+No candidate, including a high-confidence one, permits scheduled execution.
+
+#### Interactive Discovery
+
+Present the ranked candidate packets or an honest no-change result. Ask the owner to select one exact fingerprint or stop. STOP and wait.
+
+#### Interactive Named Target
+
+Present the verdict and exact manifest for the named target. Ask for go/no-go against that fingerprint and boundary. STOP and wait.
+
+### 6. Refresh Before Acting
+
+After selection, refresh every drift-prone source that materially supported eligibility or scoring. Reuse stable evidence that is still fresh.
+
+Invalidate the selection and re-present the candidate when any of these occurs:
+
+- positive verified use appears;
+- the target or deployed revision changed materially;
+- confidence falls below eligibility;
+- a source used to justify retirement becomes stale, failed, or wrong-environment;
+- the retirement manifest or irreversible blast radius expands;
+- a new owner gate is discovered.
+
+The refreshed outcome may be `keep`, `insufficient evidence`, or no change.
+
+### 7. Execute One Approved Slice
+
+Execute at most one selected candidate. Follow the target repository's normal implementation, testing, review, and delivery workflow.
+
+Remove the complete authorized slice across every included surface: code, tests, documentation, configuration, jobs, integrations, schemas, data, and infrastructure. Do not touch excluded or separately gated surfaces. If complete retirement is unsafe but an approved smaller simplification is valuable, prefer that over optimization or automation.
+
+Before editing, capture a clean baseline and the characterization or usage evidence that protects behavior outside the slice. After editing, verify:
+
+- static consumers and dynamic entry points no longer depend on the retired surface;
+- targeted and full tests or builds pass;
+- configuration, jobs, integrations, documentation, and alerts agree with the new state;
+- migrations, data, and rollback posture are safe where applicable;
+- the exact deployed revision and post-deploy evidence are checked when deployment is separately authorized.
+
+An open or merged PR means retirement is proposed or landed in source. Mark a production surface `retired` only after deployed-revision and post-deploy evidence prove the full manifest is gone.
+
+## Output
+
+Always report:
+
+- mode, repository, candidate scope, repository revision, and deployed revision when known;
+- evidence coverage, failures, blind spots, and adequate recurrence windows;
+- zero to three ranked candidates or the named-target verdict;
+- the selected fingerprint and approved manifest, if any;
+- exact mutations performed and separate gates not crossed;
+- verification receipts and final candidate state;
+- canonical issue URL and readback result, or why persistence was blocked.
+
+## Critical Rules
+
+1. Investigate necessity, not tidiness.
+2. Real usage and operational obligations outrank static absence.
+3. Missing telemetry is unknown, never zero.
+4. Scheduled means report-only, even when an issue write is allowed.
+5. Selection is bound to one fingerprint and manifest.
+6. Changed evidence or blast radius voids selection.
+7. One run retires at most one candidate.
+8. A PR is not production retirement.
+9. Fewer than three candidates and no change are healthy outcomes.

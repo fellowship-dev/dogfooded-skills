@@ -66,6 +66,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/seo-ops`](skills/ops/seo-ops/) | Evidence-first pre-launch, production, incident, and recurring SEO audits with deterministic static checks, browser boundaries, multilingual controls, and a reusable casebook |
 | [`ops/vercel-ops`](skills/ops/vercel-ops/) | Safe project guards, environment-variable synchronization, explicit previews, deployment-protection checks, and custom-domain verification for existing Vercel projects |
 | [`ops/dx-metrics`](skills/ops/dx-metrics/) | Measure AI-agent adoption and its effect on delivery — DX Core 4 speed/quality/impact, `Co-Authored-By` adoption curves, cycle time, ownership risk — from git + the GitHub API into a self-contained HTML dashboard. Aggregate by default; per-person data is opt-in and never a throughput leaderboard |
+| [`ops/trash-truck`](skills/ops/trash-truck/) | Investigate product, code, and operational surfaces for evidence-backed retirement; nominate up to three material candidates and require bounded owner selection before action. Scheduled runs only maintain the review record. |
 
 ## Namespace Convention
 

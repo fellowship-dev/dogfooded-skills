@@ -51,6 +51,6 @@ stages/05b/references/  — gate-checklist.md
 ```
 
 ## Emit on completion
-- Guard path: `[pylot] outcome="skipped: <label|state> — issue-to-prd does not structure this issue" status=success`
-- Questions path: `[pylot] outcome="questions posted" status=success`
+- Guard path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="skipped: <label|state> — issue-to-prd does not structure this issue" status=success`
+- Questions path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="questions posted" status=success`
 - PRD path: `[pylot] outcome="PRD published" status=success`

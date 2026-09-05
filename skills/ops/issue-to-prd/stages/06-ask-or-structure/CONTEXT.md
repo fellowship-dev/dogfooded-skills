@@ -46,7 +46,11 @@ proceeds:
 **No marker-carrying comment found** (condition 2 fails — e.g. the label predates this marker, or an
 older cycle's comment was posted before this guard existed) is not evidence the issue is unanswered
 or answered. It is ambiguous, and ambiguity always falls through to normal routing, **never** to a
-skip: a duplicate question comment is recoverable, a silently stranded issue is not.
+skip: a duplicate question comment is recoverable, a silently stranded issue is not. Expect this on
+every issue already parked on `open-questions` from before this guard shipped: the first post-sync
+pass over such an issue will not find the marker, will fall through, and will post one further
+questions comment as a one-time cold-start cost — the guard only engages starting from the *next*
+ask/answer cycle for that issue, once its own marker-carrying comment exists.
 
 **All three hold** → the issue is exactly where the last pass left it: post nothing, apply no
 label (it is already there), and exit early with:

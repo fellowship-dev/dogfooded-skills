@@ -141,3 +141,5 @@ Before execution, refresh every drift-prone source that materially supports elig
 - a decisive source expires, fails, or resolves to another environment;
 - the manifest expands or reversibility worsens;
 - a new destructive or external gate appears.
+
+`scripts/rank_candidates.py approval` only sees what the curator gives it: it checks identity-field equality plus the curator-supplied `eligible`, `decisive_sources_current`, and `invalidators` fields. It cannot independently detect that positive use reappeared or that a new owner gate exists — those triggers reach the validator only if the curator sets `eligible: false` or adds an entry to `invalidators` when refreshing evidence. Treat a `valid: true` result as no stronger than the curator's own re-normalization of the refreshed evidence.

@@ -172,6 +172,9 @@ check("argument-hint:" not in skill, "nonstandard frontmatter must be removed")
 for status in ("observed", "unavailable", "failed", "not-applicable"):
     check(re.search(rf"`{status}`", packet) is not None, f"missing evidence status: {status}")
 
+for field in ("query_scope", "recurrence_adequate", "freshness_status"):
+    check(re.search(rf"`{field}`", packet) is not None, f"missing material evidence field: {field}")
+
 for state in ("proposed", "selected", "retired", "kept", "insufficient", "superseded"):
     check(re.search(rf"`{state}`", issue) is not None, f"missing candidate state: {state}")
 

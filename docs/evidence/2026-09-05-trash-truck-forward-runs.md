@@ -4,6 +4,8 @@ These secret-free dry exercises ran against commit
 `94fab8ee724f6ceb35263f03bc047514235f4e6d`. They call the production decision
 CLI directly; they do not claim that any external evidence provider was queried.
 All commands exited `0` unless an expected fail-closed result says otherwise.
+Commit `a528b648caed9c59027c0553e9c1fd2cb85935cb` added only this receipt file, so
+the exercised production code was unchanged at that head.
 
 ## 1. Interactive discovery: no candidate
 

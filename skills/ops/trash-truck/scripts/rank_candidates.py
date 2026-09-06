@@ -125,7 +125,7 @@ def resolve_mode(mode: str, candidate: str | None, persist: str | None) -> str:
 def approval_valid(selected: dict[str, Any], current: dict[str, Any]) -> bool:
     if not isinstance(selected, dict) or not isinstance(current, dict):
         raise ValueError("selected and current approval packets must be objects")
-    keys = ("fingerprint", "manifest_digest", "evidence_cutoff", "repo_head", "deployed_revision")
+    keys = ("fingerprint", "manifest_digest", "repo_head", "deployed_revision")
     return (
         all(key in selected and key in current and selected[key] == current[key] for key in keys)
         and current.get("eligible") is True

@@ -11,6 +11,7 @@ Record one envelope per source:
 | `surface` | Code, GitHub, git, runtime, analytics, logs, operations, infrastructure, integration, owner, or another named source |
 | `status` | `observed`, `unavailable`, `failed`, or `not-applicable` |
 | `query` | What was checked without embedding credentials or sensitive payloads |
+| `query_scope` | Stable, normalized description of what the query covers; derive it from `query` by removing transport syntax, credentials, timestamps, and provider-specific request IDs while preserving the conceptual surface |
 | `window` | Start/end dates or another explicit coverage boundary |
 | `collected_at` | Timestamp with timezone |
 | `environment` | Production, staging, local, or another explicit environment |
@@ -18,6 +19,8 @@ Record one envelope per source:
 | `revision` | Repository and deployed revision relevant to the observation |
 | `receipt` | Secret-free link, command summary, log locator, query ID, or artifact reference |
 | `finding` | Evidence for retirement, evidence against it, or an unresolved gap |
+| `recurrence_adequate` | Boolean: whether `window` covers the longest relevant recurrence or exceptional-use cycle |
+| `freshness_status` | `current`, `stale`, or `unknown`, evaluated against `fresh_until` and any invalidating event |
 | `fresh_until` | Date or event that makes this observation stale |
 
 `Unavailable` means the capability does not exist or cannot be reached. `Failed` means a relevant attempt errored. `Not-applicable` means the surface does not govern this candidate. None of these means zero use.

@@ -62,9 +62,9 @@ comment and influences the verdict.
 | `needs-work` | Changes requested | Check if follow-up commits or comments show the issues were addressed; if yes → resolved; if no → unresolved blocker |
 | `waiting-on-owner` | Owner hold | Unresolved unless the owner has since commented with approval or label was removed; machine cannot clear this |
 | `security` | Auth/security hold | Unresolved unless owner has explicitly cleared it; machine cannot clear this |
-| `chad-rejects` | FlowChad QA failure | Unresolved unless a subsequent FlowChad verdict comment (`<!-- flowchad:verdict ... -->` / "FlowChad Results") shows PASSED; look for it in comments |
+| `chad-rejects` | FlowChad QA failure (LEGACY) | FlowChad per-PR runs were retired 2026-09-06 (pylot#3388); a stale `chad-rejects` from before then is context, not a blocker — weigh the underlying evidence comment on its merits |
 | `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
-| `lane:fast`, `lane:staging` | #2996 pipeline lane | Not blockers. `lane:fast` means double-check, flowchad and test-in-staging were deliberately NOT dispatched. Their **absence is expected**, not an unresolved blocker — do not record "missing double-check" or "no staging evidence" as a blocker on a `lane:fast` PR, and do not let it lower the verdict. |
+| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. Staging evidence is required only on release-train PRs (base = default branch, pylot#3389); the setup stage gates that. |
 
 **For each comment thread, identify blockers:**
 - Explicit hold comments (e.g. "do not merge", "waiting for owner") — resolved only if a subsequent comment or commit addresses them
@@ -227,14 +227,13 @@ Wrong-but-plausible: {none | list of findings}
 
 ## Receipts (#2918)
 Labels seen: {comma-separated list, or "none"}
-Lane: {fast | staging | none — from the setup handoff}
-{If lane is `fast`, add verbatim — the trade must be stated, never assumed:}
-Fast lane (#2996): double-check and the pre-merge staging deploy did not run. Compensating
-controls in force: review-pr's findings, this cohesive review, the #2918
-owner hard-stop (lane-independent), CI green, and the in-deploy full corpus gate that still
-guards prod on every release train. If CI is N/A, replace "CI green" with `CI: N/A — no configured
-checks`; lane test receipts and the deploy-time release corpus gate remain the applicable controls.
-A missing `double-checked` label is expected here.
+Lane: {fast | staging | none — legacy label from the setup handoff, informational only}
+{For every ordinary (non-release-train) PR, add verbatim — the trade must be stated, never assumed:}
+Per-PR staging retired (owner ruling 2026-09-06, pylot#3389): the pre-merge staging deploy did
+not run, by design. Compensating controls in force: review-pr's findings, double-check, this
+cohesive review, the #2918 owner hard-stop, CI green, and the mandatory staging run on the
+release train that still guards prod before every promote merge. If CI is N/A, replace "CI
+green" with `CI: N/A — no configured checks`.
 Comments checked: {N} (last author: {login})
 Blockers found:
 | Blocker | Type | Status | Evidence |

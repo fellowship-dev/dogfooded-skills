@@ -177,6 +177,14 @@ Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not ru
     reviewer verdict is exactly `ready` and bound to the exact live head. Any negative, missing,
     malformed, stale, or conflicting signal fails closed: remove/withhold `double-checked`, add or
     retain `needs-work`, and do not create CTO, FlowChad, staging, or merge follow-ons.
+16. **Success markers come from stage 04's templates ONLY (pylot#3392).** The four documented
+    `status=success` markers in stage 04's "Emit outcome marker" section are the complete set.
+    Never synthesize a free-form success marker from the orchestrator, and never emit ANY
+    `status=success` unless stage 04 ran to completion — receipt comment posted and post-action
+    verification passed. On 2026-09-05 an orchestrator emitted "queued-worker result ok" without
+    running stage 04: the mission terminalized `done` with no receipt and the completed work was
+    invisible for ~6h. If you cannot run stage 04, the outcome is `status=failed` or
+    `status=blocked` with the reason — a fabricated success is the worst possible exit.
 
 ## Reference files
 

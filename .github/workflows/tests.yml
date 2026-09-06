@@ -43,6 +43,7 @@ jobs:
             ./skills/ops/flowchad-runner/scripts/test_validate_contract.py
             ./skills/ops/seo-ops/scripts/test_audit.py
             ./skills/ops/speckit-runner/tests/pr-postcondition.test.sh
+            ./skills/ops/trash-truck/evals/test_retirement_contract.py
           '
           failed=""
           for t in $tests; do

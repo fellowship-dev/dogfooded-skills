@@ -13,17 +13,21 @@ Challenge whether a surface should continue to exist. Prefer deleting over simpl
 /trash-truck OWNER/REPO mode:interactive
 /trash-truck OWNER/REPO mode:interactive candidate:"<description>"
 /trash-truck OWNER/REPO mode:scheduled
+/trash-truck OWNER/REPO mode:scheduled persist:github
 ```
 
-`OWNER/REPO` is required. `candidate:"<description>"` is optional and only valid in interactive mode. Quote the complete description; do not treat trailing free text as part of the candidate. Stop with an input error if scheduled mode includes a candidate, the candidate is unquoted or empty, or the mode is missing or unknown.
+`OWNER/REPO` is required. `candidate:"<description>"` is optional and only valid in interactive mode. Quote the complete description; do not treat trailing free text as part of the candidate. `persist:github` is optional and only valid in scheduled mode; it must come from an owner-configured schedule or an explicit current owner request. Stop with an input error if these combinations are invalid or the mode is missing or unknown.
 
 Resolve mode before investigating:
 
 | Situation | Mode | Allowed outcome |
 |---|---|---|
 | A user is present and `mode:interactive` is explicit | Interactive discovery or named-target review | Present a recommendation; offer selection only for eligible `retire` or `prune/simplify` candidates; execute at most one approved manifest |
-| A schedule or automation invokes the skill | Scheduled | Investigate, optionally persist one canonical review issue, then STOP |
+| A schedule or automation invokes the skill without `persist:github` | Scheduled | Investigate, report `issue_persistence: not-requested`, then STOP |
+| An owner-authorized schedule invokes `mode:scheduled persist:github` | Scheduled with persistence | Investigate, conditionally persist one canonical review issue, then STOP |
 | Presence of an interactive owner is unclear | Scheduled fail-safe | Report only; never mutate product or repository state |
+
+Normalize the parsed inputs and run `python3 <skill-dir>/scripts/rank_candidates.py mode <invocation-json>` before continuing. Stop on validator error.
 
 ## Non-Negotiable Boundaries
 
@@ -40,7 +44,7 @@ Resolve mode before investigating:
 
 1. Read the target repository's active instructions, issue-filing policy, and destructive-action rules.
 2. Confirm the repository identity, current revision, default branch, dirty state, and available read-only evidence capabilities.
-3. In scheduled mode, confirm whether issue writes are explicitly allowed before relying on GitHub persistence.
+3. In scheduled mode, treat persistence as not requested unless `persist:github` is explicit. When it is explicit, verify the owner-configured grant, repository policy, credential scope, and repository-scoped serialization or atomic lock separately.
 4. Keep secrets out of commands, worker briefs, evidence packets, and issue content.
 
 If the repository cannot be identified or the requested scope violates its policy, stop with the blocker.
@@ -79,7 +83,7 @@ For every lead, actively search for counterevidence. A code-only absence of refe
 
 ### 4. Build Candidate Packets and Rank
 
-Use the eligibility, materiality, scoring, tie-breaking, and approval rules in [references/candidate-packet.md](references/candidate-packet.md). Normalize corroborated leads as described there, then run `python3 <skill-dir>/scripts/rank_candidates.py <candidate-json>` when the bundled validator is available. If it cannot run, apply the same rubric manually and disclose that the ranking was not mechanically verified.
+Use the eligibility, materiality, scoring, tie-breaking, and approval rules in [references/candidate-packet.md](references/candidate-packet.md). Normalize corroborated leads as described there, then run `python3 <skill-dir>/scripts/rank_candidates.py rank <candidate-json>` when the bundled validator is available. If it cannot run, apply the same rubric manually and disclose that the ranking was not mechanically verified.
 
 For discovery, rank all eligible candidates and present only the top zero to three. For a named target, do not build an alternatives list; return one of:
 
@@ -94,12 +98,12 @@ Every eligible `retire` or `prune/simplify` candidate includes its fingerprint, 
 
 #### Scheduled
 
-Read [references/canonical-issue.md](references/canonical-issue.md). Persist only when repository policy and current authority allow it.
+Read [references/canonical-issue.md](references/canonical-issue.md). Normalize the preflight result and run `python3 <skill-dir>/scripts/rank_candidates.py persistence <persistence-json>`. Without `persist:github`, report `not-requested` and STOP. Perform the returned `create` or `update` only when the deterministic decision says so; otherwise report its `not-needed` or `blocked` result and STOP.
 
 1. Converge on at most one canonical retirement-review issue.
 2. Record only a materially changed investigation.
 3. Read the stored issue or comment back and verify the marker and content.
-4. Report persistence as `verified`, `not-needed`, `blocked`, or `failed`.
+4. Report persistence as `verified`, `not-requested`, `not-needed`, `blocked`, or `failed`.
 5. STOP.
 
 No candidate, including a high-confidence one, permits scheduled execution.
@@ -114,7 +118,7 @@ For `retire` or `prune/simplify`, present the verdict and exact manifest, ask fo
 
 ### 6. Refresh Before Acting
 
-After selection, refresh every drift-prone source that materially supported eligibility or scoring. Reuse stable evidence that is still fresh.
+After selection, refresh every drift-prone source that materially supported eligibility or scoring. Reuse stable evidence that is still fresh. Run `python3 <skill-dir>/scripts/rank_candidates.py approval <approval-json>` against the displayed and refreshed packets. If the validator is unavailable, errors, or returns `valid: false`, do not execute.
 
 Invalidate the selection and re-present the candidate when any of these occurs:
 
@@ -153,7 +157,7 @@ Always report:
 - the selected fingerprint and approved manifest, if any;
 - exact mutations performed and separate gates not crossed;
 - verification receipts and final candidate state;
-- canonical issue URL and readback result, `not-needed` when no durable write was required, or why persistence was blocked.
+- canonical issue URL and readback result, `not-requested` when no persistence grant was supplied, `not-needed` when no durable write was required, or why persistence was blocked.
 
 ## Critical Rules
 

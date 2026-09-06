@@ -6,7 +6,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -28,6 +30,18 @@ ranker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ranker)
 
 
+def run_cli(command: str, payload: object) -> tuple[int, dict[str, object]]:
+    result = subprocess.run(
+        [sys.executable, str(RANKER_PATH), command],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = result.stdout if result.returncode == 0 else result.stderr
+    return result.returncode, json.loads(output)
+
+
 data = json.loads(FIXTURE.read_text())
 skill = (SKILL_ROOT / "SKILL.md").read_text()
 packet_path = SKILL_ROOT / "references" / "candidate-packet.md"
@@ -42,6 +56,10 @@ issue = issue_path.read_text()
 for case in data["ranking_cases"]:
     actual = [candidate["fingerprint"] for candidate in ranker.rank(case["candidates"])]
     check(actual == case["expected"], case["name"])
+
+code, ranked = run_cli("rank", {"candidates": data["ranking_cases"][0]["candidates"]})
+check(code == 0, "rank command must succeed")
+check([candidate["fingerprint"] for candidate in ranked["candidates"]] == data["ranking_cases"][0]["expected"], "rank command must use production ordering")
 
 failed_source = next(
     candidate
@@ -75,23 +93,63 @@ for case in data["evidence_cases"]:
         check(case["positive_usage"] is True and case["eligible"] is False, case["name"])
 
 for case in data["mode_cases"]:
-    if case["mode"] == "scheduled":
-        check(case["may_execute"] is False, case["name"])
-        check(case["may_open_retirement_pr"] is False, case["name"])
-    if case.get("selection_stale"):
-        check(case["may_execute"] is False, case["name"])
-    if case.get("pr_open"):
-        check(case["state"] != "retired", case["name"])
-    if case["mode"] == "interactive-target":
-        check(case.get("may_nominate_unrelated", False) is False, case["name"])
+    code, output = run_cli("mode", {key: case[key] for key in ("mode", "candidate", "persist")})
+    if code != 0:
+        check(case.get("error") is True, case["name"])
+    else:
+        check(not case.get("error"), case["name"])
+        check(output["mode"] == case["expected"], case["name"])
 
-for case in data["issue_cases"]:
-    if case["name"] == "repeated schedules converge":
-        check(case["matching_markers"] == case["canonical_issues_after"] == 1, case["name"])
-    if case["name"] == "first no-candidate run creates nothing":
-        check(case["should_write"] is False, case["name"])
-    if case["name"] == "owner prose is preserved":
-        check(case["owner_text_before"] == case["owner_text_after"], case["name"])
+for case in data["approval_cases"]:
+    code, output = run_cli("approval", {"selected": case["selected"], "current": case["current"]})
+    check(code == 0 and output["valid"] is case["expected"], case["name"])
+
+for case in data["persistence_cases"]:
+    inputs = {key: value for key, value in case.items() if key not in {"name", "expected"}}
+    code, output = run_cli("persistence", inputs)
+    check(code == 0 and output["action"] == case["expected"], case["name"])
+
+digest_packet = data["digest_case"]
+digest = ranker.material_digest(digest_packet)
+transport_change = deepcopy(digest_packet)
+transport_change["run_timestamp"] = "2026-09-05T13:00:00Z"
+transport_change["write_status"] = "verified"
+transport_change["evidence_cutoff"] = "2026-09-01/2026-09-06"
+transport_change["evidence"][0]["collected_at"] = "2026-09-05T13:00:00Z"
+transport_change["evidence"][0]["receipt"] = "new-private-query"
+transport_change["evidence"][0]["query"] = "same scope with different raw syntax"
+transport_change["evidence"][0]["window"] = "2026-06-01/2026-09-06"
+transport_change["evidence"][0]["fresh_until"] = "2026-09-09"
+transport_change["evidence"].reverse()
+check(ranker.material_digest(transport_change) == digest, "transport metadata must not change material digest")
+material_change = deepcopy(digest_packet)
+material_change["evidence"][0]["recurrence_adequate"] = False
+check(ranker.material_digest(material_change) != digest, "recurrence adequacy changes must change material digest")
+code, output = run_cli("digest", digest_packet)
+check(code == 0 and output["digest"] == digest, "digest command must use production projection")
+
+base_candidate = data["ranking_cases"][0]["candidates"][0]
+for invalid in (
+    {**base_candidate, "fingerprint": ""},
+    {**base_candidate, "fingerprint": "Acme/App:Legacy"},
+    {**base_candidate, "checks": ["boundary", "boundary"]},
+    {**base_candidate, "unresolved_contradictions": True},
+    {**base_candidate, "unresolved_contradictions": 0.5},
+    {**base_candidate, "unresolved_contradictions": "1"},
+):
+    try:
+        ranker.rank([invalid])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(f"malformed candidate was accepted: {invalid}")
+
+try:
+    ranker.rank([base_candidate, deepcopy(base_candidate)])
+except ValueError:
+    pass
+else:
+    raise AssertionError("duplicate fingerprints must be rejected")
 
 required_skill_contracts = [
     "mode:interactive",
@@ -99,6 +157,8 @@ required_skill_contracts = [
     "STOP",
     "zero to three",
     "candidate:\"<description>\"",
+    "persist:github",
+    "not-requested",
     "not-needed",
 ]
 for contract in required_skill_contracts:
@@ -123,6 +183,8 @@ check("stop all writes" in issue, "duplicate canonical issues must fail closed")
 check("For `keep` or `insufficient evidence`" in skill, "non-retirement verdicts need a terminal path")
 check("without offering an execution choice" in skill, "keep/insufficient verdicts must not request deletion approval")
 check("scripts/rank_candidates.py" in skill, "skill must route deterministic ranking through its validator")
+check("Report persistence and readback outside the comment" in issue, "comment receipt must not be circular")
+check("repository-scoped scheduler serialization" in issue, "initial issue creation must be serialized")
 
 workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text()
 entrypoint = "./skills/ops/trash-truck/evals/test_retirement_contract.py"

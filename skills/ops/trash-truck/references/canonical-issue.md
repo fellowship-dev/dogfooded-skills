@@ -8,12 +8,13 @@ Use this protocol only in scheduled mode after the target repository's instructi
 - Stable body marker: `<!-- trash-truck:retirement-review:v1 repo=OWNER/REPO -->`
 - Run comment marker: `<!-- trash-truck:investigation:v1 -->`
 
-Normalize repository casing consistently. Search open issues, closed issues, and related pull requests for the stable marker and title before creating anything. The oldest exact-marker issue is canonical when duplicates already exist; report the other matches for owner repair rather than closing or overwriting them automatically.
+Normalize repository casing consistently. Search open issues, closed issues, and related pull requests for the stable marker and title before creating anything. If more than one exact-marker issue exists, identify the oldest as the intended canonical issue, stop all writes, and report every match for owner repair. Never close, overwrite, or append to duplicates automatically.
 
 ## Creation and No-Change Rules
 
 - Create the issue only when at least one eligible candidate exists.
 - A first run with no candidates creates nothing.
+- Report `issue_persistence: not-needed` when no candidate or material evidence change requires a write.
 - Never reopen or auto-close the canonical issue.
 - When an issue exists, append a no-change run only if material evidence changed.
 - Do not write labels unless repository policy defines and permits them.
@@ -55,11 +56,13 @@ Do not include credentials, raw sensitive events, customer data, or unrestricted
 7. Read back the issue and comment; verify repository, marker, fingerprint set, and content digest.
 8. Release the lock.
 
-If two runs race, repeat search and readback. Adopt the oldest exact-marker issue as canonical. If duplicates remain, stop writing, report their URLs, and request owner repair; do not silently create more churn or destructively reconcile them.
+If two runs race, repeat search and readback. If duplicates exist, identify the oldest intended canonical issue, stop all writes, report every URL, and request owner repair; do not silently create more churn or destructively reconcile them.
 
 ## Authority Failure
 
-If GitHub is unavailable, authentication fails, repository policy is silent, or issue writes are not authorized:
+Determine whether the current result requires a write before testing write capability. If no candidate or material evidence change requires one, report `not-needed` regardless of GitHub availability or authority.
+
+If a write is required and GitHub is unavailable, authentication fails, repository policy is silent, or issue writes are not authorized:
 
 1. Return the complete investigation in the run result.
 2. Mark `issue_persistence` as `blocked` or `failed` with the observed reason.

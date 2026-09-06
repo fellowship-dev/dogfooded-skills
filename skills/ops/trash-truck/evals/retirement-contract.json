@@ -3,24 +3,26 @@
     {
       "name": "material candidates rank by risk-adjusted expected payoff",
       "candidates": [
-        {"fingerprint": "acme/app:legacy-export", "confidence": 0.9, "payoff": 4, "effort": 1, "risk": 1, "eligible": true},
-        {"fingerprint": "acme/app:tiny-helper", "confidence": 1.0, "payoff": 1, "effort": 0, "risk": 0, "eligible": true},
-        {"fingerprint": "acme/app:unused-admin", "confidence": 0.8, "payoff": 3, "effort": 1, "risk": 0, "eligible": true},
-        {"fingerprint": "acme/app:seasonal-billing", "confidence": 0.95, "payoff": 4, "effort": 1, "risk": 1, "eligible": false}
+        {"fingerprint": "acme/app:legacy-export", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 4, "effort": 1, "risk": 1, "corroborated": true},
+        {"fingerprint": "acme/app:tiny-helper", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 1, "effort": 0, "risk": 0, "corroborated": true},
+        {"fingerprint": "acme/app:telemetry-gap", "checks": ["boundary", "code", "history", "consumers", "recurrence"], "failed_decisive_source": true, "payoff": 4, "effort": 0, "risk": 0, "corroborated": true},
+        {"fingerprint": "acme/app:risky-removal", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 2, "effort": 4, "risk": 4, "corroborated": true},
+        {"fingerprint": "acme/app:unused-admin", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 3, "effort": 1, "risk": 0, "corroborated": true},
+        {"fingerprint": "acme/app:seasonal-billing", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "positive_use": true, "payoff": 4, "effort": 1, "risk": 1, "corroborated": true}
       ],
       "expected": ["acme/app:legacy-export", "acme/app:unused-admin"]
     },
     {
       "name": "ranking returns fewer than three without padding",
       "candidates": [
-        {"fingerprint": "acme/app:old-worker", "confidence": 0.85, "payoff": 3, "effort": 1, "risk": 1, "eligible": true}
+        {"fingerprint": "acme/app:old-worker", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 3, "effort": 1, "risk": 1, "corroborated": true}
       ],
       "expected": ["acme/app:old-worker"]
     },
     {
       "name": "no eligible candidate is a healthy no-change result",
       "candidates": [
-        {"fingerprint": "acme/app:active-hook", "confidence": 0.9, "payoff": 3, "effort": 1, "risk": 1, "eligible": false}
+        {"fingerprint": "acme/app:active-hook", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "positive_use": true, "payoff": 3, "effort": 1, "risk": 1, "corroborated": true}
       ],
       "expected": []
     }

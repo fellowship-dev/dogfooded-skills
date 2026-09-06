@@ -11,17 +11,17 @@ Challenge whether a surface should continue to exist. Prefer deleting over simpl
 
 ```text
 /trash-truck OWNER/REPO mode:interactive
-/trash-truck OWNER/REPO mode:interactive candidate:<description>
+/trash-truck OWNER/REPO mode:interactive candidate:"<description>"
 /trash-truck OWNER/REPO mode:scheduled
 ```
 
-`OWNER/REPO` is required. `candidate:<description>` is optional and only valid in interactive mode.
+`OWNER/REPO` is required. `candidate:"<description>"` is optional and only valid in interactive mode. Quote the complete description; do not treat trailing free text as part of the candidate. Stop with an input error if scheduled mode includes a candidate, the candidate is unquoted or empty, or the mode is missing or unknown.
 
 Resolve mode before investigating:
 
 | Situation | Mode | Allowed outcome |
 |---|---|---|
-| A user is present and `mode:interactive` is explicit | Interactive discovery or named-target review | Present a recommendation, STOP for selection, then execute at most one approved manifest |
+| A user is present and `mode:interactive` is explicit | Interactive discovery or named-target review | Present a recommendation; offer selection only for eligible `retire` or `prune/simplify` candidates; execute at most one approved manifest |
 | A schedule or automation invokes the skill | Scheduled | Investigate, optionally persist one canonical review issue, then STOP |
 | Presence of an interactive owner is unclear | Scheduled fail-safe | Report only; never mutate product or repository state |
 
@@ -44,6 +44,7 @@ Resolve mode before investigating:
 4. Keep secrets out of commands, worker briefs, evidence packets, and issue content.
 
 If the repository cannot be identified or the requested scope violates its policy, stop with the blocker.
+If a named candidate could refer to more than one conceptual surface, ask the owner to resolve that boundary before fingerprinting or gathering evidence.
 
 ### 2. Bound the Investigation
 
@@ -74,11 +75,11 @@ Use the evidence surfaces that actually exist. Prefer independent read-only work
 
 Each worker receives one bounded read-only question and returns evidence envelopes. Workers do not rank candidates, mutate state, or decide retirement. One curator reconciles identities, environments, contradictions, freshness, and recurrence windows.
 
-For every lead, actively search for counterevidence. A code-only absence of references is not enough. Positive verified use makes the lead ineligible for retirement.
+For every lead, actively search for counterevidence. A code-only absence of references is not enough. Distinguish passive installation or loading from actual invocation. Positive verified use blocks retirement of the used scope, but may justify a narrower simplification that preserves it.
 
 ### 4. Build Candidate Packets and Rank
 
-Use the eligibility, materiality, scoring, tie-breaking, and approval rules in [references/candidate-packet.md](references/candidate-packet.md).
+Use the eligibility, materiality, scoring, tie-breaking, and approval rules in [references/candidate-packet.md](references/candidate-packet.md). Normalize corroborated leads as described there, then run `python3 <skill-dir>/scripts/rank_candidates.py <candidate-json>` when the bundled validator is available. If it cannot run, apply the same rubric manually and disclose that the ranking was not mechanically verified.
 
 For discovery, rank all eligible candidates and present only the top zero to three. For a named target, do not build an alternatives list; return one of:
 
@@ -87,7 +88,7 @@ For discovery, rank all eligible candidates and present only the top zero to thr
 - `keep` — verified use or obligation defeats retirement;
 - `insufficient evidence` — the evidence cannot support a safe decision.
 
-Every presented candidate includes its fingerprint, score components, evidence for and against retirement, unresolved gaps, known owners and consumers, last verified use, retirement manifest, exclusions, reversibility, and owner gates.
+Every eligible `retire` or `prune/simplify` candidate includes its fingerprint, score components, evidence for and against retirement, unresolved gaps, known owners and consumers, last verified use, retirement manifest, exclusions, reversibility, and owner gates. A `keep` or `insufficient evidence` assessment includes the fingerprint, decisive evidence, source coverage, known owners and consumers, and gaps, but it has no retirement score or executable manifest.
 
 ### 5. Branch by Mode
 
@@ -98,18 +99,18 @@ Read [references/canonical-issue.md](references/canonical-issue.md). Persist onl
 1. Converge on at most one canonical retirement-review issue.
 2. Record only a materially changed investigation.
 3. Read the stored issue or comment back and verify the marker and content.
-4. Report persistence as verified, blocked, or failed.
+4. Report persistence as `verified`, `not-needed`, `blocked`, or `failed`.
 5. STOP.
 
 No candidate, including a high-confidence one, permits scheduled execution.
 
 #### Interactive Discovery
 
-Present the ranked candidate packets or an honest no-change result. Ask the owner to select one exact fingerprint or stop. STOP and wait.
+If the ranking is empty, report no change and STOP without asking for selection. Otherwise present the ranked candidate packets, ask the owner to select one exact fingerprint or stop, then STOP and wait.
 
 #### Interactive Named Target
 
-Present the verdict and exact manifest for the named target. Ask for go/no-go against that fingerprint and boundary. STOP and wait.
+For `retire` or `prune/simplify`, present the verdict and exact manifest, ask for go/no-go against that fingerprint and boundary, then STOP and wait. For `keep` or `insufficient evidence`, present the assessment and STOP without offering an execution choice.
 
 ### 6. Refresh Before Acting
 
@@ -152,7 +153,7 @@ Always report:
 - the selected fingerprint and approved manifest, if any;
 - exact mutations performed and separate gates not crossed;
 - verification receipts and final candidate state;
-- canonical issue URL and readback result, or why persistence was blocked.
+- canonical issue URL and readback result, `not-needed` when no durable write was required, or why persistence was blocked.
 
 ## Critical Rules
 

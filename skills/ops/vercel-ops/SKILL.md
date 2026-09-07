@@ -356,7 +356,8 @@ Vercel provisions TLS after domain and DNS verification. Do not call the domain 
 
 ### 10. Record project facts in the repo playbook
 
-Record facts in the private/project-specific playbook, never in this public skill:
+Compose `setup-playbooks capture` for each bounded fact below. Do not write the
+playbook directly or add project-specific values to this public skill:
 
 ```yaml
 vercel:

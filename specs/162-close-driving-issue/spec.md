@@ -2,7 +2,7 @@
 
 **Feature Branch**: `162-close-driving-issue`
 **Created**: 2026-09-07
-**Status**: Draft
+**Status**: Implemented; delivery receipts pending
 **Input**: Issue #162
 
 ## User Scenarios & Testing

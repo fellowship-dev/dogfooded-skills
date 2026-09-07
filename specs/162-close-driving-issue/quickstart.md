@@ -1,5 +1,12 @@
 # Quickstart: Verify the Driving-Issue Contract
 
+## Baseline
+
+Before implementation, the reviewer guidance recommended changing a closing reference to `Refs #N`
+when named acceptance criteria were incomplete. The author guidance likewise allowed a deliberately
+multi-PR driving issue to remain `Refs` until its final PR and treated any follow-up ticket as a
+shippability failure. No shared follow-up issue contract or focused regression test existed.
+
 1. Run the focused regression check:
 
    ```bash
@@ -23,3 +30,10 @@
    names the criterion and requires finishing it or linking a conforming follow-up. Save its URL.
 
 6. After merge/catalog synchronization, record the gateway catalog version in the closing PR.
+
+## Delivery receipts
+
+- Live partial-delivery review URL: pending — GitHub CLI access is unavailable in the implementation
+  environment; the focused fixture exercise covers the same decision branches locally.
+- Post-merge gateway catalog version: pending — this receipt can only be captured after merge and
+  synchronization.

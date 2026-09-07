@@ -100,12 +100,19 @@ Use the Closes-vs-Refs raw data in the handoff. For each linked issue with a `Cl
 Assess each item against the actual diff:
 
 - ALL items plausibly satisfied by this diff → `Closes #N` is appropriate; generate NO finding.
-- Some items NOT addressed by this diff → add a finding recommending `Refs #N` that NAMES the
-  specific unaddressed items. Severity: **Bug**. Confidence is a calibrated judgment on the
-  same 80–100 scale as every other finding — never a hardcoded 100.
+- Some named items are NOT addressed by this diff → add a finding that NAMES each unaddressed
+  criterion and requires either completing it in this PR or filing a conforming follow-up while
+  retaining the closing reference. The follow-up must use
+  [`skills/shared/follow-up-issue-template.md`](../../../../shared/follow-up-issue-template.md) and be
+  linked from this PR. Severity: **Bug**. Confidence is a calibrated judgment on the same 80–100
+  scale as every other finding — never a hardcoded 100.
 - Issue has no acceptance-criteria items (`NO_AC_ITEMS`) → skip the check for that issue.
 
-If no Closes keywords were found, record "No Closes keywords found".
+For the exactly one **driving issue**, require `Closes #N`, `Fixes #N`, or `Resolves #N`. If the raw
+data identifies the driving issue only with `Refs #N`, emit a **Bug** requiring a closing reference;
+calibrate confidence normally. `Refs #N` is valid only for an issue clearly identified as related
+context rather than the work that drove this PR. If there is no driving issue, record "No driving
+issue found". Never recommend changing a driving issue's closing reference to `Refs`.
 
 ### Step 5: Verdict
 The verdict is ALWAYS "proceed to double-check" — this stage never blocks or rejects a PR.

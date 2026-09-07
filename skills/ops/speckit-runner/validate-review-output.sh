@@ -3,6 +3,8 @@ set -eu
 
 MATRIX=${1:?usage: validate-review-output.sh MATRIX REVIEW_OUTPUT}
 REVIEW=${2:?usage: validate-review-output.sh MATRIX REVIEW_OUTPUT}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+"$SCRIPT_DIR/validate-invariant-matrix.sh" "$MATRIX"
 REQUIRED=$(mktemp)
 COVERED=$(mktemp)
 trap 'rm -f "$REQUIRED" "$COVERED"' EXIT HUP INT TERM

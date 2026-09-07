@@ -54,10 +54,14 @@ REVIEWED_HEAD_SHA=$(awk '/^reviewed_head_sha:/{print $2; exit}' "$REVIEW_HANDOFF
 RESTART_COUNT=${RESTART_COUNT:-0}
 if ! printf '%s' "$REVIEWED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
   echo "[stage-04] blocked: stage 02 did not record an exact reviewed HEAD SHA"
-  echo "[pylot] outcome=\"double-check blocked: no exact reviewed HEAD SHA recorded\" status=blocked"
   exit 2
 fi
 ```
+
+If the missing/malformed-SHA branch exits, emit this as your final full assistant line (not from
+Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: no exact reviewed HEAD SHA recorded" status=blocked
 
 ### Claims-vs-diff gate against the LIVE PR (BLOCKING — run before posting)
 
@@ -80,14 +84,12 @@ if [ "${LIVE_READ_FAILED:-false}" = true ]; then DECISION=blocked; fi
 
 if [ "$DECISION" = restart ]; then
   echo "[stage-04] restart: PR HEAD moved after review ($REVIEWED_HEAD_SHA -> $LIVE_HEAD_SHA)"
-  echo "[pylot] outcome=\"double-check restart required: PR HEAD moved after review\" status=blocked"
   exit 3
 fi
 if [ "$DECISION" = blocked ]; then
   REASON="exact head unavailable or superseded"
   [ "${LIVE_READ_FAILED:-false}" = true ] && REASON="live PR read failed"
   echo "[stage-04] blocked: $REASON (reviewed=$REVIEWED_HEAD_SHA live=${LIVE_HEAD_SHA:-unavailable})"
-  echo "[pylot] outcome=\"double-check blocked: $REASON\" status=blocked"
   exit 2
 fi
 
@@ -100,6 +102,12 @@ printf '%s\n' "$LIVE_FILES"
 
 # `promote` is possible only after the helper's full-SHA equality check above.
 ```
+
+If either terminal branch exits, emit its resolved marker as your final full assistant line (not
+from Bash and not inside a fence), then stop:
+
+- `restart`: [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check restart required: PR HEAD moved after review" status=blocked
+- `blocked`: [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: ${REASON}" status=blocked
 
 ### Executable mutation guard
 
@@ -116,13 +124,17 @@ dc_require_promotable_head() {
   [ "$decision" = promote ] && return 0
   echo "[stage-04] promotion mutation blocked: exact-head decision=$decision"
   if [ "$decision" = restart ]; then
-    echo "[pylot] outcome=\"double-check restart required: PR HEAD moved after review\" status=blocked"
     exit 3
   fi
-  echo "[pylot] outcome=\"double-check blocked: exact head unavailable or superseded\" status=blocked"
   exit 2
 }
 ```
+
+If this guard exits, emit the matching marker as your final full assistant line (not from Bash and
+not inside a fence), then stop:
+
+- `restart`: [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check restart required: PR HEAD moved after review" status=blocked
+- `blocked`: [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: exact head unavailable or superseded" status=blocked
 
 Then:
 

@@ -31,7 +31,7 @@ REVIEWED_SHA=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.comments[].body' \
   | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 
 if [ "$HAS_REVIEWED" = "true" ] && [ -n "$REVIEWED_SHA" ] && [ "$REVIEWED_SHA" = "$HEAD_SHA" ]; then
-  echo "[pylot] outcome=\"already complete — reviewed receipt matches current HEAD $HEAD_SHA\" status=success"
+  echo "[review-pr] already complete — reviewed receipt matches current HEAD $HEAD_SHA"
   exit 0
 fi
 
@@ -41,6 +41,11 @@ if [ "$HAS_REVIEWED" = "true" ]; then
   echo "[review-pr] stale reviewed evidence: receipt=${REVIEWED_SHA:-missing} current=$HEAD_SHA — continuing"
 fi
 ```
+
+If the current-head receipt branch exits, emit the following resolved marker as your final full
+assistant line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — reviewed receipt matches current HEAD $HEAD_SHA" status=success
 
 If this exits, STOP the whole procedure. Do not spawn stage 01.
 

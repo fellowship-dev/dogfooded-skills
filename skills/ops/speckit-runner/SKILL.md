@@ -42,7 +42,7 @@ creating another one.
 REPO="${1:-$PYLOT_REPO}"
 ISSUE_STATE=$(gh issue view $0 --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "OPEN")
 if [ "$ISSUE_STATE" = "CLOSED" ]; then
-  echo "[pylot] outcome=\"already complete — issue $0 is CLOSED\" status=success"
+  echo "[speckit-runner] already complete — issue $0 is CLOSED"
   exit 0
 fi
 
@@ -64,10 +64,16 @@ if [ "$(printf '%s\n' "$BRANCH_CANDIDATES" | sed '/^$/d' | wc -l | tr -d ' ')" =
 fi
 if [ -n "$EXISTING_PR" ]; then
   PR_URL=$(printf '%s' "$EXISTING_PR" | jq -r '.url')
-  echo "[pylot] outcome=\"resume reconciliation found existing PR: $PR_URL\" status=success"
+  echo "[speckit-runner] resume reconciliation found existing PR: $PR_URL"
   exit 0
 fi
 ```
+
+If either reconciliation branch exits, emit its resolved marker as your final full assistant line
+(not from Bash and not inside a fence), then stop:
+
+- Closed issue: [pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — issue $0 is CLOSED" status=success
+- Existing PR: [pylot:$PYLOT_OUTCOME_NONCE] outcome="resume reconciliation found existing PR: $PR_URL" status=success
 
 `outcome="already complete"` is **only valid here** — when the issue is genuinely CLOSED. Never emit it because of a timeout or missing notification.
 An open PR is also terminal for this run, but report it as a reconciled existing
@@ -90,11 +96,16 @@ SPAWN_RESP=$(curl -s --max-time 90 -X POST \
   "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
 WID=$(echo "$SPAWN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))' 2>/dev/null)
 if [ -z "$WID" ]; then
-  echo "[pylot] outcome=\"worker spawn failed: $(echo $SPAWN_RESP | head -c 200)\" status=failed"
+  echo "[speckit-runner] worker spawn failed: $(echo $SPAWN_RESP | head -c 200)"
   exit 1
 fi
 echo "[speckit-runner] worker spawned: $WID"
 ```
+
+If worker spawn fails, emit the following resolved marker as your final full assistant line (not
+from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="worker spawn failed: $(echo $SPAWN_RESP | head -c 200)" status=failed
 
 This skill ships a **`poll-worker.sh`** helper next to this file — the boot-sync copies the whole skill dir, so it lands at **`~/.claude/skills/speckit-runner/poll-worker.sh`** on the operator. It is the **only** way you poll a worker (see Step P) — never hand-roll a poll loop inline, never wait for a notification.
 
@@ -514,11 +525,17 @@ not `failed` or `blocked`.
 # SUPERVISOR_CHECKOUT on this and every other terminal path.
 
 if [ -n "$PR_NUM" ]; then
-  echo "[pylot] outcome=\"speckit complete: PR #$PR_NUM opened; independent_review=$FIRST_REVIEW_STATUS\" status=success"
+  echo "[speckit-runner] complete: PR #$PR_NUM opened; independent_review=$FIRST_REVIEW_STATUS"
 else
-  echo "[pylot] outcome=\"verified checkpoint exists but no PR URL was confirmed — check worker output\" status=partial"
+  echo "[speckit-runner] verified checkpoint exists but no PR URL was confirmed — check worker output"
 fi
 ```
+
+After the reporting command, emit exactly one resolved marker as your final full assistant line
+(not from Bash and not inside a fence):
+
+- PR confirmed: [pylot:$PYLOT_OUTCOME_NONCE] outcome="speckit complete: PR #$PR_NUM opened; independent_review=$FIRST_REVIEW_STATUS" status=success
+- No PR URL: [pylot:$PYLOT_OUTCOME_NONCE] outcome="verified checkpoint exists but no PR URL was confirmed — check worker output" status=partial
 
 ---
 

@@ -240,15 +240,19 @@ echo "[vercel-deploy] $VERIFY_URL → HTTP $HTTP_STATUS"
 case "$HTTP_STATUS" in
   200|301|302)
     echo "[vercel-deploy] Stage 05 complete — production domain verified"
-    echo "[pylot] outcome=\"vercel-deploy succeeded\" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done"
     ;;
   *)
     echo "[vercel-deploy] Stage 05 failed: $VERIFY_URL returned HTTP $HTTP_STATUS"
-    echo "[pylot] outcome=\"vercel-deploy failed at stage 05: $PROD_DOMAIN returned HTTP $HTTP_STATUS\" status=failed"
     exit 1
     ;;
 esac
 ```
+
+After the verification command, emit the matching resolved marker as your final full assistant
+line (not from Bash and not inside a fence):
+
+- Verified: [pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done
+- Failed: [pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy failed at stage 05: $PROD_DOMAIN returned HTTP $HTTP_STATUS" status=failed
 
 ## Execution Model
 

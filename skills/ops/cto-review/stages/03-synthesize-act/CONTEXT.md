@@ -127,11 +127,16 @@ PARK_EOF
   gh pr comment $PR --repo $REPO --body-file /tmp/cto-owner-gate.md
 
   echo "[cto-review] owner gate fired: $GATE_REASON — PR parked, NOT merged"
-  echo "[pylot] outcome=\"cto-review parked: PR #${PR} carries ${GATE_REASON} — owner review required\" status=blocked"
+  echo "[cto-review] terminal: PR #${PR} carries ${GATE_REASON} — owner review required"
   exit 0
 fi
 echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS"
 ```
+
+If the owner-gate branch exits, emit the following resolved marker as your final full assistant
+line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #${PR} carries ${GATE_REASON} — owner review required" status=blocked
 
 **Rules that are absolute:**
 - This check fires EVEN IF stage 02 gave LGTM verdict — verdict cannot override the gate.

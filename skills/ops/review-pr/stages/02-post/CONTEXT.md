@@ -195,9 +195,10 @@ report. (There is no Quest step.)
 
 ### Step 5: Emit outcome marker (orchestrator, inline)
 
-```bash
-echo "[pylot] outcome=\"review-pr complete — reviewed label applied, lane:$LANE\" status=success"
-```
+Emit the following resolved marker as your final full assistant line (not from Bash and not inside
+a fence):
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr complete — reviewed label applied, lane:$LANE" status=success
 
 ## Output: handoff.md
 

@@ -143,10 +143,15 @@ else
   WORKDIR="$REPO_DIR"
 fi
 [ -f "$WORKDIR/.flowchad/config.yml" ] || {
-  echo "[pylot] outcome=\"flowchad blocked: $REPO has no .flowchad/config.yml at the resolved ref\" status=blocked"
+  echo "[flowchad] blocked: $REPO has no .flowchad/config.yml at the resolved ref"
   exit 0
 }
 ```
+
+If the missing-config branch exits, emit the following resolved marker as your final full
+assistant line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad blocked: $REPO has no .flowchad/config.yml at the resolved ref" status=blocked
 
 Every subsequent command (validator, stage handoffs, reports) runs with `cd "$WORKDIR"`.
 Because subagent Tasks do NOT inherit the orchestrator's `cd`, stage prompts must carry

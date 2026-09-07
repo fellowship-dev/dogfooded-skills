@@ -23,6 +23,25 @@ PR reviewers can distinguish verified, failed, unavailable, stale, and untested 
 1. **Given** a changed checkpoint identity, **When** prior evidence is reconciled, **Then** evidence not bound to the current repository and checkpoint becomes stale until refreshed.
 2. **Given** failed review or incomplete evidence, **When** PR preparation runs, **Then** gaps and unresolved findings are disclosed and the sole PR boundary remains reachable.
 
+### Edge Cases
+
+- A discovery class with no source-backed boundary produces no row; a matrix
+  with no applicable boundaries may contain only its canonical header.
+- Multiple invariants may share a discovery class, but each keeps a unique,
+  stable ID. A newly discovered or omitted invariant receives the next unused
+  ID without renumbering existing rows.
+- A repository match with a checkpoint mismatch, or a checkpoint match with a
+  repository mismatch, stales every affected executed receipt. Partial commit
+  identifiers never satisfy exact-checkpoint binding.
+- Malformed rows, duplicate IDs, unknown states, applicability/state
+  contradictions, and narrative-only pass claims are rejected before a later
+  phase consumes the matrix.
+- Reviewer timeout, invalid completion marker, or missing reviewer records an
+  explicit unavailable reason. Partial findings remain linked and disclosed.
+- A correction that changes HEAD cannot inherit earlier passed evidence; fresh
+  supervisor execution is required. Failed, unavailable, stale, not-run, and
+  not-applicable states remain distinct during disclosure.
+
 ## Requirements
 ### Functional
 - **FR-001**: The planning checkpoint MUST persist a readable, machine-checkable invariant matrix derived only from issue, specification, task, and repository evidence.
@@ -30,6 +49,7 @@ PR reviewers can distinguish verified, failed, unavailable, stale, and untested 
 - **FR-003**: A row MUST reach `passed` only from supervisor-owned evidence bound to the reviewed repository and current checkpoint; any checkpoint change MUST invalidate unmatched evidence.
 - **FR-004**: Independent review MUST attempt row-by-row falsification, negative and boundary inspection, contradiction checks, and omitted-invariant discovery without producer rationale.
 - **FR-005**: Correction, optional final review, resume, and PR preparation MUST preserve row and finding state, disclose applicable gaps, retain advisory semantics, and preserve one producer, one reviewer, one correction pass, cleanup, and one PR-creation point.
+- **FR-006**: Matrix consumers MUST reject malformed schema, duplicate or unstable IDs, unknown or contradictory states, incomplete executed-evidence bindings, and producer/reviewer narrative offered as passing evidence.
 
 ## Success Criteria
 - **SC-001**: Portable fixtures yield an explicit negative or boundary row for all five required boundary classes and no fabricated row for an irrelevant class.

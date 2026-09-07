@@ -173,7 +173,7 @@ Step C receipt.
 Queue the prompt, then poll per **Step P**: run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"`, re-running it while `POLL_RESULT=running`.
 
 ```bash
-PROMPT=$(python3 -c "import json; print(json.dumps('Continue on the feature branch from the previous phase.\nRun: /speckit-plan $0\nRead the generated plan and verify the approach.\nRun: /speckit-tasks $0\nRead the generated tasks and verify they are concrete.\nCommit and push the completed planning checkpoint so a later invocation can resume it.\nWhen done: emit [pylot] phase=plan status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD)'))")
+PROMPT=$(python3 -c "import json; print(json.dumps('Continue on the feature branch from the previous phase.\nRun: /speckit-plan $0\nRead the generated plan and verify the approach.\nRun: /speckit-tasks $0\nRead the generated tasks and verify they are concrete.\n\nDerive the durable invariant matrix described by skills/ops/speckit-runner/references/invariant-matrix.md from issue, spec, tasks, and trusted repository evidence. Inspect every discovery class, emit every source-backed boundary and no row for an unsupported class, and persist specs/<feature>/invariant-matrix.tsv with stable IDs and initial states. Commit and push the completed planning checkpoint so a later invocation can resume it.\nWhen done: emit [pylot] phase=plan status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by MATRIX RECEIPT path=<path> repository=$REPO checkpoint=\$(git rev-parse HEAD)'))")
 PROMPT_RESP=$(curl -s --max-time 30 -X POST \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
@@ -243,6 +243,15 @@ this shared skill; do not manufacture checks from a producer's `tests pass`
 claim. Execute each discovered command yourself from the supervisor checkout —
 never by prompting the producer.
 
+Load the checkpoint's `specs/<feature>/invariant-matrix.tsv` and validate it
+against `references/invariant-matrix.md`. The supervisor alone reconciles row
+states: mark every executed receipt whose repository or full checkpoint differs
+from the reviewed checkpoint `stale`, then bind each fresh observed check to its
+row as `passed`, `failed`, or `unavailable`. Preserve prior receipt text and
+finding IDs. A producer summary, reviewer statement, or narrative-only result
+can never set `passed`. Include the reconciled matrix path and row states in
+`SUPERVISOR_VERIFICATION`.
+
 Then write a plain-markdown verification summary — one line per expected check:
 the check identity, the verbatim command, and its observed result (`passed` only
 on exit status 0; otherwise `failed` with the real exit status, `not-run` with
@@ -274,7 +283,7 @@ REVIEW_SPAWN=$(curl -s --max-time 90 -X POST \
   "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
 RWID=$(printf '%s' "$REVIEW_SPAWN" | jq -r '.worker_id // empty')
 if [ -n "$RWID" ]; then
-REVIEW_PROMPT=$(BRANCH="$BRANCH" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and the pushed branch ' + os.environ['BRANCH'] + '. Start from a clean checkout. Read the issue and repository guidance, compare the branch with its merge base, inspect the changed behavior, and assess the supervisor verification summary below. Do not edit, commit, push, or create a PR.\n\nLook for correctness gaps, incomplete requirements, weak or misleading verification, security or data-integrity risks, maintainability regressions, and user-facing or operational consequences. Apply repository evidence and engineering judgment; do not assume any language, framework, file layout, or test command. The supervisor summary is observed evidence; cross-check its commands and head binding against the branch.\n\nSUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION'] + '\n\nReturn concise suggestions with: priority, concern, concrete evidence, and suggested action. Separate high-value corrections from optional polish. Findings are advisory: never block or fail the mission solely because you found them. End with [pylot] phase=independent-review status=done actionable=yes|no.'))")
+REVIEW_PROMPT=$(BRANCH="$BRANCH" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and pushed branch ' + os.environ['BRANCH'] + ' from a clean checkout. Read the issue, spec, tasks, trusted repository guidance, specs/<feature>/invariant-matrix.tsv, the merge-base diff, and supervisor receipts. Do not request or use producer rationale. Do not edit, commit, push, or create a PR.\n\nAttempt to falsify every applicable invariant row by ID: perform its negative or boundary probe, inspect contradictions among provenance, implementation, and receipt, and cite concrete evidence. Independently search the source artifacts for omitted boundaries; report each source-backed omission with row_id=OMITTED. For every challenge use a stable F-NNN finding ID, row ID, priority, evidence, suggested action, and status=open. If a row survives, return an explicit row-addressed no-findings verdict. Cover every applicable row exactly once; do not demand rows for unsupported classes. Findings are advisory and never block the mission.\n\nSUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION'] + '\n\nEnd with [pylot] phase=independent-review status=done actionable=yes|no.'))")
 REVIEW_RESP=$(curl -s --max-time 30 -X POST \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
   -d "{\"prompt\": $REVIEW_PROMPT}" \
@@ -327,7 +336,7 @@ Send the independent suggestions to the producer exactly once. The producer must
 record what it changed and why it declined anything; it must not loop indefinitely.
 
 ```bash
-CORRECTION_PROMPT=$(REVIEW_OUT="$REVIEW_OUT" python3 -c "import json,os; print(json.dumps('''This is the one bounded correction pass before PR creation. Independently assess the review suggestions below against the issue and repository. Implement the high-value valid corrections; decline inapplicable or disproportionate suggestions with a concrete reason. Re-run the repository-defined verification plus /speckit-analyze $0 and /speckit-checklist $0, commit any changes, and push the branch. Do not create a PR yet. Emit [pylot] phase=correction status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by a concise CORRECTION SUMMARY that lists each suggestion as resolved or declined with rationale and records the latest verification results.
+CORRECTION_PROMPT=$(REVIEW_OUT="$REVIEW_OUT" python3 -c "import json,os; print(json.dumps('''This is the one bounded correction pass before PR creation. Independently assess the review suggestions below against the issue and repository. Implement the high-value valid corrections; decline inapplicable or disproportionate suggestions with a concrete reason. Preserve every invariant row ID, evidence state, receipt, and finding ID; record each finding as resolved or declined with its disposition. If the pushed head changes, treat all unmatched executed matrix receipts as stale pending fresh supervisor verification; producer prose must not restore passed. Re-run the repository-defined verification plus /speckit-analyze $0 and /speckit-checklist $0, commit any changes, and push the branch. Do not create a PR yet. Emit [pylot] phase=correction status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by a concise CORRECTION SUMMARY that lists each suggestion as resolved or declined with rationale and records the latest verification results.
 
 INDEPENDENT REVIEW:
 ''' + (os.environ.get('REVIEW_OUT') or 'Review unavailable; verify the checkpoint yourself and report that independent review evidence was unavailable.'))) ")
@@ -409,7 +418,7 @@ fi
 
 if [ "$FIRST_REVIEW_STATUS" = "available" ] && [ -n "$RWID" ] \
   && [ "$RUN_FINAL_REVIEW" = "yes" ]; then
-  FINAL_REVIEW_PROMPT=$(CORRECTION_OUT="$CORRECTION_OUT" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Re-fetch branch $BRANCH and review its updated diff for issue #$0. Reassess only the independent suggestions from your prior turn against the producer correction summary and the current supervisor verification summary. Report which are resolved and which remain, with concise evidence. Do not edit, push, or create a PR. Remaining suggestions are advisory. End with [pylot] phase=final-review status=done.\n\nPRODUCER CORRECTION SUMMARY:\n' + os.environ['CORRECTION_OUT'] + '\n\nCURRENT SUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION']))")
+  FINAL_REVIEW_PROMPT=$(CORRECTION_OUT="$CORRECTION_OUT" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Re-fetch branch $BRANCH and review its updated diff for issue #$0. Reconcile the invariant matrix to the exact current repository/head and reassess only your original F-NNN findings against the correction summary and current supervisor receipts. Preserve finding IDs and report each as resolved, declined, or still open with evidence; do not erase unavailable review or non-passing row states. Do not edit, push, or create a PR. Remaining suggestions are advisory. End with [pylot] phase=final-review status=done.\n\nPRODUCER CORRECTION SUMMARY:\n' + os.environ['CORRECTION_OUT'] + '\n\nCURRENT SUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION']))")
   FINAL_REVIEW_RESP=$(curl -s --max-time 30 -X POST \
     -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
     -d "{\"prompt\": $FINAL_REVIEW_PROMPT}" \
@@ -464,7 +473,7 @@ boundary** in the pipeline.
 ```bash
 PR_PROMPT=$(SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" FIRST_REVIEW_STATUS="$FIRST_REVIEW_STATUS" REVIEW_OUT="$REVIEW_OUT" CORRECTION_OUT="$CORRECTION_OUT" RESIDUAL_REVIEW="$RESIDUAL_REVIEW" python3 -c "import json,os; print(json.dumps('''Create the single PR for issue #$0 from the already-pushed branch. First confirm the worktree is clean and the remote head matches local HEAD. Invoke /create-compelling-prs and use that skill to compose and open the PR — do not substitute a placeholder template.
 
-Base the PR's Verification section on the supervisor verification summary below. It is authoritative over any producer claim: state every passed, failed, not-run, or unavailable check honestly and never state or imply readiness when any current check is failed, not-run, or unavailable. Include an Independent review section summarizing first-review availability, suggestions, corrected/declined decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR. Emit [pylot] phase=pr status=done pr=<PR_URL>.
+Base the PR's Verification section on the supervisor verification summary below. It is authoritative over any producer claim. Reconcile the invariant matrix to the exact current repository/head, then disclose every applicable row whose state is failed, not-run, unavailable, or stale; preserve not-applicable rows without presenting them as gaps. Never state or imply readiness when any current check is non-passing. Include an Independent review section summarizing first-review availability, every unresolved or declined F-NNN finding, correction decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR or create another PR boundary. Emit [pylot] phase=pr status=done pr=<PR_URL>.
 
 CURRENT SUPERVISOR VERIFICATION:
 ''' + os.environ['SUPERVISOR_VERIFICATION'] + '''

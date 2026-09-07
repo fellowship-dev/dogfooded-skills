@@ -11,7 +11,7 @@ Extend `speckit-runner` with a durable, machine-checkable invariant matrix deriv
 
 - **Language/Version**: POSIX shell orchestration; Markdown prompt/reference contracts
 - **Primary Dependencies**: `bash`/POSIX utilities, `git`, `gh`, `jq`, existing Pylot worker API
-- **Storage**: Versioned TSV matrix in the feature spec directory; in-session review/finding summaries
+- **Storage**: Versioned planning TSV plus supervisor-owned, exact-head serialized TSV and review/finding summaries
 - **Testing**: Portable shell contract tests with fixture matrices and static prompt assertions
 - **Target Platform**: Linux operator with the existing `speckit-runner` prerequisites
 - **Project Type**: Instruction-driven CLI skill
@@ -28,6 +28,7 @@ The constitution contains placeholders rather than enforceable gates. The design
 ```text
 skills/ops/speckit-runner/
 ├── SKILL.md
+├── validate-review-output.sh
 ├── references/invariant-matrix.md
 └── tests/{invariant-matrix.test.sh,fixtures/invariant-matrix/}
 specs/134-invariant-matrix/{plan.md,research.md,data-model.md,contracts/invariant-matrix.tsv.md,quickstart.md,tasks.md}
@@ -42,6 +43,7 @@ specs/134-invariant-matrix/{plan.md,research.md,data-model.md,contracts/invarian
 - Permit `passed` only after supervisor execution at the exact pushed head; reconcile changed heads by making unmatched evidence `stale`, never by copying producer narrative.
 - Give the clean-context reviewer source artifacts plus matrix/diff/receipts, require row-addressed falsification and omitted-row discovery, then preserve findings through one correction and optional final review.
 - Validate schema, state transitions, five-class positive/negative fixtures, omitted/irrelevant classes, stale-head behavior, reviewer unavailability, and PR disclosure while retaining existing PR-postcondition tests.
+- Serialize supervisor reconciliation with repository/checkpoint identity for every later consumer, and reject incomplete or malformed review output before accepting its completion marker.
 
 ## Complexity Tracking
 

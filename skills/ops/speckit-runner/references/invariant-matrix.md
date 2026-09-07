@@ -52,6 +52,12 @@ supervisor observation may change `not-run` or `stale` to `passed`, `failed`, or
 `unavailable`. Exit zero (or an equivalent directly observed success) is the
 only route to `passed`; narrative summaries never are.
 
+The reconciled matrix travels between phases as complete TSV plus an exact
+`repository=<owner/name> checkpoint=<40-hex>` receipt. Review, correction,
+resume, final review, and PR preparation validate and consume that serialized
+artifact; they do not rely on an uncommitted detached-worktree edit or ask the
+producer to reconcile evidence.
+
 ## Review and findings
 
 The clean-context reviewer receives source artifacts, the matrix, branch/diff,

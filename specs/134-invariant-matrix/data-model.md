@@ -28,6 +28,17 @@
 | `status` | `open`, `resolved`, or `declined` |
 | `disposition` | Correction rationale and residual disclosure |
 
+## Supervisor artifact
+
+| Field | Meaning |
+|---|---|
+| `matrix_tsv` | Complete reconciled matrix serialized by the supervisor |
+| `repository` | Exact repository identity used for reconciliation |
+| `checkpoint` | Full 40-hex commit reviewed and verified |
+
+Every later consumer validates this identity. The producer may read the artifact
+but cannot update its evidence states.
+
 ## Relationships and transitions
 
 - One matrix has many invariant rows; a row may have many findings.

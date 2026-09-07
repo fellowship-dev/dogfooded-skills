@@ -50,10 +50,11 @@ PR reviewers can distinguish verified, failed, unavailable, stale, and untested 
 - **FR-004**: Independent review MUST attempt row-by-row falsification, negative and boundary inspection, contradiction checks, and omitted-invariant discovery without producer rationale.
 - **FR-005**: Correction, optional final review, resume, and PR preparation MUST preserve row and finding state, disclose applicable gaps, retain advisory semantics, and preserve one producer, one reviewer, one correction pass, cleanup, and one PR-creation point.
 - **FR-006**: Matrix consumers MUST reject malformed schema, duplicate or unstable IDs, unknown or contradictory states, incomplete executed-evidence bindings, and producer/reviewer narrative offered as passing evidence.
+- **FR-007**: The supervisor MUST serialize the reconciled matrix with exact repository and checkpoint identity for review, correction, resume, final review, and PR preparation; consumers MUST reject incomplete reviewer coverage or malformed finding records.
 
 ## Success Criteria
 - **SC-001**: Portable fixtures yield an explicit negative or boundary row for all five required boundary classes and no fabricated row for an irrelevant class.
-- **SC-002**: Review challenges 100% of seeded violations, identifies the deliberately omitted invariant, and reports contradictions with concrete evidence.
+- **SC-002**: Portable behavioral probes execute and detect seeded authorization, secret-handling, process-tree cancellation, session-continuity, and compatibility violations; review identifies the deliberately omitted invariant and reports contradictions with concrete evidence.
 - **SC-003**: Zero rows pass from narrative alone, and 100% of prior-checkpoint receipts become stale after a checkpoint change until refreshed.
 - **SC-004**: Reviewer unavailability and every non-passing applicable state reach PR preparation with accurate disclosure while all existing orchestration contracts continue to pass.
 

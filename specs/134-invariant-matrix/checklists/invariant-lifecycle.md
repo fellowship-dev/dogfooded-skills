@@ -8,7 +8,7 @@ disclosure requirements are complete and objectively interpretable.
 ## Completeness
 
 - [x] CHK001 Are all persisted row fields and allowed evidence states specified? [Spec §Requirements, FR-002]
-- [x] CHK002 Are derivation, supervisor verification, review, correction, resume, and PR disclosure phases all governed? [Spec §Requirements, FR-001–FR-006]
+- [x] CHK002 Are derivation, supervisor verification, review, correction, resume, and PR disclosure phases all governed? [Spec §Requirements, FR-001–FR-007]
 
 ## Clarity
 
@@ -35,3 +35,5 @@ disclosure requirements are complete and objectively interpretable.
 - [x] CHK011 Is behavior defined when no source-backed invariant exists for a class or feature? [Spec §Edge Cases]
 - [x] CHK012 Are reviewer unavailability, partial findings, and changed-head correction defined? [Spec §Edge Cases]
 - [x] CHK013 Are stable IDs preserved when an omitted invariant is discovered later? [Spec §Edge Cases]
+- [x] CHK014 Is the supervisor artifact's repository/checkpoint identity required at every lifecycle consumer? [Spec §Requirements, FR-007]
+- [x] CHK015 Is reviewer completeness objectively defined beyond a completion marker? [Spec §Requirements, FR-007; SC-002]

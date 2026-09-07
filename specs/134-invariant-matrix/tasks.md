@@ -39,10 +39,14 @@
 
 - [X] T015 Run `bash skills/ops/speckit-runner/tests/invariant-matrix.test.sh` and `bash skills/ops/speckit-runner/tests/pr-postcondition.test.sh` from `/workspace` and resolve every contract regression in `/workspace/skills/ops/speckit-runner/`
 - [X] T016 Re-run the smoke-test procedure and reconcile documentation with observed behavior in `/workspace/specs/134-invariant-matrix/quickstart.md`
+- [X] T017 [US2] Execute portable seeded defects for authorization, secret handling, process-tree cancellation, session continuity, and POSIX compatibility in `/workspace/skills/ops/speckit-runner/tests/fixtures/invariant-matrix/adversarial-fixture.sh`
+- [X] T018 [US2] Validate exact reviewer row coverage and structured findings at runtime in `/workspace/skills/ops/speckit-runner/validate-review-output.sh`
+- [X] T019 [US3] Serialize the supervisor-owned matrix and exact identity receipt into review, correction, resume, final-review, and PR consumers in `/workspace/skills/ops/speckit-runner/SKILL.md`
+- [X] T020 [US1] Accept canonical header-only matrices and reject `-` sentinels in required fields in `/workspace/skills/ops/speckit-runner/tests/invariant-matrix.test.sh`
 
 ## Dependencies
 
-- T001 → T002–T004 → T005–T007 (MVP) → T008–T010 → T011–T014 → T015–T016.
+- T001 → T002–T004 → T005–T007 (MVP) → T008–T010 → T011–T014 → T015–T020.
 - US2 depends on the canonical schema and US1 persistence; US3 depends on the persisted matrix and review finding model.
 
 ## Parallel Execution Examples

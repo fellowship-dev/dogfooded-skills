@@ -252,6 +252,15 @@ finding IDs. A producer summary, reviewer statement, or narrative-only result
 can never set `passed`. Include the reconciled matrix path and row states in
 `SUPERVISOR_VERIFICATION`.
 
+The reconciled matrix is a supervisor-owned serialized artifact, not an edit in
+the detached checkout. Set `SUPERVISOR_MATRIX` to its complete TSV content and
+`SUPERVISOR_MATRIX_RECEIPT` to `repository=$REPO checkpoint=$REMOTE_SHA`; verify
+both identities before every use. Embed both values verbatim in the review,
+correction, final-review, resume, and PR prompts. The branch copy remains the
+planning record: no producer may reconcile it or replace this artifact with a
+summary. On resume, rebuild the artifact at the reconciled remote head before
+any consumer uses prior evidence.
+
 Then write a plain-markdown verification summary — one line per expected check:
 the check identity, the verbatim command, and its observed result (`passed` only
 on exit status 0; otherwise `failed` with the real exit status, `not-run` with
@@ -283,7 +292,7 @@ REVIEW_SPAWN=$(curl -s --max-time 90 -X POST \
   "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
 RWID=$(printf '%s' "$REVIEW_SPAWN" | jq -r '.worker_id // empty')
 if [ -n "$RWID" ]; then
-REVIEW_PROMPT=$(BRANCH="$BRANCH" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and pushed branch ' + os.environ['BRANCH'] + ' from a clean checkout. Read the issue, spec, tasks, trusted repository guidance, specs/<feature>/invariant-matrix.tsv, the merge-base diff, and supervisor receipts. Do not request or use producer rationale. Do not edit, commit, push, or create a PR.\n\nAttempt to falsify every applicable invariant row by ID: perform its negative or boundary probe, inspect contradictions among provenance, implementation, and receipt, and cite concrete evidence. Independently search the source artifacts for omitted boundaries; report each source-backed omission with row_id=OMITTED. For every challenge use a stable F-NNN finding ID, row ID, priority, evidence, suggested action, and status=open. If a row survives, return an explicit row-addressed no-findings verdict. Cover every applicable row exactly once; do not demand rows for unsupported classes. Findings are advisory and never block the mission.\n\nSUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION'] + '\n\nEnd with [pylot] phase=independent-review status=done actionable=yes|no.'))")
+REVIEW_PROMPT=$(BRANCH="$BRANCH" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" SUPERVISOR_MATRIX="$SUPERVISOR_MATRIX" SUPERVISOR_MATRIX_RECEIPT="$SUPERVISOR_MATRIX_RECEIPT" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and pushed branch ' + os.environ['BRANCH'] + ' from a clean checkout. Read the issue, spec, tasks, trusted repository guidance, merge-base diff, and supervisor-owned matrix and receipts below. Do not request or use producer rationale. Do not edit, commit, push, or create a PR.\n\nAttempt to falsify every applicable invariant row by ID. For each surviving row emit exactly: ROW INV-NNN verdict=no-findings. For each challenge emit exactly one line: FINDING F-NNN row_id=INV-NNN priority=P0..P3 status=open evidence=<concrete evidence> suggested_action=<action>. A source-backed omission uses row_id=OMITTED. Cover every applicable row exactly once; unsupported classes need no row. Findings are advisory.\n\nSUPERVISOR MATRIX RECEIPT:\n' + os.environ['SUPERVISOR_MATRIX_RECEIPT'] + '\nSUPERVISOR MATRIX:\n' + os.environ['SUPERVISOR_MATRIX'] + '\nSUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION'] + '\n\nEnd with [pylot] phase=independent-review status=done actionable=yes|no.'))")
 REVIEW_RESP=$(curl -s --max-time 30 -X POST \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
   -d "{\"prompt\": $REVIEW_PROMPT}" \
@@ -316,15 +325,20 @@ if [ -n "$RWID" ]; then
   REVIEW_STATE=$(curl -s --max-time 20 -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
     "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${RWID}")
   REVIEW_OUT=$(printf '%s' "$REVIEW_STATE" | jq -r '.last_output // ""')
-  if printf '%s' "$REVIEW_OUT" | grep -q 'phase=independent-review status=done'; then
+  REVIEW_FILE=$(mktemp)
+  MATRIX_FILE=$(mktemp)
+  printf '%s\n' "$REVIEW_OUT" >"$REVIEW_FILE"
+  printf '%s\n' "$SUPERVISOR_MATRIX" >"$MATRIX_FILE"
+  if bash skills/ops/speckit-runner/validate-review-output.sh "$MATRIX_FILE" "$REVIEW_FILE"; then
     FIRST_REVIEW_STATUS="available"
   else
     FIRST_REVIEW_STATUS="unavailable"
-    REVIEW_OUT="Independent review unavailable: reviewer returned no valid completion marker."
+    REVIEW_OUT="Independent review unavailable: reviewer output was incomplete or malformed."
     curl -s --max-time 20 -X POST -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
       "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${RWID}/stop" >/dev/null 2>&1 || true
     RWID=""
   fi
+  rm -f "$REVIEW_FILE" "$MATRIX_FILE"
 fi
 ```
 
@@ -336,7 +350,12 @@ Send the independent suggestions to the producer exactly once. The producer must
 record what it changed and why it declined anything; it must not loop indefinitely.
 
 ```bash
-CORRECTION_PROMPT=$(REVIEW_OUT="$REVIEW_OUT" python3 -c "import json,os; print(json.dumps('''This is the one bounded correction pass before PR creation. Independently assess the review suggestions below against the issue and repository. Implement the high-value valid corrections; decline inapplicable or disproportionate suggestions with a concrete reason. Preserve every invariant row ID, evidence state, receipt, and finding ID; record each finding as resolved or declined with its disposition. If the pushed head changes, treat all unmatched executed matrix receipts as stale pending fresh supervisor verification; producer prose must not restore passed. Re-run the repository-defined verification plus /speckit-analyze $0 and /speckit-checklist $0, commit any changes, and push the branch. Do not create a PR yet. Emit [pylot] phase=correction status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by a concise CORRECTION SUMMARY that lists each suggestion as resolved or declined with rationale and records the latest verification results.
+CORRECTION_PROMPT=$(REVIEW_OUT="$REVIEW_OUT" SUPERVISOR_MATRIX="$SUPERVISOR_MATRIX" SUPERVISOR_MATRIX_RECEIPT="$SUPERVISOR_MATRIX_RECEIPT" python3 -c "import json,os; print(json.dumps('''This is the one bounded correction pass before PR creation. Independently assess the review suggestions below against the issue and repository. Implement the high-value valid corrections; decline inapplicable or disproportionate suggestions with a concrete reason. Preserve every invariant row ID, evidence state, receipt, and finding ID; record each finding as resolved or declined with its disposition. The supervisor-owned matrix below is read-only producer context. If the pushed head changes, treat all unmatched executed matrix receipts as stale pending fresh supervisor verification; producer prose must not restore passed. Re-run the repository-defined verification plus /speckit-analyze $0 and /speckit-checklist $0, commit any changes, and push the branch. Do not create a PR yet. Emit [pylot] phase=correction status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by a concise CORRECTION SUMMARY that lists each suggestion as resolved or declined with rationale and records the latest verification results.
+
+SUPERVISOR MATRIX RECEIPT:
+''' + os.environ['SUPERVISOR_MATRIX_RECEIPT'] + '''
+SUPERVISOR MATRIX:
+''' + os.environ['SUPERVISOR_MATRIX'] + '''
 
 INDEPENDENT REVIEW:
 ''' + (os.environ.get('REVIEW_OUT') or 'Review unavailable; verify the checkpoint yourself and report that independent review evidence was unavailable.'))) ")
@@ -390,6 +409,8 @@ if [ "$CORRECTION_HEAD" != "$REMOTE_SHA" ]; then
   cd "$SUPERVISOR_CHECKOUT"
   # Repeat Step 4.5 discovery and execution here, then rebuild
   # SUPERVISOR_VERIFICATION with "verified at head $CORRECTION_HEAD:".
+  # Rebuild SUPERVISOR_MATRIX from those observations and set
+  # SUPERVISOR_MATRIX_RECEIPT="repository=$REPO checkpoint=$CORRECTION_HEAD".
 fi
 ```
 
@@ -418,7 +439,7 @@ fi
 
 if [ "$FIRST_REVIEW_STATUS" = "available" ] && [ -n "$RWID" ] \
   && [ "$RUN_FINAL_REVIEW" = "yes" ]; then
-  FINAL_REVIEW_PROMPT=$(CORRECTION_OUT="$CORRECTION_OUT" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Re-fetch branch $BRANCH and review its updated diff for issue #$0. Reconcile the invariant matrix to the exact current repository/head and reassess only your original F-NNN findings against the correction summary and current supervisor receipts. Preserve finding IDs and report each as resolved, declined, or still open with evidence; do not erase unavailable review or non-passing row states. Do not edit, push, or create a PR. Remaining suggestions are advisory. End with [pylot] phase=final-review status=done.\n\nPRODUCER CORRECTION SUMMARY:\n' + os.environ['CORRECTION_OUT'] + '\n\nCURRENT SUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION']))")
+  FINAL_REVIEW_PROMPT=$(CORRECTION_OUT="$CORRECTION_OUT" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" SUPERVISOR_MATRIX="$SUPERVISOR_MATRIX" SUPERVISOR_MATRIX_RECEIPT="$SUPERVISOR_MATRIX_RECEIPT" python3 -c "import json,os; print(json.dumps('Re-fetch branch $BRANCH and review its updated diff for issue #$0. Reassess only your original F-NNN findings against the correction summary and the supervisor-owned matrix at its exact receipt. Preserve finding IDs and report each as resolved, declined, or still open with evidence; do not erase unavailable review or non-passing row states. Do not edit, push, or create a PR. Remaining suggestions are advisory. End with [pylot] phase=final-review status=done.\n\nSUPERVISOR MATRIX RECEIPT:\n' + os.environ['SUPERVISOR_MATRIX_RECEIPT'] + '\nSUPERVISOR MATRIX:\n' + os.environ['SUPERVISOR_MATRIX'] + '\nPRODUCER CORRECTION SUMMARY:\n' + os.environ['CORRECTION_OUT'] + '\n\nCURRENT SUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION']))")
   FINAL_REVIEW_RESP=$(curl -s --max-time 30 -X POST \
     -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
     -d "{\"prompt\": $FINAL_REVIEW_PROMPT}" \
@@ -471,12 +492,17 @@ Send the producer the final advisory record. This is the **only PR creation
 boundary** in the pipeline.
 
 ```bash
-PR_PROMPT=$(SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" FIRST_REVIEW_STATUS="$FIRST_REVIEW_STATUS" REVIEW_OUT="$REVIEW_OUT" CORRECTION_OUT="$CORRECTION_OUT" RESIDUAL_REVIEW="$RESIDUAL_REVIEW" python3 -c "import json,os; print(json.dumps('''Create the single PR for issue #$0 from the already-pushed branch. First confirm the worktree is clean and the remote head matches local HEAD. Invoke /create-compelling-prs and use that skill to compose and open the PR — do not substitute a placeholder template.
+PR_PROMPT=$(SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" SUPERVISOR_MATRIX="$SUPERVISOR_MATRIX" SUPERVISOR_MATRIX_RECEIPT="$SUPERVISOR_MATRIX_RECEIPT" FIRST_REVIEW_STATUS="$FIRST_REVIEW_STATUS" REVIEW_OUT="$REVIEW_OUT" CORRECTION_OUT="$CORRECTION_OUT" RESIDUAL_REVIEW="$RESIDUAL_REVIEW" python3 -c "import json,os; print(json.dumps('''Create the single PR for issue #$0 from the already-pushed branch. First confirm the worktree is clean and the remote head matches local HEAD. Invoke /create-compelling-prs and use that skill to compose and open the PR — do not substitute a placeholder template.
 
 Base the PR's Verification section on the supervisor verification summary below. It is authoritative over any producer claim. Reconcile the invariant matrix to the exact current repository/head, then disclose every applicable row whose state is failed, not-run, unavailable, or stale; preserve not-applicable rows without presenting them as gaps. Never state or imply readiness when any current check is non-passing. Include an Independent review section summarizing first-review availability, every unresolved or declined F-NNN finding, correction decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR or create another PR boundary. Emit [pylot] phase=pr status=done pr=<PR_URL>.
 
 CURRENT SUPERVISOR VERIFICATION:
 ''' + os.environ['SUPERVISOR_VERIFICATION'] + '''
+
+SUPERVISOR MATRIX RECEIPT:
+''' + os.environ['SUPERVISOR_MATRIX_RECEIPT'] + '''
+SUPERVISOR MATRIX:
+''' + os.environ['SUPERVISOR_MATRIX'] + '''
 
 FIRST REVIEW STATUS:
 ''' + os.environ['FIRST_REVIEW_STATUS'] + '''

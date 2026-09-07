@@ -15,4 +15,6 @@ Contract rules:
 - `passed` and `failed` require repository identity, a full 40-hex checkpoint, and a supervisor-owned receipt. Other states use `-` for absent bindings and carry a reason where relevant.
 - A current `passed` row must match the reviewed repository and checkpoint. Reconciliation changes every unmatched executed row to `stale` before later phases consume it.
 - Review output addresses each applicable row by ID and uses `OMITTED` for a source-backed invariant absent from the matrix.
+- A completed review contains exactly one structured finding or explicit no-findings verdict for every applicable row; a marker alone is invalid.
+- The supervisor passes the complete reconciled TSV with exact repository and checkpoint identity to every later lifecycle consumer.
 - Lifecycle consumers preserve IDs, states, receipts, and findings; PR preparation discloses all applicable states other than `passed`, review unavailability, and unresolved or declined findings.

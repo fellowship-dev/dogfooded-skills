@@ -269,12 +269,12 @@ esac
 If any stage fails:
 1. Print which stage failed and the exact error
 2. Include the Vercel API response body if available
-3. Emit: `[pylot] outcome="vercel-deploy failed at stage <NN>: <reason>" status=failed`
+3. Emit: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy failed at stage <NN>: <reason>" status=failed`
 4. Do NOT retry automatically
 
 ## Outcome
 
 On success, emit:
 ```
-[pylot] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done
 ```

@@ -215,10 +215,10 @@ Stage names for `resume_from`: `02-preflight-baseline`, `03-risk-eval`, `04-buil
 
 ## Exit paths
 
-- **Success**: stage 06 emits `[pylot] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
-- **Failure**: failing stage's blocker → orchestrator emits `[pylot] outcome="deps-runner failed at stage NN: {reason}" status=failed`
+- **Success**: stage 06 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
+- **Failure**: failing stage's blocker → orchestrator emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner failed at stage NN: {reason}" status=failed`
 - **Blocked**: preflight failure (main does not compile) or the target repo has no devbox
-  image → `[pylot] outcome="deps-runner blocked: {reason}" status=blocked`
+  image → `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner blocked: {reason}" status=blocked`
 
 In all cases stage 06 still writes the local report file before the marker is emitted.
 

@@ -423,22 +423,22 @@ Emit from the orchestrator (never a subagent). Branch on re-check context:
 
 **Re-check PASS** (IS_RECHECK=true, verdict=ready):
 ```
-[pylot] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success
 ```
 
 **Re-check FAIL** (IS_RECHECK=true, verdict=needs-work):
 ```
-[pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success
 ```
 
 **First-check fail closed** (Branch D):
 ```
-[pylot] outcome="double-check {repo}#{pr} — verdict {VERDICT}, double-checked withheld, needs-work retained" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict {VERDICT}, double-checked withheld, needs-work retained" status=success
 ```
 
 **First-check PASS** (IS_RECHECK=false, VERDICT=ready):
 ```
-[pylot] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success
 ```
 
 If any step failed, emit `status=failed` with the reason instead. Head-transition restarts and

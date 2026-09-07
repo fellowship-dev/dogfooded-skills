@@ -210,4 +210,4 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 - handoff.md written before the stage 01 Task is spawned
 
 ## Failure
-- PR not found / `gh` auth failure → emit `[pylot] outcome="review-pr failed at stage 00: {reason}" status=failed` and stop
+- PR not found / `gh` auth failure → emit `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage 00: {reason}" status=failed` and stop

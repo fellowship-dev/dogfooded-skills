@@ -118,21 +118,21 @@ Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not ru
 - **First-check fail closed** (negative verdict or claims mismatch): stage 04 posts a
   `<!-- pylot:first-check-fail-closed -->` comment, removes/withholds `double-checked`, adds or
   retains `needs-work`, and creates no positive follow-on. It emits:
-  `[pylot] outcome="double-check {repo}#{pr} — verdict {verdict}, double-checked withheld, needs-work retained" status=success`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict {verdict}, double-checked withheld, needs-work retained" status=success`
 - **Re-check PASS** (PR had `needs-work`, verdict=ready): stage 04 removes `needs-work`, re-toggles
   `double-checked` (remove + re-add), and emits:
-  `[pylot] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
 - **Re-check FAIL** (PR had `needs-work`, verdict=needs-work): stage 04 leaves `needs-work` in place,
   does NOT re-toggle `double-checked`, posts a structured verdict comment with a
   `<!-- pylot:recheck-fail -->` marker (idempotent — skipped if marker already present), and emits:
-  `[pylot] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success`
 - **First-check success**: only an explicit `ready` verdict at the exact live 40-hex head may
   apply `double-checked`; it emits:
-  `[pylot] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success`
+- **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check failed at stage NN: {reason}" status=failed`
 - **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR), the live
   head cannot be read, or a second head transition occurs →
-  `[pylot] outcome="double-check blocked: {reason}" status=blocked` (a deliberate stop — `blocked`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: {reason}" status=blocked` (a deliberate stop — `blocked`
   is its own terminal state, not a failure)
 
 ## Hard Rules

@@ -16,7 +16,7 @@ stage runs inline in the orchestrator — do NOT spawn a Task. All GH side effec
   Post nothing, label nothing, merge nothing. Write a one-line report noting the PR was closed
   without merge. Emit:
   ```
-  [pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=success
+  [pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=success
   ```
   STOP. (A closed-without-merge PR is a normal terminal state — not a blocker requiring human
   intervention. `status=blocked` would trigger an unnecessary escalation to the human operator.)
@@ -290,16 +290,16 @@ report ends at the file write; operators surface it via the mission report.
 
 ### Step 7: Emit the outcome marker (orchestrator only)
 ```
-[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
 ```
 On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
 On the owner gate fire (Step 2), emit the parked marker and STOP:
 ```
-[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
 ```
 If a side effect failed hard (comment post errored), emit:
 ```
-[pylot] outcome="cto-review failed at stage 03: {reason}" status=failed
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage 03: {reason}" status=failed
 ```
 
 ## Output: handoff.md

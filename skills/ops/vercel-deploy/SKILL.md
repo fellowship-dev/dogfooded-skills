@@ -251,7 +251,7 @@ esac
 After the verification command, emit the matching resolved marker as your final full assistant
 line (not from Bash and not inside a fence):
 
-- Verified: [pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done
+- Verified: [pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=success
 - Failed: [pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy failed at stage 05: $PROD_DOMAIN returned HTTP $HTTP_STATUS" status=failed
 
 ## Execution Model
@@ -280,5 +280,5 @@ If any stage fails:
 
 On success, emit:
 ```
-[pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=done
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="vercel-deploy succeeded" project=$PROJECT_NAME domain=$PROD_DOMAIN deploy_url=$DEPLOY_URL status=success
 ```

@@ -1,0 +1,51 @@
+{
+  "id": "setup-playbooks-capture-001",
+  "scenario": "scripted-interactive-capture",
+  "description": "A real scripted conversation previews, confirms, and verifies a section-aware conditional playbook replacement while denial paths preserve state.",
+  "skill": "setup-playbooks",
+  "mode": "interactive",
+  "entrypoint": "capture",
+  "scope": "procedure",
+  "gate": "zero-tolerance",
+  "fixture": {
+    "type": "isolated-playbook",
+    "repo": "eval-fixture/setup-playbooks-capture",
+    "initialContent": "# Capture Fixture\n\n## Deployment\n\nDeploy through staging.\n\n## Security\n\nNever log credentials.\n",
+    "reset": "restore-exact-initial-content-before-and-after"
+  },
+  "thread": {
+    "channel": "setup-playbooks-capture-conversation",
+    "channelType": "conversation",
+    "participants": ["org-member", "org-admin", "pylot"],
+    "messages": [
+      { "from": "org-member", "text": "Capture for eval-fixture/setup-playbooks-capture: staging deploys must use the source_version field." },
+      { "from": "org-member", "text": "Authorize the displayed bounded diff." },
+      { "from": "org-admin", "text": "confirm <code-returned-by-prior-turn>" }
+    ]
+  },
+  "turns": [
+    {
+      "id": "preview-before-write",
+      "setup": "The runner snapshots the initial bytes and intercepts persistence events.",
+      "evalTurn": { "from": "system", "event": "scripted_conversation", "text": "turn=preview" },
+      "expectedBehavior": { "type": "preview", "assertion": "deployment_hunk_displayed_before_mutation", "description": "The bounded diff places source_version under Deployment, the Security section remains byte-identical, and no write occurs before authorization.", "tolerancePct": 0 }
+    },
+    {
+      "id": "confirmed-read-back",
+      "setup": "The admin confirms the code from the authorized proposal.",
+      "evalTurn": { "from": "system", "event": "scripted_conversation", "text": "turn=confirm" },
+      "expectedBehavior": { "type": "terminal-artifact", "assertion": "matching_conditional_replacement_persisted", "description": "The stored complete content equals the proposal, version increments once, digest matches read-back, and the unrelated Security bytes are unchanged.", "tolerancePct": 0 }
+    },
+    {
+      "id": "denial-matrix",
+      "setup": "The runner separately stages rejection, expiry, stale-base, and cross-org variants from the reset fixture.",
+      "evalTurn": { "from": "system", "event": "scripted_conversation", "text": "turn=negative-cases" },
+      "expectedBehavior": { "type": "security", "assertion": "negative_paths_never_mutate_or_disclose", "description": "Rejection and expiry leave bytes unchanged; stale replacement returns conflict and preserves newer content; cross-org and missing reads share the same denial shape; captured artifacts contain no credentials or full replacement in summaries/audits.", "tolerancePct": 0 }
+    }
+  ],
+  "denyList": ["session token", "admin token", "dispatch token", "installation token", "provider credential"],
+  "failureShape": {
+    "observedFailure": "A blind append or unconditional write can misplace facts, overwrite concurrent edits, or leak complete content into confirmation/audit surfaces.",
+    "note": "Must execute as a multi-turn conversation through the central runner."
+  }
+}

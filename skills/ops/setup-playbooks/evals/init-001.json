@@ -1,0 +1,41 @@
+{
+  "id": "setup-playbooks-init-001",
+  "scenario": "isolated-mission-init",
+  "description": "A real mission initializes an isolated repository with no playbook and proves the persisted complete document.",
+  "skill": "setup-playbooks",
+  "mode": "mission",
+  "entrypoint": "init",
+  "scope": "procedure",
+  "gate": "zero-tolerance",
+  "fixture": {
+    "type": "isolated-playbook",
+    "repo": "eval-fixture/setup-playbooks-init",
+    "initialState": "missing",
+    "reset": "delete-fixture-playbook-before-and-after"
+  },
+  "thread": {
+    "channel": "setup-playbooks-init-mission",
+    "channelType": "mission",
+    "participants": ["operator-user", "pylot"],
+    "messages": [{
+      "from": "operator-user",
+      "text": "Run setup-playbooks init for eval-fixture/setup-playbooks-init using discovery: TypeScript on Node.js; deploy through the staging gateway; gateway/ contains the service; run npm test and never bypass staging."
+    }]
+  },
+  "turns": [{
+    "id": "create-and-read-back",
+    "setup": "The fixture lifecycle proves GET returns 404 before execution.",
+    "evalTurn": { "from": "system", "event": "real_mission", "text": "entrypoint=init" },
+    "expectedBehavior": {
+      "type": "terminal-artifact",
+      "assertion": "create_only_complete_playbook_persisted",
+      "description": "The mission uses If-None-Match: *, returns persisted content/version/digest, and read-back matches exactly. Frontmatter contains name, description, and user-invocable:false; headings include Tech Stack, Deployment, Key Directories, and Operational Runbook.",
+      "tolerancePct": 0
+    }
+  }],
+  "denyList": ["session token", "admin token", "dispatch token", "installation token", "provider credential"],
+  "failureShape": {
+    "observedFailure": "A smoke-only instruction could claim initialization without creating or reading back an isolated playbook.",
+    "note": "Must execute in mission mode against the central fixture lifecycle."
+  }
+}

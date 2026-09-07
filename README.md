@@ -59,6 +59,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
+| [`ops/setup-playbooks`](skills/ops/setup-playbooks/) | Safely initialize playbooks and capture durable repo knowledge with conditional writes |
 | [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
 | [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
 | [`ops/weekly-plan`](skills/ops/weekly-plan/) | Interactive weekly planning session for ONE team (CC / pylot chat) — plan-vs-actual scorecard, full linked briefing (last week, in-flight, half-done epics, colleagues' work), then a spec-plan-style interview (one question per turn, recommendation-first), anti-ghost triage, agent-ready epic slices, goals with done-conditions + expiring focus block, budget + hourly auto-pylot tuning. Run once per team, sequentially |

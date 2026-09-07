@@ -103,4 +103,4 @@ Do not enforce title or description character counts as ranking requirements. Tr
 - [ ] Query/page/device/country changes are compared against deploys and migrations.
 - [ ] Critical production assertions are automated in Flowchad/e2e.
 - [ ] Recurring audits dedupe existing issues and attach fresh evidence.
-- [ ] Last verification date and known exceptions are updated in the repo playbook.
+- [ ] Last verification date and known exceptions are captured in the repo playbook by composing `setup-playbooks capture`.

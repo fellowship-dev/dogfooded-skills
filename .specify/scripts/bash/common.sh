@@ -260,15 +260,21 @@ get_feature_paths() {
         has_git_repo="true"
     fi
 
-    # Resolve feature directory.  Priority:
-    #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by /speckit.specify)
-    #   3. Branch-name-based prefix lookup (legacy fallback)
+    # Resolve feature directory. Priority:
+    #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit per-run override)
+    #   2. Branch-name-based prefix lookup in a git repository
+    #   3. .specify/feature.json for non-git workflows
+    # A repository-global feature.json must not redirect work on another branch.
     local feature_dir
     if [[ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]]; then
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
+    elif [[ "$has_git_repo" == "true" ]]; then
+        if ! feature_dir=$(find_feature_dir_by_prefix "$repo_root" "$current_branch"); then
+            echo "ERROR: Failed to resolve feature directory" >&2
+            return 1
+        fi
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
         # Shared, set -e-safe parser: jq -> python3 -> grep/sed. Returns empty on
         # missing/unparseable/unset so we fall through to the branch-prefix lookup.

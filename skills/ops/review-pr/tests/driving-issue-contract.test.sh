@@ -5,6 +5,8 @@ ROOT=$(cd "$(dirname "$0")/../../../.." && pwd)
 REVIEW="$ROOT/skills/ops/review-pr/stages/01-cohesive-review/CONTEXT.md"
 AUTHOR="$ROOT/skills/product/create-compelling-prs/SKILL.md"
 TEMPLATE="$ROOT/skills/shared/follow-up-issue-template.md"
+EXTRACTOR="$ROOT/skills/ops/review-pr/scripts/extract-issue-links.sh"
+REFS_FIXTURE="$ROOT/skills/ops/review-pr/tests/fixtures/refs-driving-pr-body.md"
 
 assert_contains() {
   local file=$1 needle=$2 scenario=$3
@@ -53,6 +55,21 @@ assert_contains "$AUTHOR" 'Every later PR in deliberate multi-PR work gets its o
 assert_contains "$AUTHOR" 'clearly identified as related context' author-related-refs-exception
 assert_contains "$AUTHOR" '../../shared/follow-up-issue-template.md' author-shared-contract
 assert_not_contains "$AUTHOR" 'final phase carries the `Closes`' author-obsolete-final-phase-removed
+
+# Behavioral producer-to-reviewer fixture: Stage 00 must retain both a Refs-only driving link and
+# its complete source line, plus a separately identified related-context link. This is the raw
+# classification Stage 01 consumes to apply its driving-issue Bug rule.
+actual_links=$(bash "$EXTRACTOR" "$REFS_FIXTURE")
+expected_links=$(printf '%s\n' \
+  $'Refs\t162\tRefs #162' \
+  $'Refs\t99\tRelated context only: Refs #99')
+[ "$actual_links" = "$expected_links" ] || {
+  printf 'FAIL refs-driving-fixture\nexpected:\n%s\nactual:\n%s\n' \
+    "$expected_links" "$actual_links" >&2
+  exit 1
+}
+printf 'PASS refs-driving-fixture\n'
+assert_contains "$REVIEW" 'driving issue only with `Refs #N`' refs-fixture-reviewer-consumer
 
 # Both consumer references must resolve to the one canonical file.
 for consumer in "$REVIEW" "$AUTHOR"; do

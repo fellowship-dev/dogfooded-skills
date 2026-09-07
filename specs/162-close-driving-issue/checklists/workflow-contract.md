@@ -27,6 +27,8 @@
 ## Coverage
 
 - [x] Are both `Refs`-only and partially delivered driving-issue review flows specified? [Spec §US1]
+- [x] Is the Stage 00 data contract sufficient to distinguish driving and related-only `Refs` links?
+  [Spec §FR-006]
 - [x] Is deliberate multi-PR author decomposition specified independently of review behavior? [Spec §US2]
 - [x] Are local, live-review, and post-merge evidence classes represented? [Spec §SC-002–SC-004]
 

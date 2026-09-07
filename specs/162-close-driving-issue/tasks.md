@@ -43,6 +43,14 @@
 - [X] T016 Run every repository test entry point declared in `/workspace/.github/workflows/tests.yml` and fix regressions in the files changed by this feature
 - [ ] T017 Exercise a real partial-delivery PR review and record the finish-or-follow-up finding URL in `/workspace/specs/162-close-driving-issue/quickstart.md`
 - [ ] T018 After merge and gateway synchronization, record the gateway catalog version in the closing PR referenced by `/workspace/specs/162-close-driving-issue/quickstart.md`
+- [X] T019 [US1] Make Stage 00 extract closing and `Refs` links with complete source-line context in
+  `/workspace/skills/ops/review-pr/scripts/extract-issue-links.sh` and document the handoff contract
+  in `/workspace/skills/ops/review-pr/stages/00-context/CONTEXT.md`
+- [X] T020 [US1] Exercise the Stage 00 producer contract with a `Refs`-only driving issue and an
+  explicitly related `Refs` link using
+  `/workspace/skills/ops/review-pr/tests/fixtures/refs-driving-pr-body.md`
+- [X] T021 Remove unrelated Speckit bootstrap commands, scripts, and templates from this branch
+- [X] T022 Verify whitespace over the merge-base range rather than the worktree-only diff
 
 ## Dependencies
 

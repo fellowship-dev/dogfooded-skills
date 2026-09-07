@@ -33,7 +33,9 @@ shippability failure. No shared follow-up issue contract or focused regression t
 
 ## Delivery receipts
 
-- Live partial-delivery review URL: pending — GitHub CLI access is unavailable in the implementation
-  environment; the focused fixture exercise covers the same decision branches locally.
+- Live partial-delivery review URL: pending — no PR exists yet, so a real `review-pr` run cannot be
+  performed during this pre-PR correction pass. The local fixture proves Stage 00 passes a
+  `Refs`-only driving link to Stage 01; it does not substitute for evidence of an actual reviewer
+  finding.
 - Post-merge gateway catalog version: pending — this receipt can only be captured after merge and
   synchronization.

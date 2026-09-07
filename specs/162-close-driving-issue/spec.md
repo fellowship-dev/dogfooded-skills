@@ -37,6 +37,9 @@ As an agent, I can use one shared contract for follow-up issues regardless of wh
 - **FR-003**: Author guidance MUST require exactly one driving issue per PR, always linked with `Closes`, and decompose multi-PR work into one issue per PR.
 - **FR-004**: Both skills MUST reference one follow-up template containing Origin, Remaining acceptance criteria, and Out of scope sections, with verbatim remaining criteria and inherited workflow labels.
 - **FR-005**: No skill guidance may recommend `Refs` for a driving issue; valid related-only usage MUST be explicitly identified as such.
+- **FR-006**: Stage 00 MUST pass every closing and `Refs` link, including its PR-body source-line
+  context, to Stage 01 so the reviewer can distinguish a `Refs`-only driving issue from related
+  context.
 
 ## Success Criteria
 
@@ -44,6 +47,8 @@ As an agent, I can use one shared contract for follow-up issues regardless of wh
 - **SC-002**: All skill corpus and lint checks pass after the guidance change.
 - **SC-003**: One real review of a PR with an unmet criterion produces the new finish-or-follow-up wording and is linked as evidence.
 - **SC-004**: The closing PR records the gateway catalog version synced after merge.
+- **SC-005**: An executable PR-body fixture proves that Stage 00 preserves both a `Refs`-only
+  driving link and a separately identified related-context link for Stage 01.
 
 ## Assumptions
 

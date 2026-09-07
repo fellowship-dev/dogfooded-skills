@@ -141,22 +141,35 @@ Append to the handoff, after the PR metadata section:
   - {each rubric line that fired, or "no HIGH triggers; small template-following diff" for LOW}
 ```
 
-### Step 3: Closes vs Refs raw data (for the mandatory check in stage 01)
+### Step 4: Closes vs Refs raw data (for the mandatory check in stage 01)
 
 ```bash
-gh pr view $PR --repo $REPO --json body --jq '.body' | grep -oE '(Closes|Fixes|Resolves) #[0-9]+' | grep -oE '[0-9]+'
+PR_BODY=$(gh pr view "$PR" --repo "$REPO" --json body --jq '.body')
+ISSUE_LINKS=$(printf '%s\n' "$PR_BODY" \
+  | bash skills/ops/review-pr/scripts/extract-issue-links.sh)
+printf '%s\n' "$ISSUE_LINKS"
 ```
 
-For each linked issue number found with a `Closes`/`Fixes`/`Resolves` keyword, capture the
-TEXT of its acceptance-criteria items — both `- [ ]` and `- [x]`; checkbox state is
-auto-generated and meaningless (pylot#2583) — so stage 01 can assess them against the diff
-without re-fetching:
+The extractor emits `keyword<TAB>issue_number<TAB>complete source line`. Preserve every row,
+including `Refs`, so stage 01 can identify a `Refs`-only driving issue while distinguishing a link
+whose source line explicitly calls it related context. Do not infer that every `Refs` row is the
+driving issue; the full PR body and source-line context are part of the reviewer handoff.
+
+For each distinct linked issue number, capture the TEXT of its acceptance-criteria items — both
+`- [ ]` and `- [x]`; checkbox state is auto-generated and meaningless (pylot#2583) — so stage 01
+can assess them against the diff without re-fetching:
 
 ```bash
-gh issue view ISSUE_N --repo $REPO --json body --jq '.body' | grep -E '^\s*- \[[ x]\]' || echo "NO_AC_ITEMS"
+printf '%s\n' "$ISSUE_LINKS" | cut -f2 | sort -u | while IFS= read -r ISSUE_N; do
+  printf 'ISSUE_%s\n' "$ISSUE_N"
+  gh issue view "$ISSUE_N" --repo "$REPO" --json body --jq '.body' \
+    | grep -E '^\s*- \[[ x]\]' || echo "NO_AC_ITEMS"
+done
 ```
 
-### Step 4: Write handoff
+If `ISSUE_LINKS` is empty, record `No Closes/Fixes/Resolves/Refs keywords found`.
+
+### Step 5: Write handoff
 
 ## Output: handoff.md
 
@@ -197,8 +210,10 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 ```
 
 ## Closes vs Refs — Raw Data
-{for each linked issue: ISSUE_N → its acceptance-criteria item lines verbatim, or NO_AC_ITEMS}
-{or "No Closes/Fixes/Resolves keywords found"}
+{each extractor row: keyword → ISSUE_N → complete PR-body source line}
+{then, for each distinct linked issue: ISSUE_N → its acceptance-criteria item lines verbatim,
+or NO_AC_ITEMS}
+{or "No Closes/Fixes/Resolves/Refs keywords found"}
 ```
 
 ## Success criteria

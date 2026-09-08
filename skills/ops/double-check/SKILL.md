@@ -135,15 +135,23 @@ Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not ru
   `[pylot] outcome="double-check blocked: {reason}" status=blocked` (a deliberate stop — `blocked`
   is its own terminal state, not a failure)
 
-## Rework Follow-up Mode (fellowship-dev/pylot `rework-on-needs-work`)
+## Rework Follow-up Mode
 
-When dispatched via the fellowship-dev/pylot `rework-on-needs-work` automation
-(task reads "CTO REWORK follow-up: PRODUCE the fix, do not just re-judge"),
-this is a PRODUCE task, not a re-judge — do the following BEFORE running the
-stages above (this content used to live in the automation's `context_template`;
-fellowship-dev/pylot#3447 trimmed that to facts-only, so this is now the only
-copy — keep it in sync with the live rule via `pylot automations get
-rework-on-needs-work`):
+Whether — and how — a "produce the fix" follow-up dispatch exists at all is
+**repo policy, not protocol**: some orgs wire a CTO-rework automation on top
+of this skill, some don't. Read the repo playbook (`GET
+/admin/playbooks/<org>/<repo>`) for a rework-dispatch section; if it names a
+contract, it looks like this:
+
+> A gate rule dispatches back into this skill when a prior review left
+> `needs-work`, with a task string identifying it as a PRODUCE follow-up
+> (not a re-judge). The playbook names the exact trigger string/label to
+> match and the automation's identity — treat those as resolved values below,
+> not literal text to hardcode here.
+
+When dispatched under that contract, do the following BEFORE running the
+stages above (the playbook is the source of truth for the trigger and rule
+name — keep this protocol in sync with it, don't let the two drift):
 
 0. Scan the PR's comments first. If a prior attempt already posted a
    `⚠️ NEEDS HUMAN` marker, or a previous rework already tried and failed on
@@ -161,6 +169,9 @@ rework-on-needs-work`):
 3. Only after the items are actually addressed: `gh pr edit <number> --repo
    <repo> --remove-label "double-checked,needs-work"`, then run the stages
    above fresh so the label chain re-fires.
+
+> **No rework-dispatch section in the playbook?** This mode does not apply —
+> run the stages above as a normal review/fix/post pass.
 
 ## Hard Rules
 

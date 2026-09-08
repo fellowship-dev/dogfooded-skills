@@ -397,6 +397,17 @@ Per-repo coverage: filter `only_repos`/`skip_repos` from list output.
 
 ### fellowship-dev/pylot admin procedures (dispatched by automations)
 
+> **Scoped placement-doctrine exception:** this skill operates the Pylot
+> gateway itself (see the file description above), so the org name, endpoint
+> shapes, and repo paths below are the skill's own subject matter, not
+> another repo's policy leaking in — unlike `create-compelling-prs` or
+> `double-check`, there is no playbook indirection to fall back to for "how
+> do I operate the Pylot gateway." This file already carried extensive
+> pylot-specific content before this section (dispatch, secrets, assets,
+> automations commands above). Recorded here per review finding R1 on PR
+> #170 so the exception doesn't re-trip as an unresolved doctrine violation
+> on future passes.
+
 These four fellowship-dev/pylot automations dispatch to `pylot.lead` with no
 `/skill-name` in their task — the procedure below IS the instruction; it used
 to live only in each rule's `context_template` (fellowship-dev/pylot#3447

@@ -395,6 +395,59 @@ pylot automations get <name>     # single rule detail
 
 Per-repo coverage: filter `only_repos`/`skip_repos` from list output.
 
+### fellowship-dev/pylot admin procedures (dispatched by automations)
+
+These four fellowship-dev/pylot automations dispatch to `pylot.lead` with no
+`/skill-name` in their task — the procedure below IS the instruction; it used
+to live only in each rule's `context_template` (fellowship-dev/pylot#3447
+trimmed those to facts-only, so this is now the only copy — keep it in sync
+with the live rule via `pylot automations get <name>`, don't let it drift).
+
+**`publish-cli-on-main-version-bump`** — fires on every push to
+`fellowship-dev/pylot@main` (not file-filtered: GitHub's push payload commits
+array caps at 20 entries, and merge-commit promotions routinely exceed that,
+so a files filter risks silently missing a version bump).
+0. Read the version main now carries — ref-explicit, don't rely on the
+   container's own checkout: `git fetch origin <sha> && git show
+   <sha>:modules/cli/package.json | jq -r .version` → `CLI_VERSION`. Read what
+   npm actually serves: `npm view pylot-cli version` → `NPM_VERSION`. If they
+   match, nothing to publish: `PUT /admin/config/cli_publish_last` with
+   `{"sha","cli_version","npm_version","build_id":null,"phase":"skipped","verdict":"unchanged","checked_at"}`
+   and stop.
+1. Mismatch: `POST $PYLOT_API/admin/publish-cli` (Bearer `$PYLOT_DISPATCH_TOKEN`) — capture `build_id`.
+2. Poll `GET /admin/build-worker/<build_id>` every 30s (max 20 min) to a terminal phase.
+3. Re-read `npm view pylot-cli version` (refresh — don't reuse step 0's).
+4. Verdict: terminal phase not `SUCCEEDED` → `failed`. Else `NPM_VERSION == CLI_VERSION` → `ok`. Else → `drift`.
+5. Always `PUT /admin/config/cli_publish_last` with the full record — every branch above ends here, never exit after step 1/2 without writing it.
+6. On `drift`/`failed`: also comment on the repo with the log URL `$PYLOT_API/admin/deploy/logs/<build_id>` — nothing else reads `cli_publish_last` automatically, so the comment is the only alert.
+
+**`rebuild-images-on-cli-push`** — fires when `modules/cli/src/**` or its
+package files push to `main` (narrowed from all of `modules/cli/**` so a
+README-only push doesn't rebuild the fleet).
+1. `GET /devboxes/projects` — extract every `repo` field. Empty/failed → abort, don't call batch-rebuild with an empty list.
+2. `POST /admin/build-worker/batch` with `{"repos": [<all repos>]}` — capture the `builds` array (`repo` + `build_id` per entry).
+3. Poll each `GET /admin/build-worker/<build_id>` every 60s (max 30 min per build) to terminal.
+4. Log a fleet report: per repo, built+promoted / skipped / FAILED (name failures with their `build_id` + error).
+5. Log a verification entry: total attempted / succeeded / failed with final statuses — no silent completion.
+
+**`chat-worker-image-on-push`** — fires when gateway Lambda source
+(`gateway/lambda/**`, `gateway/shared/**`, `gateway/chat.mts`,
+`gateway/gateway.mjs`, `harness-versions.json`) pushes to `main`.
+1. `POST $PYLOT_API/admin/build-chat-worker` (Bearer `$PYLOT_DISPATCH_TOKEN`) — capture `build_id`.
+2. Poll `GET /admin/build-worker/<build_id>` every 30s (max 20 min) to terminal.
+3. Log a verification entry: `build_id` + final status — no silent completion.
+4. On `FAILED`: comment on fellowship-dev/pylot with the log URL `$PYLOT_API/admin/deploy/logs/<build_id>`.
+5. No Lambda repoint here — the next `POST /admin/deploy` picks up the new image.
+
+**`release-gate-on-pr-to-main`** — fires when a PR opens/updates against
+`main` in fellowship-dev/pylot. Runs the pre-merge corpus gate against the
+computed merge commit, not the PR head, so the gate reflects what will
+actually land.
+0. Strip a stale label (idempotent): `gh pr edit <number> --repo <repo> --remove-label release-gate-green 2>/dev/null || true`.
+1. `MERGE_SHA=$(gh pr view <number> --repo <repo> --json mergeCommitSha -q .mergeCommitSha)`. Empty/`null` → comment asking the author to resolve conflicts and push again, exit 0 (not a failure — GitHub hasn't computed a merge commit yet).
+2. `git fetch origin "$MERGE_SHA" && git checkout "$MERGE_SHA" && bash scripts/ci-test-gate.sh`.
+3. Pass → `gh pr edit <number> --repo <repo> --add-label release-gate-green`. Fail → comment with the failure and exit 1 (re-push retriggers).
+
 ## Slack Channel Routing
 
 Bind Slack channels to teams for message routing. Many channels can bind to the same team (many-to-one). CLI is the primary interface — no UI equivalent.

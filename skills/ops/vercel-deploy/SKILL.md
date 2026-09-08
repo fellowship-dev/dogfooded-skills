@@ -24,7 +24,7 @@ All inputs are passed as `KEY=value` pairs in the skill invocation or task descr
 - `VERCEL_ORG_ID` — Organization/team ID (starts with `team_`)
 - `VERCEL_PROJECT_ID` — Project ID (starts with `prj_`)
 
-These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), not from secrets. The operator reads the playbook and passes them when invoking this skill.
+These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), not from secrets. The operator reads the playbook and passes them when invoking this skill. Deploy only through this skill's CLI flow — never rely on Vercel's Git auto-deploy integration; it bypasses the playbook-sourced inputs above and the checks in Forbidden Actions.
 
 ## Optional Inputs
 

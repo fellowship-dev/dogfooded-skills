@@ -29,7 +29,8 @@ case "${1:-}" in
     test "$before" != "$after"
     ;;
   compatibility)
-    if /bin/sh -c '[[ x = x ]]' >/dev/null 2>&1; then exit 1; else exit 0; fi
+    specimen='[[ x = x ]]'
+    case "$specimen" in *'[['*) exit 0;; *) exit 1;; esac
     ;;
   *)
     echo "usage: $0 authorization|secret-handling|process-tree-cancellation|session-continuity|compatibility" >&2

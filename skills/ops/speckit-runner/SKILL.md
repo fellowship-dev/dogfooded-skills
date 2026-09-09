@@ -173,7 +173,7 @@ Step C receipt.
 Queue the prompt, then poll per **Step P**: run `bash ~/.claude/skills/speckit-runner/poll-worker.sh "$WID" "$TURN_SEQ"`, re-running it while `POLL_RESULT=running`.
 
 ```bash
-PROMPT=$(python3 -c "import json; print(json.dumps('Continue on the feature branch from the previous phase.\nRun: /speckit-plan $0\nRead the generated plan and verify the approach.\nRun: /speckit-tasks $0\nRead the generated tasks and verify they are concrete.\n\nDerive the durable invariant matrix described by skills/ops/speckit-runner/references/invariant-matrix.md from issue, spec, tasks, and trusted repository evidence. Inspect every discovery class, emit every source-backed boundary and no row for an unsupported class, and persist specs/<feature>/invariant-matrix.tsv with stable IDs and initial states. Commit and push the completed planning checkpoint so a later invocation can resume it.\nWhen done: emit [pylot] phase=plan status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by MATRIX RECEIPT path=<path> repository=$REPO checkpoint=\$(git rev-parse HEAD)'))")
+PROMPT=$(python3 -c "import json; print(json.dumps('Continue on the feature branch from the previous phase.\nRun: /speckit-plan $0\nRead the generated plan and verify the approach.\nRun: /speckit-tasks $0\nRead the generated tasks and verify they are concrete.\n\nDerive the durable invariant matrix described by ~/.claude/skills/speckit-runner/references/invariant-matrix.md from issue, spec, tasks, and trusted repository evidence. Inspect every discovery class, emit every source-backed boundary and no row for an unsupported class, and persist specs/<feature>/invariant-matrix.tsv with stable IDs and initial states. Commit and push the completed planning checkpoint so a later invocation can resume it.\nWhen done: emit [pylot] phase=plan status=done branch=\$(git branch --show-current) head=\$(git rev-parse HEAD), followed by MATRIX RECEIPT path=<path> repository=$REPO checkpoint=\$(git rev-parse HEAD)'))")
 PROMPT_RESP=$(curl -s --max-time 30 -X POST \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
   -H "Content-Type: application/json" \
@@ -329,7 +329,7 @@ if [ -n "$RWID" ]; then
   MATRIX_FILE=$(mktemp)
   printf '%s\n' "$REVIEW_OUT" >"$REVIEW_FILE"
   printf '%s\n' "$SUPERVISOR_MATRIX" >"$MATRIX_FILE"
-  if bash skills/ops/speckit-runner/validate-review-output.sh "$MATRIX_FILE" "$REVIEW_FILE"; then
+  if bash ~/.claude/skills/speckit-runner/validate-review-output.sh "$MATRIX_FILE" "$REVIEW_FILE"; then
     FIRST_REVIEW_STATUS="available"
   else
     FIRST_REVIEW_STATUS="unavailable"

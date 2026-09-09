@@ -8,7 +8,7 @@ SKILL="$ROOT/SKILL.md"
 REVIEW_VALIDATOR="$ROOT/validate-review-output.sh"
 MATRIX_VALIDATOR="$ROOT/validate-invariant-matrix.sh"
 ADVERSARIAL="$FIXTURES/adversarial-fixture.sh"
-FEATURE_MATRIX="$ROOT/../../../specs/134-invariant-matrix/invariant-matrix.tsv"
+FEATURE_MATRIX="$FIXTURES/feature-matrix.tsv"
 EXPECTED_HEADER='id	class	provenance	success_behavior	negative_behavior	evidence_method	expected_check	applicability	state	repository	checkpoint	receipt	finding_ids'
 
 fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
@@ -106,7 +106,7 @@ pass 'reviewer output completeness enforced at runtime'
 
 ROUTING_REPO="$TMP/routing-repo"
 mkdir -p "$ROUTING_REPO/.specify/scripts/bash" "$ROUTING_REPO/specs/134-stale" "$ROUTING_REPO/specs/999-current"
-cp "$ROOT/../../../.specify/scripts/bash/common.sh" "$ROUTING_REPO/.specify/scripts/bash/common.sh"
+cp "$FIXTURES/specify-scripts/common.sh" "$ROUTING_REPO/.specify/scripts/bash/common.sh"
 printf '%s\n' '{"feature_directory":"specs/134-stale"}' >"$ROUTING_REPO/.specify/feature.json"
 git -C "$ROUTING_REPO" init -q -b 999-current
 routing_output=$(cd "$ROUTING_REPO" && SPECIFY_FEATURE=999-current bash -c 'source .specify/scripts/bash/common.sh; get_feature_paths')

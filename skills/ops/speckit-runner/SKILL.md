@@ -98,6 +98,26 @@ echo "[speckit-runner] worker spawned: $WID"
 
 This skill ships a **`poll-worker.sh`** helper next to this file — the boot-sync copies the whole skill dir, so it lands at **`~/.claude/skills/speckit-runner/poll-worker.sh`** on the operator. It is the **only** way you poll a worker (see Step P) — never hand-roll a poll loop inline, never wait for a notification.
 
+The same boot-sync also ships two validator executables used by the invariant-matrix
+flow, both landing at `~/.claude/skills/speckit-runner/<name>.sh`:
+
+- **`validate-invariant-matrix.sh MATRIX`** — the **schema gate**. Checks a single
+  TSV matrix (header, 13 columns, stable `INV-NNN` IDs, allowed `class`/`state`
+  values, provenance/evidence completeness, and passed/failed rows carrying a real
+  `repository`/`checkpoint`/`receipt`). Used by Step 4.5's supervisor reconciliation
+  and by the test suite to validate both the canonical schema fixture and the
+  persisted planning matrix.
+- **`validate-review-output.sh MATRIX REVIEW`** — the **coverage gate**, run after the
+  schema gate passes. Checks the independent reviewer's output against a matrix that
+  already satisfies the schema gate: every applicable row must get exactly one
+  `ROW INV-NNN verdict=...` line (or a `FINDING` challenging it), coverage must be
+  complete, and malformed matrices are rejected outright. Used in Step 5 to decide
+  `FIRST_REVIEW_STATUS=available` vs `unavailable`.
+
+Together they form a two-stage gate: a matrix must pass the schema gate before its
+coverage can be validated against reviewer output — a structurally invalid matrix
+never reaches the coverage check.
+
 ---
 
 ## Step P: Poll-to-idle (run the helper, loop while RUNNING)

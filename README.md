@@ -100,7 +100,7 @@ Each skill lives at `skills/<namespace>/<skill-name>/SKILL.md`.
 
 ## Contributing
 
-`specs/<number>-<slug>/` is the authoritative store for active implementation specs. `docs/plans/` contains non-normative delivery records and `docs/evidence/` contains immutable verification receipts; executable skill behavior remains owned by `skills/`.
+`specs/<number>-<slug>/` is the authoritative store for active implementation specs. `docs/plans/` contains non-normative delivery records and `docs/evidence/` contains immutable verification receipts; executable skill behavior remains owned by `skills/`. `.specify/` holds vendored Spec-Kit scaffolding (scripts, templates) consumed by the `speckit-runner` and `setup-speckit` skills — it is tooling, not a spec store.
 
 See the [`meta/skill-builder`](skills/meta/skill-builder/) skill for the complete authoring standard.
 

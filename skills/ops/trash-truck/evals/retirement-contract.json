@@ -1,0 +1,83 @@
+{
+  "ranking_cases": [
+    {
+      "name": "material candidates rank by risk-adjusted expected payoff",
+      "candidates": [
+        {"fingerprint": "acme/app:legacy-export", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 4, "effort": 1, "risk": 1, "corroborated": true},
+        {"fingerprint": "acme/app:tiny-helper", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 1, "effort": 0, "risk": 0, "corroborated": true},
+        {"fingerprint": "acme/app:telemetry-gap", "checks": ["boundary", "code", "history", "consumers", "recurrence"], "failed_decisive_source": true, "payoff": 4, "effort": 0, "risk": 0, "corroborated": true},
+        {"fingerprint": "acme/app:risky-removal", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 2, "effort": 4, "risk": 4, "corroborated": true},
+        {"fingerprint": "acme/app:unused-admin", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 3, "effort": 1, "risk": 0, "corroborated": true},
+        {"fingerprint": "acme/app:seasonal-billing", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "positive_use": true, "payoff": 4, "effort": 1, "risk": 1, "corroborated": true}
+      ],
+      "expected": ["acme/app:legacy-export", "acme/app:unused-admin"]
+    },
+    {
+      "name": "ranking returns fewer than three without padding",
+      "candidates": [
+        {"fingerprint": "acme/app:old-worker", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "payoff": 3, "effort": 1, "risk": 1, "corroborated": true}
+      ],
+      "expected": ["acme/app:old-worker"]
+    },
+    {
+      "name": "no eligible candidate is a healthy no-change result",
+      "candidates": [
+        {"fingerprint": "acme/app:active-hook", "checks": ["boundary", "code", "history", "real_world", "consumers", "recurrence"], "positive_use": true, "payoff": 3, "effort": 1, "risk": 1, "corroborated": true}
+      ],
+      "expected": []
+    }
+  ],
+  "evidence_cases": [
+    {
+      "name": "failed telemetry remains unknown",
+      "source_status": "failed",
+      "claimed_zero_usage": false,
+      "eligible_from_static_only": false
+    },
+    {
+      "name": "positive deployed usage blocks retirement",
+      "source_status": "observed",
+      "positive_usage": true,
+      "eligible": false
+    }
+  ],
+  "mode_cases": [
+    {"name": "scheduled report-only mode", "mode": "scheduled", "candidate": null, "persist": null, "expected": "scheduled"},
+    {"name": "scheduled persistence mode", "mode": "scheduled", "candidate": null, "persist": "github", "expected": "scheduled"},
+    {"name": "interactive discovery mode", "mode": "interactive", "candidate": null, "persist": null, "expected": "interactive"},
+    {"name": "interactive named target mode", "mode": "interactive", "candidate": "legacy export", "persist": null, "expected": "interactive-target"},
+    {"name": "scheduled target is invalid", "mode": "scheduled", "candidate": "legacy export", "persist": null, "error": true},
+    {"name": "interactive persistence is invalid", "mode": "interactive", "candidate": null, "persist": "github", "error": true}
+  ],
+  "approval_cases": [
+    {"name": "exact selection remains valid", "selected": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123"}, "current": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123", "eligible": true, "decisive_sources_current": true, "invalidators": []}, "expected": true},
+    {"name": "advanced evidence cutoff preserves selection", "selected": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123"}, "current": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-05", "repo_head": "abc123", "deployed_revision": "abc123", "eligible": true, "decisive_sources_current": true, "invalidators": []}, "expected": true},
+    {"name": "stale decisive source invalidates selection", "selected": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123"}, "current": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-05", "repo_head": "abc123", "deployed_revision": "abc123", "eligible": true, "decisive_sources_current": false, "invalidators": []}, "expected": false},
+    {"name": "expanded manifest invalidates selection", "selected": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123"}, "current": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "bbb", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123", "eligible": true, "decisive_sources_current": true, "invalidators": ["schema added"]}, "expected": false},
+    {"name": "changed deployed revision invalidates selection", "selected": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123"}, "current": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "def456", "eligible": true, "decisive_sources_current": true, "invalidators": []}, "expected": false},
+    {"name": "lost eligibility invalidates selection", "selected": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123"}, "current": {"fingerprint": "acme/app:legacy-export", "manifest_digest": "aaa", "evidence_cutoff": "2026-09-01", "repo_head": "abc123", "deployed_revision": "abc123", "eligible": false, "decisive_sources_current": true, "invalidators": []}, "expected": false}
+  ],
+  "persistence_cases": [
+    {"name": "persistence was not requested", "persist_requested": false, "candidate_count": 2, "issue_exists": false, "material_change": true, "duplicate_count": 0, "write_authorized": false, "serialized": false, "expected": "not-requested"},
+    {"name": "first no-candidate run needs no write", "persist_requested": true, "candidate_count": 0, "issue_exists": false, "material_change": false, "duplicate_count": 0, "write_authorized": false, "serialized": false, "expected": "not-needed"},
+    {"name": "unchanged existing issue needs no write", "persist_requested": true, "candidate_count": 2, "issue_exists": true, "material_change": false, "duplicate_count": 1, "write_authorized": true, "serialized": true, "expected": "not-needed"},
+    {"name": "serialized authorized first write creates", "persist_requested": true, "candidate_count": 2, "issue_exists": false, "material_change": true, "duplicate_count": 0, "write_authorized": true, "serialized": true, "expected": "create"},
+    {"name": "existing canonical issue updates", "persist_requested": true, "candidate_count": 1, "issue_exists": true, "material_change": true, "duplicate_count": 1, "write_authorized": true, "serialized": true, "expected": "update"},
+    {"name": "missing serialization blocks write", "persist_requested": true, "candidate_count": 2, "issue_exists": false, "material_change": true, "duplicate_count": 0, "write_authorized": true, "serialized": false, "expected": "blocked"},
+    {"name": "duplicate issues block all writes", "persist_requested": true, "candidate_count": 2, "issue_exists": true, "material_change": true, "duplicate_count": 2, "write_authorized": true, "serialized": true, "expected": "blocked"},
+    {"name": "unchanged duplicate issues still block", "persist_requested": true, "candidate_count": 2, "issue_exists": true, "material_change": false, "duplicate_count": 2, "write_authorized": true, "serialized": true, "expected": "blocked"}
+  ],
+  "digest_case": {
+    "repository": "acme/app",
+    "repo_head": "abc123",
+    "deployed_revision": "abc123",
+    "evidence_cutoff": "2026-09-01/2026-09-05",
+    "run_timestamp": "2026-09-05T12:00:00Z",
+    "write_status": "pending",
+    "candidates": [{"fingerprint": "acme/app:legacy-export", "state": "proposed", "confidence": 0.9, "payoff": 4, "effort": 1, "risk": 1, "score": 3.25, "manifest_digest": "aaa", "exclusions": [], "unresolved_gaps": []}],
+    "evidence": [
+      {"surface": "runtime", "status": "observed", "query": "export requests", "query_scope": "legacy export entrypoint invocations", "window": "2026-06-01/2026-09-01", "collected_at": "2026-09-05T12:00:00Z", "environment": "production", "identity_denominator": "requests", "revision": "abc123", "receipt": "private-log-query", "finding": "zero invocations", "recurrence_adequate": true, "freshness_status": "current", "fresh_until": "2026-09-08"},
+      {"surface": "history", "status": "observed", "query": "merged successor changes", "query_scope": "successor and deprecation decisions", "window": "repository lifetime", "collected_at": "2026-09-05T12:00:00Z", "environment": "repository", "identity_denominator": "commits and pull requests", "revision": "abc123", "receipt": "private-history-query", "finding": "successor merged", "recurrence_adequate": true, "freshness_status": "current", "fresh_until": "next repository change"}
+    ]
+  }
+}

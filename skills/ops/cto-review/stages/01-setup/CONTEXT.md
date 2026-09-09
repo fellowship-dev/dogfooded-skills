@@ -125,9 +125,10 @@ Record in the handoff:
 - `last_comment_author: {login | none}`
 - Full list of all comment bodies (stage 02 reads them to identify unresolved blockers)
 
-5.3. **Resolve the pipeline lane (#2996)** — one variable, read straight off the label snapshot
-from 5.2. It changes the staging-evidence gate (5.5) and the merge bar (stage 03), and nothing
-else. It never changes the review's depth or standards.
+5.3. **Pipeline lane labels are LEGACY (owner ruling 2026-09-06).** `lane:fast`/`lane:staging`
+labels may still appear on older PRs; record them in the handoff as `lane: {fast | staging |
+none}` for context, but they no longer change the staging-evidence gate, the merge bar, or
+anything else. Never wait on a lane label and never emit one.
 
 ```bash
 LANE="none"
@@ -135,57 +136,34 @@ case ",$(echo "$CURRENT_LABELS" | tr -d ' ')," in
   *,lane:fast,*)    LANE="fast" ;;
   *,lane:staging,*) LANE="staging" ;;
 esac
-echo "[cto-review] lane: $LANE"
+echo "[cto-review] lane (legacy, informational only): $LANE"
 ```
 
-Record `lane: {fast | staging | none}` in the handoff.
+5.5. **Staging evidence gate — RELEASE TRAINS ONLY (owner ruling 2026-09-06, pylot#3389).**
+Per-PR staging testing is retired: ordinary PRs (base = `develop` or any non-default branch)
+NEVER require staging evidence — test-in-staging deliberately does not run for them, and a
+missing-evidence short-circuit on such a PR is a bug, not a gate. The mandatory staging step
+lives on the **release train**: a PR whose base branch is the repo default branch (`main`/
+`master`, i.e. a promote/release PR) must carry fresh staging evidence at its exact head
+before merge. Only fires for open PRs; merged/closed PRs skip this gate entirely.
 
-`none` means the PR predates #2996 or its lane label never landed — treat it exactly as
-`staging`. Fast is opt-in and requires the explicit `lane:fast` label; there is no inference.
-
-5.5. **Staging evidence gate** — check BEFORE proceeding to the expensive diff/full-review path.
-Only fires for open PRs; merged/closed PRs skip this gate entirely.
-
-Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3 and `LANE` set
-in step 5.3):
+Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3):
 
 ```bash
 # Gate only fires for open PRs — merged/closed PRs skip evidence check
 if [ "${MERGE_STATE:-open}" = "open" ]; then
-  # Collect changed filenames
+  # Collect changed filenames (stage-02 handoff still wants them)
   CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
 
-  # Detect if this PR touches infra/backend paths that require staging evidence.
-  # *.d.mts files are TypeScript type-declaration outputs — they never affect deployed runtime
-  # and are excluded from the necessity trigger (pylot#1861 fix 3).
+  # Staging evidence is required ONLY for release-train PRs: base = default branch.
+  BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "")
+  DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
   NEEDS_EVIDENCE=false
-  while IFS= read -r f; do
-    case "$f" in
-      *.d.mts) ;;  # type-declaration files: exclude from necessity trigger
-      infra/*|gateway/*|crew.mjs) NEEDS_EVIDENCE=true; break ;;
-      */migrations/*.sql) NEEDS_EVIDENCE=true; break ;;
-    esac
-  done <<< "$CHANGED_FILES"
-
-  # ── FAST-LANE WAIVER (#2996) ────────────────────────────────────────────────
-  # WHY THIS IS NOT A HOLE: this gate's `gateway/*` trigger is a whole-directory
-  # approximation of "deployable surface". The #2996 lane classifier answers the same
-  # question with a precise path list (infra, CI, migrations, gateway/modules/auth/**,
-  # gateway/shared/route-capability.mts, secrets, Dockerfile*, harness-versions.json) —
-  # anything it puts on lane:fast provably touches none of them. Without this waiver the
-  # fast lane is dead on arrival: nearly every pylot PR touches gateway/*, so every fast-lane
-  # PR would arrive here, find no staging evidence (test-in-staging never ran, by design),
-  # and get bounced to needs-work — a rework loop that can never terminate.
-  # It is a WAIVER OF THE EVIDENCE REQUIREMENT ONLY. The #2918 owner gate, the visual-evidence
-  # gate, CI, the review findings and the in-deploy full corpus gate are all untouched.
-  if [ "$NEEDS_EVIDENCE" = "true" ] && [ "${LANE:-none}" = "fast" ]; then
-    NEEDS_EVIDENCE=false
-    echo "[cto-review] staging evidence gate: WAIVED — lane:fast (#2996); the lane classifier already proved the diff touches no infra/CI/migration/auth/secrets/Dockerfile/harness path, and test-in-staging is not expected to have run"
-  fi
-
-  # Record waiver rationale when the gate is not triggered (pylot#1861 fix 3).
-  if [ "$NEEDS_EVIDENCE" = "false" ] && [ -n "$CHANGED_FILES" ]; then
-    echo "[cto-review] staging evidence gate: WAIVED — no infra/gateway/migration paths in diff — staging not required"
+  if [ -n "$BASE_BRANCH" ] && [ "$BASE_BRANCH" = "$DEFAULT_BRANCH" ]; then
+    NEEDS_EVIDENCE=true
+    echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH is the default branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+  else
+    echo "[cto-review] staging evidence gate: NOT REQUIRED — base=$BASE_BRANCH is not the default branch; per-PR staging retired by owner ruling 2026-09-06"
   fi
 
   if [ "$NEEDS_EVIDENCE" = "true" ]; then
@@ -591,17 +569,7 @@ The notice text MUST still name the self-serve path, and MUST NOT contain a lite
 Evidence` markdown heading at column 0 (the comment scan would otherwise read the notice back as
 evidence on the next run and grade its own homework).
 
-6. Extract the LAST `review-state v1` block from the PR comments (#2210) — the machine ledger the
-   earlier pipeline stages accumulated (findings with statuses + verification manifest + risk tier):
-```bash
-REVIEW_STATE=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
-  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
-echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE="none"
-```
-   Record it verbatim in the handoff's `## Review State` section (`none` if absent/unparseable —
-   pre-#2210 PRs).
-
-7. Fetch the FULL diff (the review reads this whole, in cohesion):
+6. Fetch the FULL diff (the review reads this whole, in cohesion):
 ```bash
 gh pr diff $PR --repo $REPO
 ```
@@ -610,7 +578,7 @@ Also pull dependency-manifest changes explicitly so they are easy to spot:
 gh pr diff $PR --repo $REPO -- "**/package.json" "**/Gemfile" "**/requirements.txt" "**/go.mod" "**/pyproject.toml"
 ```
 
-8. Classify CI once at the reviewed head (the review and act stages consume this authoritative
+7. Classify CI once at the reviewed head (the review and act stages consume this authoritative
    result; never substitute `gh pr checks` exit status). The classifier is fail-closed: an API,
    authorization, JSON, workflow-parsing, or required-context lookup failure is `block`, not an
    empty check set. Collect all three expected-check sources at `CURRENT_HEAD_SHA`:
@@ -634,7 +602,7 @@ pending, failing, cancelled, skipped, neutral, unknown, or missing expected chec
 zero-check response with no required context and no pull-request workflow is
 `na-no-configured-checks`; render its receipt exactly as `CI: N/A — no configured checks`.
 
-9. Resolve the team merge strategy from Pylot's DB-authoritative live team
+8. Resolve the team merge strategy from Pylot's DB-authoritative live team
    configuration. Automated merge authority is explicit: only
    `deploy.release_mode=ship` maps to `auto`; `propose`, missing, malformed,
    ambiguous, or unavailable configuration maps to `label-only`:
@@ -647,7 +615,7 @@ echo "merge_strategy=$MERGE_STRATEGY"
 Do not read `crew.yml`: live Pylot team configuration is stored in the database.
 Do not infer merge authority from a missing file or from the model's judgement.
 
-10. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
+9. Write handoff (capture the full diff verbatim — stage 02 reviews it from here).
 
 ## Output: handoff.md
 
@@ -707,9 +675,6 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 
 ## PR Description / Linked Issue
 {PR body; linked issue number+title if extractable from body or branch}
-
-## Review State
-{the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
 
 ## Spec
 - spec_ref: {SPEC_REF — e.g. #42 | fellowship-dev/pylot#42 | none}

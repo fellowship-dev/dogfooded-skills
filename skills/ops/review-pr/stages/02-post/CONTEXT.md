@@ -51,45 +51,15 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 ### Verdict
 [Clean — proceed to double-check / {N} findings to address — proceed to double-check]
 
-<!-- review-state v1
-{REVIEW_STATE_JSON}
--->
-
 REVIEW_EOF
 )"
 ```
 
-**Building `REVIEW_STATE_JSON` (#2210):** one minified-ish JSON object assembled from the two
-handoffs — this is the machine ledger double-check and cto-review extend instead of re-deriving
-everything cold. Shape:
-
-```json
-{
-  "v": 1,
-  "stage": "review-pr",
-  "head_sha": "{from stage 00 Risk Tier section}",
-  "tier": "{HIGH|MEDIUM|LOW — the FINAL tier (post-escalation if stage 01 escalated)}",
-  "tier_reasons": ["{reason}", "..."],
-  "auth_surface": "{none|new-auth-surface}",
-  "security_label_applied": "{true|false}",
-  "findings": [
-    {"id": "R1", "severity": "bug", "loc": "path/file.ts#L67-72", "desc": "{short}", "confidence": 95, "status": "open", "security_class": true}
-  ],
-  "verified": [
-    {"what": "whole diff, cross-file cohesion", "how": "read", "by": "review-pr"},
-    {"what": "runtime-shape checklist 1-5", "how": "read", "by": "review-pr"}
-  ]
-}
-```
-
-All findings start `"status": "open"`. Keep `desc` to one sentence — the human table above carries
-the detail. Valid JSON is a hard requirement (downstream stages parse it); if in doubt, validate
-with `jq . <<< "$REVIEW_STATE_JSON"` before posting.
-
 **Comment rules:**
 - Always include the Summary — even if no findings, the summary helps the double-checker
-- Empty findings table → write "No issues found above confidence threshold" (and `"findings": []`
-  in the state block — the block itself is ALWAYS present)
+- The `**Head reviewed:**` line always carries the full 40-hex head — it is the receipt the
+  dedup gate and downstream stages compare against the current head
+- Empty findings table → write "No issues found above confidence threshold"
 - Never write findings below 80 confidence — they are noise
 - Location must reference file path and line numbers from the diff
 - Verdict is always "proceed to double-check" — this skill never blocks
@@ -140,90 +110,20 @@ fi
 - `APPLY_SECURITY` is consumed by Step 2.5 — it is an INPUT to the lane classifier, so this step
   must stay ahead of it.
 
-### Step 2.5: Apply lane Label (deterministic — #2996)
+### Step 2.5: Lane labels RETIRED (owner ruling 2026-09-06)
 
-The `lane:*` label routes the PR through one of two pipelines. It is computed by a script, never by
-judgement — the same posture as Step 2.
+The #2996 lane machinery is retired: per-PR flowchad and test-in-staging no longer run
+(automations disabled), every PR follows one pipeline — review-pr → double-check → cto-review —
+and staging testing is mandatory per RELEASE TRAIN instead (pylot#3389).
 
-- `lane:staging` → today's full pipeline: double-check → flowchad → test-in-staging → cto-review.
-- `lane:fast` → review → cto-review-with-merge-authority. No double-check, no staging deploy.
-
-The classifier is `scripts/classify-pr-surface.mts --lane` **in the repo under review**. It prints
-exactly one bare word on stdout (`fast` | `staging`), reasons on stderr, and **always exits 0** —
-on any internal failure it prints `staging`, so a broken classifier costs latency, never safety.
+**Do NOT apply, remove, or reason about `lane:*` labels.** Do not run
+`classify-pr-surface.mts --lane`. A `lane:*` label already present on an older PR is legacy
+context: leave it in place, never wait on it. Set `LANE="n/a"` for the handoff and move on:
 
 ```bash
-# Rollout dial (#2996): only these repos get a lane label at all. A repo not in this list
-# gets NO lane label, which is the fail-closed default — every automation behaves exactly as it
-# did before #2996. Widen this list one repo at a time; see ROLLOUT.md.
-LANE_ENABLED_REPOS="fellowship-dev/pylot"
-
-APPLY_LANE="false"
-for r in $LANE_ENABLED_REPOS; do [ "$r" = "$REPO" ] && APPLY_LANE="true"; done
-
-if [ "$APPLY_LANE" != "true" ]; then
-  echo "[review-pr] lane label NOT applied — $REPO is not lane-enabled (pre-#2996 pipeline)"
-  LANE="n/a"
-else
-  # The classifier lives in the repo under review. review-pr is read-only (Hard Rule 7) and
-  # never checks out code, so resolve it from the pod's working copy if present; otherwise
-  # fetch just that one file at the PR's base. If neither works, fail closed to staging.
-  CLASSIFIER=""
-  if [ -f "scripts/classify-pr-surface.mts" ]; then
-    CLASSIFIER="scripts/classify-pr-surface.mts"
-  else
-    mkdir -p /tmp/lane-2996
-    # BASE_BRANCH is set in stage 00 context (e.g. "main"). Required for the fallback fetch.
-    if gh api "repos/$REPO/contents/scripts/classify-pr-surface.mts?ref=$BASE_BRANCH" \
-         --jq '.content' 2>/dev/null | base64 -d > /tmp/lane-2996/classify-pr-surface.mts \
-       && [ -s /tmp/lane-2996/classify-pr-surface.mts ]; then
-      CLASSIFIER="/tmp/lane-2996/classify-pr-surface.mts"
-    fi
-  fi
-
-  if [ -z "$CLASSIFIER" ]; then
-    LANE="staging"
-    echo "[review-pr] lane classifier unavailable in $REPO — failing closed to lane:staging"
-  else
-    # `gh pr diff --name-only` is the same changed-file producer cto-review's staging-evidence
-    # gate uses, so the two gates can never disagree about what changed.
-    # $APPLY_SECURITY comes from Step 2: a security PR is never fast-laned.
-    LANE_LABELS=""
-    [ "$APPLY_SECURITY" = "true" ] && LANE_LABELS="security"
-    LANE_ARGS=""
-    [ -n "$LANE_LABELS" ] && LANE_ARGS="--labels $LANE_LABELS"
-    LANE=$(gh pr diff "$PR" --repo "$REPO" --name-only 2>/dev/null \
-            | node --import=tsx "$CLASSIFIER" --lane $LANE_ARGS - 2>/tmp/lane-2996-reasons.txt)
-    LANE=$(printf '%s' "$LANE" | tr -d '[:space:]')
-    # Belt-and-suspenders: anything that is not exactly "fast" is staging.
-    [ "$LANE" = "fast" ] || LANE="staging"
-    sed 's/^/[review-pr] /' /tmp/lane-2996-reasons.txt 2>/dev/null || true
-  fi
-
-  gh label create "lane:fast"    --repo $REPO --color "0e8a16" --description "#2996 fast lane — review + cto-review merge, no double-check/staging" 2>/dev/null || true
-  gh label create "lane:staging" --repo $REPO --color "5319e7" --description "#2996 staging lane — full pipeline (double-check, flowchad, test-in-staging)" 2>/dev/null || true
-  # Remove the opposite lane label if present (rework re-entry guard)
-  if [ "$LANE" = "fast" ]; then
-    gh pr edit $PR --repo $REPO --remove-label "lane:staging" 2>/dev/null || true
-  else
-    gh pr edit $PR --repo $REPO --remove-label "lane:fast" 2>/dev/null || true
-  fi
-  gh pr edit $PR --repo $REPO --add-label "lane:$LANE"
-  echo "[review-pr] lane label applied: lane:$LANE"
-fi
+LANE="n/a"
+echo "[review-pr] lane labels retired (owner ruling 2026-09-06) — none applied"
 ```
-
-**Rules:**
-- The lane is whatever the script says. Do **not** reason about it, do **not** override it, do
-  **not** "it's only a small gateway change" your way to `fast`. If the classification looks wrong,
-  the fix is a PR against `LANE_STAGING_GLOBS`, not a judgement call in this mission.
-- Anything that is not exactly the string `fast` becomes `staging`. Empty output, a crash, a
-  missing classifier, a repo that has no classifier — all resolve to `lane:staging`.
-- A PR that got `security` in Step 2 always lands on `lane:staging` (the classifier's own
-  `LANE_STAGING_LABELS` rule). #2918 and #2996 reinforce each other; neither replaces the other.
-- Apply exactly ONE lane label. If the PR already carries the other one from a previous run, remove
-  it first: `gh pr edit $PR --repo $REPO --remove-label "lane:fast"` (or `lane:staging`).
-- This step runs BEFORE Step 3. See the ordering note above — it is the whole point.
 
 ### Step 3: Apply reviewed Label — LAST
 

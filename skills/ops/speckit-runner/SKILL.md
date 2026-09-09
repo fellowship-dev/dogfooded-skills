@@ -224,24 +224,15 @@ receipt: a producer may report it, but it cannot establish a passing check.
 
 ---
 
-## Step 4.5: Supervisor-Owned Verification Receipts
+## Step 4.5: Supervisor-Owned Verification
 
 The operator, not the producer, discovers and executes the expected checks at
-the immutable pushed `HEAD_SHA`. Source the bundled helper:
+the immutable pushed `HEAD_SHA`, in a detached checkout the producer cannot edit:
 
 ```bash
-# The boot sync copies this with the skill. Keep receipts outside the producer
-# worktree: the producer must not edit, generate, or attest to this file.
-source ~/.claude/skills/speckit-runner/shared/verification-receipts.sh || {
-  echo '[speckit-runner] fatal: verification-receipts.sh not found — boot sync may be incomplete' >&2
-  exit 1
-}
-RECEIPT_DIR="${TMPDIR:-/tmp}/speckit-verification-$PYLOT_JOB_ID-$BRANCH"
-VR_RECEIPT_FILE="$RECEIPT_DIR/receipts.tsv"
 SUPERVISOR_CHECKOUT=$(mktemp -d)
 git fetch origin "$BRANCH"
 git worktree add --detach "$SUPERVISOR_CHECKOUT" "$REMOTE_SHA"
-vr_init "$VR_RECEIPT_FILE" "$REPO" "$REMOTE_SHA"
 ```
 
 Perform **repository-owned verification discovery** in that detached checkout.
@@ -249,54 +240,29 @@ Read the task/spec and the repository's own contributor, agent, build, CI, and
 test instructions. Identify every check those sources require for this change.
 Do not hardcode a language, framework, conventional filename, or command set in
 this shared skill; do not manufacture checks from a producer's `tests pass`
-claim. For each expected check, execute the exact discovered command from the
-supervisor checkout, not by prompting the producer:
+claim. Execute each discovered command yourself from the supervisor checkout —
+never by prompting the producer.
+
+Then write a plain-markdown verification summary — one line per expected check:
+the check identity, the verbatim command, and its observed result (`passed` only
+on exit status 0; otherwise `failed` with the real exit status, `not-run` with
+the reason, or `unavailable` naming the specific missing runtime/credential):
 
 ```bash
-cd "$SUPERVISOR_CHECKOUT"
-# Set these from the repository-owned instructions just read. CHECK_ID is a
-# stable check identity; CHECK_COMMAND is the verbatim command from that repo.
-CHECK_ID='repository-defined check identity'
-CHECK_COMMAND='repository-defined command'
-if vr_run "$CHECK_ID" "$CHECK_COMMAND"; then :; fi
+SUPERVISOR_VERIFICATION="verified at head $REMOTE_SHA:
+- <check id>: <command> — <passed|failed (exit N)|not-run: reason|unavailable: reason>
+..."
 ```
 
-For a check that cannot be started because its runtime, service, or credential
-is unavailable, record the actual limitation rather than guessing a pass:
-
-`vr_record unavailable "$CHECK_ID" "$CHECK_COMMAND" "<specific missing runtime/credential>"`
-
-For a deliberately skipped expected check, use `vr_record not-run ...` with the
-reason. A nonzero `vr_run` already writes `failed` with its real exit status;
-continue to collect every remaining expected check. Add any evidence URL, log,
-or artifact identifier as the third `vr_run` argument or fifth `vr_record`
-argument. Before reusing a local receipt during resume, bind it to the live
-remote head; a mismatch is visibly stale and must be rerun:
-
-```bash
-LIVE_HEAD=$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq '.object.sha')
-if ! vr_bind_current_head "$LIVE_HEAD"; then
-  vr_mark_stale "$LIVE_HEAD"
-  echo '[speckit-runner] prior verification receipts are stale; rediscovering checks'
-  # Create a new receipt set and run the repository-owned checks at LIVE_HEAD.
-fi
-vr_disclosure >"$RECEIPT_DIR/pr-verification.md"
-SUPERVISOR_RECEIPTS=$(cat "$VR_RECEIPT_FILE")
-SUPERVISOR_DISCLOSURE=$(cat "$RECEIPT_DIR/pr-verification.md")
-```
-
-`passed` is legal only when `vr_run` observed exit status 0. Valid normalized
-states are `passed`, `failed`, `not-run`, and `unavailable`; freshness is a
-separate current/stale field so stale receipts cannot silently become current.
-Keep the receipt and disclosure available to the review, correction, and PR
-steps. The session EXIT trap removes the detached worktree on every terminal path.
+Keep the summary available to the review, correction, and PR steps. The session
+EXIT trap removes the detached worktree on every terminal path.
 
 ---
 
 ## Step 5: Independent Advisory Review
 
 Spawn a **second LLM worker** in the same repo. It receives the issue, branch,
-diff, supervisor receipts, and proposed PR claims — never the producer's
+diff, supervisor verification summary, and proposed PR claims — never the producer's
 rationale. It starts from a clean checkout; its findings are advisory.
 
 ```bash
@@ -308,7 +274,7 @@ REVIEW_SPAWN=$(curl -s --max-time 90 -X POST \
   "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers")
 RWID=$(printf '%s' "$REVIEW_SPAWN" | jq -r '.worker_id // empty')
 if [ -n "$RWID" ]; then
-REVIEW_PROMPT=$(BRANCH="$BRANCH" SUPERVISOR_RECEIPTS="$SUPERVISOR_RECEIPTS" SUPERVISOR_DISCLOSURE="$SUPERVISOR_DISCLOSURE" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and the pushed branch ' + os.environ['BRANCH'] + '. Start from a clean checkout. Read the issue and repository guidance, compare the branch with its merge base, inspect the changed behavior, and assess the proposed PR claims below. Do not edit, commit, push, or create a PR.\n\nLook for correctness gaps, incomplete requirements, weak or misleading verification, security or data-integrity risks, maintainability regressions, and user-facing or operational consequences. Apply repository evidence and engineering judgment; do not assume any language, framework, file layout, or test command. Supervisor receipts are observed evidence; cross-check their commands and HEAD binding against the branch.\n\nSUPERVISOR RECEIPTS:\n' + os.environ['SUPERVISOR_RECEIPTS'] + '\n\nPROPOSED PR VERIFICATION DISCLOSURE:\n' + os.environ['SUPERVISOR_DISCLOSURE'] + '\n\nReturn concise suggestions with: priority, concern, concrete evidence, and suggested action. Separate high-value corrections from optional polish. Findings are advisory: never block or fail the mission solely because you found them. End with [pylot] phase=independent-review status=done actionable=yes|no.'))")
+REVIEW_PROMPT=$(BRANCH="$BRANCH" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Independently review issue #$0 in $REPO and the pushed branch ' + os.environ['BRANCH'] + '. Start from a clean checkout. Read the issue and repository guidance, compare the branch with its merge base, inspect the changed behavior, and assess the supervisor verification summary below. Do not edit, commit, push, or create a PR.\n\nLook for correctness gaps, incomplete requirements, weak or misleading verification, security or data-integrity risks, maintainability regressions, and user-facing or operational consequences. Apply repository evidence and engineering judgment; do not assume any language, framework, file layout, or test command. The supervisor summary is observed evidence; cross-check its commands and head binding against the branch.\n\nSUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION'] + '\n\nReturn concise suggestions with: priority, concern, concrete evidence, and suggested action. Separate high-value corrections from optional polish. Findings are advisory: never block or fail the mission solely because you found them. End with [pylot] phase=independent-review status=done actionable=yes|no.'))")
 REVIEW_RESP=$(curl -s --max-time 30 -X POST \
   -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
   -d "{\"prompt\": $REVIEW_PROMPT}" \
@@ -398,53 +364,28 @@ saved branch receipt. Do not proceed to review or PR creation.
 
 ---
 
-## Step 6.5: Rebind Verification After Correction
+## Step 6.5: Re-verify After Correction
 
 The correction may have pushed a new HEAD. Never carry a `passed` result across
-that boundary. Compare the supervisor receipt to the current remote head; on a
-mismatch, retain a visibly stale copy for disclosure and create a fresh receipt
-set by repeating Step 4.5's repository-owned discovery and supervisor execution
-at `CORRECTION_HEAD`.
+that boundary. If `CORRECTION_HEAD` differs from the head Step 4.5 verified,
+discard the old summary and repeat Step 4.5's repository-owned discovery and
+supervisor execution at `CORRECTION_HEAD`:
 
 ```bash
-if ! vr_bind_current_head "$CORRECTION_HEAD"; then
-  vr_mark_stale "$CORRECTION_HEAD"
-  STALE_RECEIPT_FILE="$RECEIPT_DIR/stale-${VR_HEAD_SHA}.tsv"
-  STALE_DISCLOSURE_FILE="$RECEIPT_DIR/stale-${VR_HEAD_SHA}.md"
-  cp "$VR_RECEIPT_FILE" "$STALE_RECEIPT_FILE"
-  vr_disclosure >"$STALE_DISCLOSURE_FILE"
-  STALE_SUPERVISOR_RECEIPTS=$(cat "$STALE_RECEIPT_FILE")
-  STALE_SUPERVISOR_DISCLOSURE=$(cat "$STALE_DISCLOSURE_FILE")
-  echo '[speckit-runner] correction moved HEAD; earlier supervisor receipts are stale'
+if [ "$CORRECTION_HEAD" != "$REMOTE_SHA" ]; then
+  echo '[speckit-runner] correction moved HEAD; re-verifying at the new head'
   cleanup_supervisor_checkout
   SUPERVISOR_CHECKOUT=$(mktemp -d)
-  FRESH_RECEIPT_DIR="$RECEIPT_DIR/head-$CORRECTION_HEAD"
-  VR_RECEIPT_FILE="$FRESH_RECEIPT_DIR/receipts.tsv"
-  FRESH_DISCOVERY_FILE="$FRESH_RECEIPT_DIR/discovered-checks.txt"
   git fetch origin "$BRANCH"
   git worktree add --detach "$SUPERVISOR_CHECKOUT" "$CORRECTION_HEAD"
-  vr_init "$VR_RECEIPT_FILE" "$REPO" "$CORRECTION_HEAD"
   cd "$SUPERVISOR_CHECKOUT"
-  # Repeat Step 4.5 discovery here. Write each discovered CHECK_ID and exact
-  # CHECK_COMMAND to FRESH_DISCOVERY_FILE, then call vr_run or vr_record.
-  : >"$FRESH_DISCOVERY_FILE"
-  # printf '%s\t%s\n' "$CHECK_ID" "$CHECK_COMMAND" >>"$FRESH_DISCOVERY_FILE"
-  # if vr_run "$CHECK_ID" "$CHECK_COMMAND"; then :; fi
-  if [ ! -s "$FRESH_DISCOVERY_FILE" ] || ! vr_has_records_for_head "$CORRECTION_HEAD"; then
-    echo '[speckit-runner] correction-head verification was not freshly discovered and recorded' >&2
-    exit 1
-  fi
+  # Repeat Step 4.5 discovery and execution here, then rebuild
+  # SUPERVISOR_VERIFICATION with "verified at head $CORRECTION_HEAD:".
 fi
-vr_has_records_for_head "$CORRECTION_HEAD" || {
-  echo '[speckit-runner] no current receipt recorded for correction head' >&2
-  exit 1
-}
-SUPERVISOR_RECEIPTS=$(cat "$VR_RECEIPT_FILE")
-SUPERVISOR_DISCLOSURE=$(vr_disclosure)
 ```
 
 If fresh checks are failed, not-run, or unavailable, continue. Their exact
-states must remain in the final disclosure; none are PR-creation blockers.
+states must remain in the final summary; none are PR-creation blockers.
 
 ---
 
@@ -468,7 +409,7 @@ fi
 
 if [ "$FIRST_REVIEW_STATUS" = "available" ] && [ -n "$RWID" ] \
   && [ "$RUN_FINAL_REVIEW" = "yes" ]; then
-  FINAL_REVIEW_PROMPT=$(CORRECTION_OUT="$CORRECTION_OUT" SUPERVISOR_DISCLOSURE="$SUPERVISOR_DISCLOSURE" python3 -c "import json,os; print(json.dumps('Re-fetch branch $BRANCH and review its updated diff for issue #$0. Reassess only the independent suggestions from your prior turn against the producer correction summary and the current supervisor verification disclosure. Report which are resolved and which remain, with concise evidence. Do not edit, push, or create a PR. Remaining suggestions are advisory. End with [pylot] phase=final-review status=done.\n\nPRODUCER CORRECTION RECEIPT:\n' + os.environ['CORRECTION_OUT'] + '\n\nCURRENT SUPERVISOR VERIFICATION DISCLOSURE:\n' + os.environ['SUPERVISOR_DISCLOSURE']))")
+  FINAL_REVIEW_PROMPT=$(CORRECTION_OUT="$CORRECTION_OUT" SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" python3 -c "import json,os; print(json.dumps('Re-fetch branch $BRANCH and review its updated diff for issue #$0. Reassess only the independent suggestions from your prior turn against the producer correction summary and the current supervisor verification summary. Report which are resolved and which remain, with concise evidence. Do not edit, push, or create a PR. Remaining suggestions are advisory. End with [pylot] phase=final-review status=done.\n\nPRODUCER CORRECTION SUMMARY:\n' + os.environ['CORRECTION_OUT'] + '\n\nCURRENT SUPERVISOR VERIFICATION:\n' + os.environ['SUPERVISOR_VERIFICATION']))")
   FINAL_REVIEW_RESP=$(curl -s --max-time 30 -X POST \
     -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json" \
     -d "{\"prompt\": $FINAL_REVIEW_PROMPT}" \
@@ -521,15 +462,12 @@ Send the producer the final advisory record. This is the **only PR creation
 boundary** in the pipeline.
 
 ```bash
-PR_PROMPT=$(SUPERVISOR_DISCLOSURE="$SUPERVISOR_DISCLOSURE" STALE_SUPERVISOR_DISCLOSURE="${STALE_SUPERVISOR_DISCLOSURE:-}" FIRST_REVIEW_STATUS="$FIRST_REVIEW_STATUS" REVIEW_OUT="$REVIEW_OUT" CORRECTION_OUT="$CORRECTION_OUT" RESIDUAL_REVIEW="$RESIDUAL_REVIEW" python3 -c "import json,os; print(json.dumps('''Create the single PR for issue #$0 from the already-pushed branch. First confirm the worktree is clean and the remote head matches local HEAD. Invoke /create-compelling-prs and use that skill to compose and open the PR — do not substitute a placeholder template.
+PR_PROMPT=$(SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" FIRST_REVIEW_STATUS="$FIRST_REVIEW_STATUS" REVIEW_OUT="$REVIEW_OUT" CORRECTION_OUT="$CORRECTION_OUT" RESIDUAL_REVIEW="$RESIDUAL_REVIEW" python3 -c "import json,os; print(json.dumps('''Create the single PR for issue #$0 from the already-pushed branch. First confirm the worktree is clean and the remote head matches local HEAD. Invoke /create-compelling-prs and use that skill to compose and open the PR — do not substitute a placeholder template.
 
-Copy the supervisor-owned verification disclosure below verbatim into the PR. It is authoritative over any producer claim: explicitly disclose every passed, failed, not-run, or unavailable state and never state or imply readiness when any current check is failed, not-run, or unavailable. If a correction moved the head, also include the stale-receipt disclosure so it is clear those results were not reused. Include an Independent review section summarizing first-review availability, suggestions, corrected/declined decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR. Emit [pylot] phase=pr status=done pr=<PR_URL>.
+Base the PR's Verification section on the supervisor verification summary below. It is authoritative over any producer claim: state every passed, failed, not-run, or unavailable check honestly and never state or imply readiness when any current check is failed, not-run, or unavailable. Include an Independent review section summarizing first-review availability, suggestions, corrected/declined decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR. Emit [pylot] phase=pr status=done pr=<PR_URL>.
 
-CURRENT SUPERVISOR VERIFICATION DISCLOSURE:
-''' + os.environ['SUPERVISOR_DISCLOSURE'] + '''
-
-STALE SUPERVISOR RECEIPTS (include only when non-empty):
-''' + os.environ.get('STALE_SUPERVISOR_DISCLOSURE', '') + '''
+CURRENT SUPERVISOR VERIFICATION:
+''' + os.environ['SUPERVISOR_VERIFICATION'] + '''
 
 FIRST REVIEW STATUS:
 ''' + os.environ['FIRST_REVIEW_STATUS'] + '''
@@ -550,9 +488,7 @@ TURN_SEQ=$(printf '%s' "$PR_RESP" | jq -r '.turn_seq // empty')
 ```
 
 Poll the producer to `done`, find the PR URL in its output, and confirm with
-`gh pr view` that its head branch and issue linkage match this run. Confirm the
-body contains the exact current supervisor disclosure; a producer's summary is
-not a substitute.
+`gh pr view` that its head branch and issue linkage match this run.
 Any producer prompt, poll, marker, or reconciliation failure runs Step C before
 emitting its terminal outcome.
 
@@ -596,14 +532,15 @@ fi
 - **Review in clean context** — the producer never reviews its own checkpoint; the reviewer never edits it
 - **Supervisor owns verification** — discover commands only from the task and
   repository-owned instructions, execute them in the detached supervisor
-  checkout, and preserve their HEAD-bound receipts. Producer prose can never
-  create a passed receipt.
+  checkout at the exact pushed head, and report their observed results honestly.
+  Producer prose can never create a passed result.
 - **Repository trust boundary** — `/speckit-runner` must only be used against
   repositories whose contributor, agent, and CI instruction files are trusted to
-  the same degree as the dispatch token. `vr_run` executes repository-discovered
-  commands inside the supervisor session (holds `$PYLOT_DISPATCH_TOKEN`,
-  `$PYLOT_API`, and `gh` credentials); a hostile or compromised instruction file
-  in the target repository can exfiltrate those credentials.
+  the same degree as the dispatch token. The supervisor executes
+  repository-discovered commands inside its own session (holds
+  `$PYLOT_DISPATCH_TOKEN`, `$PYLOT_API`, and `gh` credentials); a hostile or
+  compromised instruction file in the target repository can exfiltrate those
+  credentials.
 - **Suggestions never gate** — allow one producer correction pass, disclose anything residual, and continue to the PR boundary
 - **PR creation happens once and last** — verification, analyze/checklist, checkpoint push, and advisory review all precede `/create-compelling-prs`
 - **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting

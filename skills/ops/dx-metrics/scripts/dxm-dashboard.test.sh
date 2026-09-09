@@ -71,7 +71,7 @@ ENV1="$("$DASH" --scope org --scope-key acme --period week --since 2026-06-01 --
 eq "default render exits 0" "$RC" "0"
 OUT1="$(printf '%s' "$ENV1" | python3 -c 'import json,sys;print(json.load(sys.stdin)["out"])' 2>/dev/null)"
 [ -n "$OUT1" ] && [ -f "$OUT1" ] && ok "wrote a file" || bad "wrote a file" "$OUT1"
-eq "file is chmod 600" "$(stat -f '%Lp' "$OUT1" 2>/dev/null || stat -c '%a' "$OUT1")" "600"
+eq "file is chmod 600" "$(stat -c '%a' "$OUT1" 2>/dev/null || stat -f '%Lp' "$OUT1")" "600"
 printf '%s' "$ENV1" | python3 -c 'import json,sys;json.load(sys.stdin)' 2>/dev/null \
   && ok "envelope is valid JSON" || bad "envelope is valid JSON" "$ENV1"
 

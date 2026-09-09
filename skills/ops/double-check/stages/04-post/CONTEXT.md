@@ -9,12 +9,12 @@ emitted from here.
 - `.procedure-output/double-check/03-fix/handoff.md` — fixes applied, tests, push (absent if stage 03 skipped)
 
 ## Task
-Confirm Stage 02's verdict against the **live** PR and promote only its exact full-SHA receipt.
-Fetch both live head and comments immediately before every mutation. On the first head transition,
-write a restart receipt with no approval mutation and return control to the orchestrator for a
-fresh setup → clean review cycle. On a second transition, or an unreadable live read, write one
-deduplicated blocked receipt and stop. Only a matching receipt may post the curated comment,
-apply labels, verify side effects, write the local report, and emit a successful outcome. NO Quest.
+Confirm Stage 02's verdict against the **live** PR and promote only when the live 40-hex head
+equals the exact head Stage 02 reviewed. Fetch the live head immediately before every mutation.
+On the first head transition, return control to the orchestrator for a fresh setup → clean review
+cycle. On a second transition, or an unreadable live read, stop blocked. Only a matching head may
+post the curated comment, apply labels, verify side effects, write the local report, and emit a
+successful outcome. NO Quest.
 
 ## Steps
 
@@ -51,11 +51,10 @@ CLAIMS=$(grep "^claims_reconciled:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2
 
 # Stage 02 records the exact remote checkout it reviewed. Missing/malformed is unsafe.
 REVIEWED_HEAD_SHA=$(awk '/^reviewed_head_sha:/{print $2; exit}' "$REVIEW_HANDOFF")
-RECEIPT_ID=$(awk '/^receipt_id:/{print $2; exit}' "$REVIEW_HANDOFF")
-FINAL_COMMENT_CURSOR=$(sed -n 's/^final_comment_cursor: //p' "$REVIEW_HANDOFF" | head -1)
 RESTART_COUNT=${RESTART_COUNT:-0}
 if ! printf '%s' "$REVIEWED_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
   echo "[stage-04] blocked: stage 02 did not record an exact reviewed HEAD SHA"
+  echo "[pylot] outcome=\"double-check blocked: no exact reviewed HEAD SHA recorded\" status=blocked"
   exit 2
 fi
 ```
@@ -69,41 +68,26 @@ the skill's only orchestrator-level verification of its own subject matter.
 ```bash
 # Do not use local checkout state, abbreviated SHAs, filenames, or diff stats as an identity.
 # This is the final live read before any possible comment/label mutation.
-if ! gh pr view $PR --repo $REPO --json title,body,additions,deletions,files,headRefOid,comments \
+if ! gh pr view $PR --repo $REPO --json title,body,additions,deletions,files,headRefOid \
   > /tmp/dc-pr-$PR.json
 then
   LIVE_READ_FAILED=true
 fi
 source skills/ops/double-check/shared/exact-head-receipt.sh
-source skills/ops/double-check/shared/nonpromotion-receipt.sh
 LIVE_HEAD_SHA=$(jq -r '.headRefOid // empty' /tmp/dc-pr-$PR.json 2>/dev/null || true)
 DECISION=$(dc_exact_head_decision "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RESTART_COUNT")
 if [ "${LIVE_READ_FAILED:-false}" = true ]; then DECISION=blocked; fi
-LIVE_COMMENT_CURSOR=$(jq -c '[.comments[] | {id, createdAt, updatedAt}]' /tmp/dc-pr-$PR.json 2>/dev/null || true)
-
-# A matching SHA alone is not enough: a blocker can arrive while Stage 02's
-# corpus work runs without moving the branch. Fail closed rather than promote a
-# verdict that did not consume the final comment set.
-if ! printf '%s' "$FINAL_COMMENT_CURSOR" | jq -e 'type == "array"' >/dev/null 2>&1 \
-  || [ "$(printf '%s' "$FINAL_COMMENT_CURSOR" | jq -cS . 2>/dev/null)" != \
-       "$(printf '%s' "$LIVE_COMMENT_CURSOR" | jq -cS . 2>/dev/null)" ]; then
-  DECISION=blocked
-  COMMENT_CURSOR_CHANGED=true
-fi
 
 if [ "$DECISION" = restart ]; then
-  # Stale receipts are local-only: comments notify subscribers and can be unreadable later.
-  dc_write_nonpromotion_receipt restart .procedure-output/double-check/04-post \
-    "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RECEIPT_ID" "$RESTART_COUNT" "$LIVE_COMMENT_CURSOR"
+  echo "[stage-04] restart: PR HEAD moved after review ($REVIEWED_HEAD_SHA -> $LIVE_HEAD_SHA)"
+  echo "[pylot] outcome=\"double-check restart required: PR HEAD moved after review\" status=blocked"
   exit 3
 fi
 if [ "$DECISION" = blocked ]; then
-  NONPROMOTION_REASON="exact-head receipt unavailable or superseded"
-  [ "${COMMENT_CURSOR_CHANGED:-false}" = true ] && NONPROMOTION_REASON="review comments changed after cohesive review"
-  [ "${LIVE_READ_FAILED:-false}" = true ] && NONPROMOTION_REASON="live PR read failed"
-  dc_write_nonpromotion_receipt blocked .procedure-output/double-check/04-post \
-    "$REVIEWED_HEAD_SHA" "${LIVE_HEAD_SHA:-unavailable}" "$RECEIPT_ID" "$RESTART_COUNT" \
-    "$LIVE_COMMENT_CURSOR" "$NONPROMOTION_REASON"
+  REASON="exact head unavailable or superseded"
+  [ "${LIVE_READ_FAILED:-false}" = true ] && REASON="live PR read failed"
+  echo "[stage-04] blocked: $REASON (reviewed=$REVIEWED_HEAD_SHA live=${LIVE_HEAD_SHA:-unavailable})"
+  echo "[pylot] outcome=\"double-check blocked: $REASON\" status=blocked"
   exit 2
 fi
 
@@ -114,35 +98,28 @@ echo "[stage-04] stage-02 head reviewed: $REVIEWED_HEAD_SHA"
 echo "[stage-04] live head: $LIVE_HEAD_SHA"
 printf '%s\n' "$LIVE_FILES"
 
-# `promote` is possible only after the helper's full-SHA equality check above. The live comments
-# cursor is part of the receipt, so comments posted during long review work are auditable input.
+# `promote` is possible only after the helper's full-SHA equality check above.
 ```
 
 ### Executable mutation guard
 
 Use this guard immediately before every approving comment or label mutation. It reads GitHub
 again, so neither a cached JSON document nor the local checkout can authorize a promotion. If it
-does not print `promote`, do **not** run the mutation: take the deduplicated restart/blocked
-receipt path above with the freshly read state, then exit `3`/`2` respectively.
+does not print `promote`, do **not** run the mutation: log the decision, emit the matching
+restart/blocked outcome marker, then exit `3`/`2` respectively.
 
 ```bash
 dc_require_promotable_head() {
   local decision
   decision=$(dc_live_promotion_decision "$PR" "$REPO" "$REVIEWED_HEAD_SHA" \
-    "$RESTART_COUNT" "/tmp/dc-final-pr-$PR.json" "$FINAL_COMMENT_CURSOR")
+    "$RESTART_COUNT" "/tmp/dc-final-pr-$PR.json")
   [ "$decision" = promote ] && return 0
-  local live_head_sha
-  live_head_sha=$(jq -r '.headRefOid // empty' /tmp/dc-final-pr-$PR.json 2>/dev/null || true)
   echo "[stage-04] promotion mutation blocked: exact-head decision=$decision"
-  dc_stop_for_nonpromotion "$live_head_sha" "$decision"
-}
-
-dc_stop_for_nonpromotion() {
-  local live_head_sha=$1 decision=$2 cursor
-  cursor=$(jq -c '[.comments[] | {id, createdAt, updatedAt}]' /tmp/dc-final-pr-$PR.json 2>/dev/null || true)
-  dc_write_nonpromotion_receipt "$decision" .procedure-output/double-check/04-post \
-    "$REVIEWED_HEAD_SHA" "${live_head_sha:-unavailable}" "$RECEIPT_ID" "$RESTART_COUNT" "$cursor"
-  [ "$decision" = restart ] && exit 3
+  if [ "$decision" = restart ]; then
+    echo "[pylot] outcome=\"double-check restart required: PR HEAD moved after review\" status=blocked"
+    exit 3
+  fi
+  echo "[pylot] outcome=\"double-check blocked: exact head unavailable or superseded\" status=blocked"
   exit 2
 }
 ```
@@ -162,37 +139,13 @@ Then:
 if [ "$CLAIMS" = "fail" ]; then VERDICT=needs-work; fi
 ```
 
-### Materialize the final review-state ledger and decide whether a first check may promote
-
-Before posting the curated comment, build `FINAL_REVIEW_STATE` exactly as described in
-**Updating `REVIEW_STATE_JSON`** below. It must be the valid JSON that will be embedded in this
-stage's comment — not the stale setup ledger — with `head_sha` set to `LIVE_HEAD_SHA` and every
-finding's final status recorded. Validate it before any label decision:
-
-```bash
-# FINAL_REVIEW_STATE is the validated JSON that will replace {REVIEW_STATE_JSON} below.
-printf '%s' "$FINAL_REVIEW_STATE" | jq . >/dev/null || {
-  echo "[stage-04] blocked: final review-state is invalid"
-  exit 2
-}
-
-source skills/ops/double-check/shared/promotion-verdict-gate.sh
-FIRST_CHECK_DECISION=$(dc_first_check_promotion_decision \
-  "$VERDICT" "$LIVE_HEAD_SHA" "$FINAL_REVIEW_STATE")
-echo "[stage-04] first-check promotion decision: $FIRST_CHECK_DECISION"
-```
-
-`promote` is the only result that may add `double-checked`. Every `needs-work:*` result is a
-negative or conflicting signal and must take Branch D below: remove/withhold `double-checked`,
-add or retain `needs-work`, and create no positive follow-on.
-
 ### Post the curated review comment
 
 Fill `shared/review-comment-template.md` from the stage-02 (curated findings, new issues, verdict)
 and stage-03 (tests, fixes) handoffs, then post:
 
 ```bash
-PROMOTION_MARKER="pylot:exact-head-promoted pr=$PR head=$LIVE_HEAD_SHA receipt=$RECEIPT_ID"
+PROMOTION_MARKER="pylot:exact-head-promoted pr=$PR head=$LIVE_HEAD_SHA"
 PROMOTION_ALREADY_POSTED=$(gh pr view $PR --repo $REPO --json comments \
   --jq '.comments[].body' | grep -F "$PROMOTION_MARKER" || true)
 if [ -z "$PROMOTION_ALREADY_POSTED" ]; then
@@ -203,9 +156,8 @@ gh pr comment $PR --repo $REPO --body "$(cat <<REVIEW_EOF
 ## Double-Check Review: PR #$PR — $PR_TITLE
 
 **Reviewer:** Automated double-check
-**Branch:** `$PR_BRANCH` → `$BASE_BRANCH`
-**Head reviewed:** `$LIVE_HEAD_SHA`
-**Exact-head receipt:** `$RECEIPT_ID` (restart `$RESTART_COUNT`, comments `$LIVE_COMMENT_CURSOR`)
+**Branch:** \`$PR_BRANCH\` → \`$BASE_BRANCH\`
+**Head reviewed:** \`$LIVE_HEAD_SHA\`
 
 ---
 
@@ -220,7 +172,7 @@ Live diff: $LIVE_STAT
 | [claim from PR title/body] | backed / elsewhere / **unbacked** | [where it is, or that it is absent] |
 
 [On unbacked claims, add: "**This PR's description does not match its diff.** Correct the body to
-describe what actually landed, or land the missing code. `double-checked` withheld until then."]
+describe what actually landed, or land the missing code. \`double-checked\` withheld until then."]
 
 ### Implementation
 [2-4 bullets: key approach, files changed grouped by area]
@@ -245,79 +197,54 @@ describe what actually landed, or land the missing code. `double-checked` withhe
 ### Verdict
 [Ready for CTO review / Needs more work — list remaining items]
 
-<!-- review-state v1
-{REVIEW_STATE_JSON}
--->
-
 REVIEW_EOF
 )"
-# The next label mutation must accept the comment just written but still reject a
-# newly-arrived external comment. Refresh the expected cursor after our own post.
-FINAL_COMMENT_CURSOR=$(gh pr view $PR --repo $REPO --json comments \
-  --jq '[.comments[] | {id, createdAt, updatedAt}]')
 else
-  echo "[stage-04] exact-head promotion receipt already posted — skipping duplicate verdict"
+  echo "[stage-04] exact-head promotion marker already posted — skipping duplicate verdict"
 fi
 ```
-
-**Updating `REVIEW_STATE_JSON` (#2210):** take the incoming state from the setup handoff's
-`## Review State` (or start a fresh object with `"findings": []` if it was `none`), then:
-- set `"stage": "double-check"` and set `"head_sha"` to `LIVE_HEAD_SHA` (never copy the stale
-  incoming value; fix commits or rebases may have moved it)
-- set `"tier"` to the final tier (respect any escalation from stage 02; never lower)
-- update each existing finding's `"status"`: `fixed` (stage 03 addressed it — add
-  `"note": "fixed in <sha>"`), `dismissed` (DISCARD verdict — note the reason), or leave `open`
-- append stage-02's new issues as findings with their `D{n}` IDs, `"status": "open"` or `"fixed"`
-- append this stage's `verified` entries (and stage 03's
-  `{"what": "test suite after fixes", "how": "executed", "by": "double-check"}` when tests ran)
-
-Validate with `jq .` before posting — downstream cto-review parses it.
 
 **Rules:**
 - If no CI findings exist: write "No CI review comments found — reviewed diff directly"
 - If tests weren't run: explain why (e.g., "deps-only change, no test suite applicable")
 - Verdict must be specific: either "ready for CTO review" or list what still needs work
 - If stage 03 was skipped (`fixes_needed: false`): mark all "Fixed?" cells "No (no fix needed)"
-- The `review-state v1` block is ALWAYS present and valid JSON
+- The `**Head reviewed:**` line is ALWAYS present with the full 40-hex live head — it is the
+  receipt downstream consumers and the dedup gate compare against the current head
 - The Claims vs Diff table is ALWAYS present (write "no checkable claims in the body" if the body
   makes none). Never soften an unbacked claim into an observation.
 
-Also append to the `verified` manifest:
-`{"what": "PR title/body claims reconciled against live changed files", "how": "gh pr view", "by": "double-check"}`
-
 The `dc_require_promotable_head` invocation directly above `gh pr comment` is mandatory. If it
-fails, take the same deduplicated restart/blocked receipt path above, never an approving comment.
+fails, it emits the restart/blocked outcome and exits — never an approving comment.
 This prevents the tiny race between the first gate and `gh pr comment`.
 
 ### Apply labels (re-check vs first-check)
 
 Only after the review comment posts successfully and the final exact-head equality has passed.
 Immediately before every `gh pr edit` / `gh label` mutation, call
-`dc_require_promotable_head`; otherwise write the deduplicated restart/blocked receipt and return
-without a label mutation.
+`dc_require_promotable_head`; it exits with the restart/blocked outcome if the head moved.
 If the matching `PROMOTION_MARKER` already exists and `double-checked` is already present, leave
-the label untouched; never remove/re-add it merely to replay a receipt.
+the label untouched; never remove/re-add it merely to replay a promotion.
 
 **Four branches — check Branch D FIRST, then match on IS_RECHECK and VERDICT:**
 
 ---
 
-#### Branch D — First-check non-promotion (`IS_RECHECK=false` and `FIRST_CHECK_DECISION != promote`) — takes precedence over C
+#### Branch D — First-check non-promotion (`IS_RECHECK=false` and `VERDICT != ready`) — takes precedence over C
 
-This includes claims mismatches, an explicit `needs-work` verdict, a missing/malformed or
-wrong-head review-state ledger, and any `open` or `confirmed` finding. On a **re-check**
-(IS_RECHECK=true), Branch B already retains `needs-work` and does not re-toggle the positive
-label.
+This includes claims mismatches (`CLAIMS=fail` forced `needs-work` above) and an explicit
+`needs-work` verdict. On a **re-check** (IS_RECHECK=true), Branch B already retains `needs-work`
+and does not re-toggle the positive label.
 
 Fail closed: `double-checked` fires CTO, FlowChad, and staging, so remove it if present and do
 not add it. Add or retain `needs-work`. Do this only after the negative curated comment posts
 successfully, and call `dc_require_promotable_head` immediately before every label mutation. No
-positive follow-on may be created from a negative or conflicting review receipt.
+positive follow-on may be created from a negative or conflicting review verdict.
 
 ```bash
-if [ "$IS_RECHECK" = "false" ] && [ "$FIRST_CHECK_DECISION" != "promote" ]; then
-  # Branch D: negative/conflicting first-check receipt — fail closed.
-  echo "[stage-04] $FIRST_CHECK_DECISION — withholding double-checked and retaining needs-work"
+if [ "$IS_RECHECK" = "false" ] && [ "$VERDICT" != "ready" ]; then
+  # Branch D: negative/conflicting first-check verdict — fail closed.
+  echo "[stage-04] verdict=$VERDICT claims=$CLAIMS — withholding double-checked and retaining needs-work"
 
   MARKER_SEEN=$(gh pr view $PR --repo $REPO --json comments \
     --jq '.comments[].body | select(contains("pylot:first-check-fail-closed"))' 2>/dev/null | head -1)
@@ -325,18 +252,18 @@ if [ "$IS_RECHECK" = "false" ] && [ "$FIRST_CHECK_DECISION" != "promote" ]; then
   if [ -z "$MARKER_SEEN" ]; then
     dc_require_promotable_head
     gh pr comment $PR --repo $REPO --body "$(cat <<FAIL_CLOSED_EOF
-<!-- pylot:first-check-fail-closed pr=$PR repo=$REPO decision=$FIRST_CHECK_DECISION -->
-## Double-check blocked: negative or conflicting review receipt
+<!-- pylot:first-check-fail-closed pr=$PR repo=$REPO verdict=$VERDICT -->
+## Double-check blocked: negative or conflicting review verdict
 
-**Decision:** \`$FIRST_CHECK_DECISION\`
 **Verdict:** \`$VERDICT\`
+**Claims reconciled:** \`$CLAIMS\`
 **Head reviewed:** \`$LIVE_HEAD_SHA\`
 
-The review did not produce an explicitly positive, blocker-free exact-head receipt. The
+The review did not produce an explicitly positive verdict for this exact head. The
 \`double-checked\` label is withheld or removed, and \`needs-work\` is retained.
 
 ### To unblock
-1. Resolve every open or confirmed blocker and update the review receipt for this exact head.
+1. Resolve every remaining item from the review comment above.
 2. Remove and re-add the \`reviewed\` label to re-run the review chain.
 FAIL_CLOSED_EOF
 )"
@@ -436,14 +363,13 @@ fi
 
 ---
 
-#### Branch C — First-check PASS (`IS_RECHECK=false`, `FIRST_CHECK_DECISION=promote`)
+#### Branch C — First-check PASS (`IS_RECHECK=false`, `VERDICT=ready`)
 
-Apply `double-checked` only after an explicit `ready` verdict and a valid final exact-head
-review-state ledger with no `open` or `confirmed` findings. This is the only first-check path
-that may create positive follow-ons.
+Apply `double-checked` only after an explicit `ready` verdict at the exact live head. This is the
+only first-check path that may create positive follow-ons.
 
 ```bash
-# Branch C: explicitly positive, blocker-free first-check receipt
+# Branch C: explicitly positive first-check verdict at the exact head
 echo "[stage-04] first-check PASS — applying double-checked label"
 gh label create "double-checked" --repo $REPO --color "0075ca" \
   --description "Double-checked by agent" 2>/dev/null || true
@@ -507,19 +433,21 @@ Emit from the orchestrator (never a subagent). Branch on re-check context:
 
 **First-check fail closed** (Branch D):
 ```
-[pylot] outcome="double-check BLOCKED {repo}#{pr} — {FIRST_CHECK_DECISION}, double-checked withheld, needs-work retained" status=success
+[pylot] outcome="double-check {repo}#{pr} — verdict {VERDICT}, double-checked withheld, needs-work retained" status=success
 ```
 
-**First-check PASS** (IS_RECHECK=false, FIRST_CHECK_DECISION=promote):
+**First-check PASS** (IS_RECHECK=false, VERDICT=ready):
 ```
 [pylot] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success
 ```
 
-If any step failed, emit `status=failed` with the reason instead.
+If any step failed, emit `status=failed` with the reason instead. Head-transition restarts and
+unreadable live state emit `status=blocked` (a deliberate stop, not a failure) via the gates above.
 
 ## Success criteria
 - Live claims-vs-diff gate run (`gh pr view`) before posting, and its result reflected in `CLAIMS`
-- Curated review comment posted, including the Claims vs Diff table
+- Curated review comment posted, including the Claims vs Diff table and the full 40-hex
+  `**Head reviewed:**` line
 - Labels applied per the branch above (first-check fail-closed: double-checked removed/withheld +
   needs-work retained + fail-closed comment; re-check PASS: needs-work removed + double-checked
   re-toggled; re-check FAIL: no label change + structured verdict comment posted; first-check PASS:

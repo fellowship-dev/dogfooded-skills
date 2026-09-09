@@ -45,7 +45,7 @@ Parse from `$ARGUMENTS`: `PR=$1`, `REPO=$2`. Both required.
 |-------|------|-------------|
 | 00-context | inline | Head-aware dedup gate (exit only when `reviewed` has a valid receipt for current HEAD) + gather PR metadata, conventions, existing comments, CI status, the full diff, the **mechanical risk tier** (#2210), and **new auth surface detection** (#2918) |
 | 01-cohesive-review | subagent | **Critical-judgement step.** ONE subagent reviews the whole diff in cohesion at tier-scaled depth (LOW bounded / MEDIUM full / HIGH full + runtime-shape checklist): analyze, confidence-score findings (≥80), **security-classify each finding** (#2918), convention compliance, Closes-vs-Refs. Clean isolated context. |
-| 02-post | inline | Post structured review comment **with the embedded `review-state v1` block** + **apply `security` label if auth-surface or security-class findings** (#2918) + **apply the deterministic `lane:fast`/`lane:staging` label** (#2996) + apply `reviewed` label **LAST** + write local report + emit outcome marker |
+| 02-post | inline | Post structured review comment **with the full 40-hex `Head reviewed` receipt line** + **apply `security` label if auth-surface or security-class findings** (#2918) + **apply the deterministic `lane:fast`/`lane:staging` label** (#2996) + apply `reviewed` label **LAST** + write local report + emit outcome marker |
 
 There is exactly one subagent stage (01). It is NOT split per-file or per-dimension.
 
@@ -67,8 +67,8 @@ Run stage 00 yourself (orchestrator context). Read CONTEXT.md:
 ```
 skills/review-pr/stages/00-context/CONTEXT.md
 ```
-Run the dedup gate first. Short-circuit only when the PR has `reviewed` AND the latest valid
-`review-state v1` block has `head_sha` equal to the current `headRefOid`. A missing, invalid, or
+Run the dedup gate first. Short-circuit only when the PR has `reviewed` AND the latest review
+comment's `**Head reviewed:**` line names the current `headRefOid`. A missing, invalid, or
 stale receipt is not completion: record `review_run: stale-refresh`, continue through the normal
 review, and let stage 02 re-toggle `reviewed` after posting the current-head receipt.
 
@@ -149,8 +149,9 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
 12. **Risk tier is mechanical and escalate-only** (#2210) — stage 00 computes it from the rubric;
     stage 01 may raise it (recording why) but never lower it. LOW-tier review is bounded by design —
     do not "be thorough" past the tier; the saved depth is reallocated to HIGH-tier PRs.
-13. **The `review-state v1` block is always posted and must be valid JSON** — it is the ledger
-    double-check and cto-review extend. Findings keep their `R{n}` IDs downstream; never renumber.
+13. **The `**Head reviewed:**` receipt line is always posted with the full 40-hex head** — it is
+    what binds the review to the exact head for the dedup gate and downstream stages. Findings
+    keep their `R{n}` IDs downstream; never renumber.
 14. **Security label is deterministic (#2918)** — stage 02 applies `security` if any finding is
     security-class OR if `auth_surface: new-auth-surface`. No judgement: if the condition is met,
     the label is applied, period. The label is set in the same mission as the review.

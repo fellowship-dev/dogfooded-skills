@@ -30,8 +30,10 @@ Example: `/issue-to-prd fellowship-dev/pylot 123`
 4. **04-failure-modes** — predict how an agent can go astray → guardrails for PRD
 5. **05-test-plan** — test strategy + prerequisites (pre-merge and post-merge)
 6. **05b-prototype-gate** — is this UI exploration? → `skip` / `ask` / `dispatch` / `picked`
-7. **05c-outcomes-baseline** — fetch `GET /outcomes/summary` for real metric baselines (fail-open)
-8. **06-ask-or-structure** — decision: post questions (exit) OR draft PRD (includes Measurable Impact)
+7. **05c-outcomes-baseline** — detect a causal goal/eval/outcome contract in the issue; only then
+   fetch `GET /outcomes/summary` for that named metric's baseline (fail-open)
+8. **06-ask-or-structure** — decision: post questions (exit) OR draft PRD (Measurable Impact
+   included only when a contract exists, else "not applicable")
 9. **07-publish** — rewrite issue body with PRD, apply labels
 
 ## Exit paths
@@ -58,9 +60,11 @@ Stage 05c always runs (fail-open) — it never gates stage 06.
 After stage 06, skip stage 07 if questions were posted.
 
 ## Reference files
-- `shared/prd-template.md` — PRD structure (used by stage 06); includes `## Measurable Impact` section
+- `shared/prd-template.md` — PRD structure (used by stage 06); `## Measurable Impact` section is
+  conditional on stage 05c's contract verdict
 - `shared/failure-modes.md` — common agent pitfall catalog (used by stage 04)
 - `shared/prototype-mission-brief.md` — self-contained brief for the variant mission (stage 05b)
 - `stages/03-assess-clarity/references/gap-checklist.md` — 8-section checklist
 - `stages/05b-prototype-gate/references/gate-checklist.md` — prototype gate + worked classifications
-- `stages/05c-outcomes-baseline/CONTEXT.md` — outcomes API call + fail-open baseline formatting
+- `stages/05c-outcomes-baseline/CONTEXT.md` — causal contract detection + scoped, fail-open
+  baseline formatting

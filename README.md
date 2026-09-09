@@ -56,7 +56,6 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
 | [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
 | [`ops/maintenance`](skills/ops/maintenance/) | Infra-only health audit — LaunchAgents, cron logs, system health, secrets scan |
-| [`ops/distill`](skills/ops/distill/) | Post-mission audit — classifies outcomes using 8-code failure taxonomy |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
@@ -67,6 +66,9 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/seo-ops`](skills/ops/seo-ops/) | Evidence-first pre-launch, production, incident, and recurring SEO audits with deterministic static checks, browser boundaries, multilingual controls, and a reusable casebook |
 | [`ops/vercel-ops`](skills/ops/vercel-ops/) | Safe project guards, environment-variable synchronization, explicit previews, deployment-protection checks, and custom-domain verification for existing Vercel projects |
 | [`ops/dx-metrics`](skills/ops/dx-metrics/) | Measure AI-agent adoption and its effect on delivery — DX Core 4 speed/quality/impact, `Co-Authored-By` adoption curves, cycle time, ownership risk — from git + the GitHub API into a self-contained HTML dashboard. Aggregate by default; per-person data is opt-in and never a throughput leaderboard |
+| [`ops/trash-truck`](skills/ops/trash-truck/) | Investigate product, code, and operational surfaces for evidence-backed retirement; nominate up to three material candidates and require bounded owner selection before action. Scheduled runs only maintain the review record. |
+
+> **Trash Truck migration:** the former `focus:<name>` invocation is no longer accepted. Use `mode:interactive` with optional `candidate:"<description>"`, or `mode:scheduled` with the optional `persist:github` grant.
 
 ## Namespace Convention
 
@@ -97,6 +99,8 @@ Each skill lives at `skills/<namespace>/<skill-name>/SKILL.md`.
 6. **Self-contained** — a skill can be dropped into any project and work without external docs
 
 ## Contributing
+
+`specs/<number>-<slug>/` is the authoritative store for active implementation specs. `docs/plans/` contains non-normative delivery records and `docs/evidence/` contains immutable verification receipts; executable skill behavior remains owned by `skills/`.
 
 See the [`meta/skill-builder`](skills/meta/skill-builder/) skill for the complete authoring standard.
 

@@ -28,13 +28,13 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
 
 ## Steps
 
-1. Read the setup handoff. Note the `## Review State` section (risk tier + findings ledger +
-   verification manifest from review-pr, #2210). Build a mental model of what the diff changes and
-   why — the ledger's summary spares you re-deriving intent, but the DIFF remains the ground truth.
+1. Read the setup handoff. Note the `## First-Review Receipt` section and the first review
+   captured verbatim. Build a mental model of what the diff changes and why — the first review
+   spares you re-deriving intent, but the DIFF remains the ground truth.
 
-   If `Receipt status: stale`, retain its finding IDs and history, but do not trust its `verified`
-   manifest as coverage of current HEAD. Re-check every still-relevant finding against the current
-   full diff and perform the normal tier-scaled cohesive review. Staleness never forces a pipeline
+   If `Receipt status: stale`, retain the first review's findings and history, but do not trust
+   them as coverage of current HEAD. Re-check every still-relevant finding against the current
+   full diff and perform the normal cohesive review. Staleness never forces a pipeline
    restart and never suppresses this stage.
 
 2. **Reconcile claims vs diff — BLOCKING, do this before curating anything.**
@@ -72,26 +72,25 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    Be precise, not pedantic: only claims a reader could verify against the diff. Wording, tone,
    and forward-looking intent ("this unblocks X") are not claims.
 
-3. **Curate the findings — by ledger ID when Review State is present.** Classify EACH finding as:
+3. **Curate the findings — keyed by the first review's IDs when it numbered them.** Classify EACH finding as:
    - **MUST FIX** — accurate, important for correctness/security/spec compliance
    - **NICE TO HAVE** — accurate but low priority, non-blocking
    - **DISCARD** — inaccurate, irrelevant, overly pedantic, or far-fetched
 
-   Document the classification and reason for each, keyed by the ledger ID (`R1`, `R2`, …) when one
-   exists. A human CTO reads this to understand what the AI reviewers actually caught vs. noise.
-   - Review State `none` + no first-review findings: note "No CI review comments found — reviewed
-     diff directly".
+   Document the classification and reason for each, keyed by the first review's IDs (`R1`, `R2`, …)
+   when it numbered them. A human CTO reads this to understand what the AI reviewers actually
+   caught vs. noise.
+   - No first-review findings: note "No CI review comments found — reviewed diff directly".
 
 4. **Identify new issues not caught by the first review** — correctness, edge cases, security,
    missing tests, doc/type/dep gaps. List each with the file/line and what's wrong. Give each an
-   ID continuing the ledger: `D1`, `D2`, … **Depth scales with the risk tier** (#2210):
+   ID continuing the numbering: `D1`, `D2`, … **Depth scales with the risk tier** (#2210):
    - **LOW** — verify acceptance criteria and tests posture, spot-check the 2-3 riskiest hunks;
      no exhaustive fresh hunt on a template-following diff.
    - **MEDIUM** — full fresh hunt as before.
-   - **HIGH** — full fresh hunt AND confirm the runtime-shape checklist verdicts recorded in the
-     ledger's `verified` manifest actually hold against the diff (post-response async work,
-     boundary return shapes, cursor math, local-vs-prod substrate drift, RMW races). If the
-     manifest lacks the checklist (older review), run it yourself.
+   - **HIGH** — full fresh hunt AND run the runtime-shape checklist against the diff
+     (post-response async work, boundary return shapes, cursor math, local-vs-prod substrate
+     drift, RMW races).
    You may ESCALATE the tier (never lower it) — record the new tier + reason in your handoff.
 
 5. **Decide tests posture.** Note whether tests should be run after fixes (and the likely stack),
@@ -99,9 +98,9 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
 
 6. **Refresh live review input before the verdict.** Long corpus/test work makes the setup comment
    snapshot stale. Fetch `gh pr view $PR --repo $REPO --json comments,headRefOid`; require its
-   `headRefOid` to be the 40-character `Setup head SHA`, include every newly created comment in
-   the curation, and record the complete comment cursor. If either read fails or head changed,
-   write `verdict: blocked` with the reason; do not produce an approving receipt.
+   `headRefOid` to be the 40-character `Setup head SHA`, and include every newly created comment
+   in the curation. If the read fails or head changed, write `verdict: blocked` with the reason;
+   do not produce an approving verdict.
 
 7. **Form the consolidated verdict.** One of:
    - `ready` — ready for CTO review (no MUST-FIX items, no blocking new issues, and
@@ -132,8 +131,6 @@ verdict: {ready | needs-work}
 fixes_needed: {true | false}
 claims_reconciled: {pass | fail | unknown}
 reviewed_head_sha: {40-character Setup head SHA}
-receipt_id: {pr}-{reviewed_head_sha}-r{restart_count}
-final_comment_cursor: {JSON array of every comment id/timestamp fetched immediately before verdict}
 
 ## Claims vs Diff
 | Claim (from PR title/body) | Status | Evidence |
@@ -154,7 +151,7 @@ here in one line — this text is what a human reads first.}
 {2-4 bullets: key approach, files changed grouped by area}
 
 ## Risk Tier
-- tier: {from Review State, or the ESCALATED tier + reason, or "unknown (no review-state)"}
+- tier: {your rubric assessment, or the ESCALATED tier + reason, or "unknown"}
 - incoming_receipt: {current | stale | absent}; reviewed_head={sha|none}; current_head={sha}
 
 ## Curated First-Review Findings
@@ -163,7 +160,7 @@ here in one line — this text is what a human reads first.}
 | R1 | {description} | MUST FIX | {what fix is needed} |
 | R2 | {description} | NICE TO HAVE | {worth doing? why} |
 | R3 | {description} | DISCARD | {why it's irrelevant} |
-{ledger IDs when Review State present, else 1..N — or "No CI review comments found — reviewed diff directly"}
+{first-review IDs when it numbered them, else 1..N — or "No CI review comments found — reviewed diff directly"}
 
 ## New Issues (not caught by first review)
 | ID | Issue | File:line | Severity | Fix needed |
@@ -197,7 +194,7 @@ here in one line — this text is what a human reads first.}
 - New issues surfaced (or explicitly "none")
 - Tests posture decided
 - ONE cohesive verdict — not split per-file or per-dimension
-- `reviewed_head_sha` is a full immutable remote SHA and final comment cursor was refreshed
+- `reviewed_head_sha` is a full immutable remote SHA, refreshed against the live PR before the verdict
 
 ## Failure
 - Setup handoff missing or `setup_ok: false` → write handoff with `verdict: blocked` and stop;

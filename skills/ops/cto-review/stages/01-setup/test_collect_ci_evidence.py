@@ -65,7 +65,7 @@ def main() -> None:
     # Stage 01 must invoke this current helper, rather than reusing text from a
     # prior review comment or reimplementing a partial first-page-only query.
     setup = SETUP_CONTEXT.read_text()
-    ci_step = setup[setup.index('CI_DIR="skills/cto-review/stages/01-setup"'):setup.index('\n9. Resolve')]
+    ci_step = setup[setup.index('CI_DIR="skills/cto-review/stages/01-setup"'):setup.index('\n8. Resolve')]
     assert 'CI_EVIDENCE=$(bash "$CI_DIR/collect_ci_evidence.sh" "$REPO" "$CURRENT_HEAD_SHA" "$BASE_BRANCH")' in ci_step
     assert "ALL_COMMENT_BODIES" not in ci_step
     assert "REVIEW_STATE" not in ci_step

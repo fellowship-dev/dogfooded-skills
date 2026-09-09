@@ -1,0 +1,57 @@
+{
+  "id": "issue-to-prd-no-causal-contract-001",
+  "scenario": "no-causal-contract",
+  "description": "A plain feature-request issue with no metric name, no explicit target, and no goal/eval framing anywhere in its body or comments. Stage 05c must not call the outcomes API at all, and stage 06 must state the Measurable Impact section is not applicable rather than manufacturing a metric or target from generic organization-wide data.",
+  "skill": "issue-to-prd",
+  "scope": "procedure",
+  "gate": "zero-tolerance",
+  "rule": "causal-contract",
+  "thread": {
+    "channel": "fellowship-dev/example-app#438",
+    "channelType": "issue",
+    "participants": ["issue-author", "pylot"],
+    "messages": [
+      {
+        "from": "issue-author",
+        "text": "Add a dark mode toggle to account settings. Users have asked for this in a few support tickets."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "no-contract-detected",
+      "setup": "Stage 05c reads the stage 01 handoff. Neither the issue body nor any comment names a metric, states a numeric target, or frames the work causally against a measurement.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=05c-outcomes-baseline"
+      },
+      "expectedBehavior": {
+        "type": "contract",
+        "assertion": "contract_none_and_api_not_called",
+        "description": "The stage 05c handoff records Contract: none and Status: not-applicable. The outcomes API is never invoked for this run — no curl call to /outcomes/summary occurs, because there is no named metric to look up.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "prd-omits-metric",
+      "setup": "Stage 06 drafts the PRD using the stage 05c handoff showing Contract: none.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=06-ask-or-structure"
+      },
+      "expectedBehavior": {
+        "type": "prd-section",
+        "assertion": "measurable_impact_states_not_applicable_no_invented_metric",
+        "description": "The PRD's ## Measurable Impact section is replaced by a single line: 'Not applicable — no goal, eval, or outcome contract is established for this issue.' It must not name pr_merged, time_to_merge_hours, or any other metric, and must not contain a numeric target or baseline of any kind.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "incident": "pre-#2774-reconciliation issue-to-prd (PR fellowship-dev/dogfooded-skills#119)",
+    "observedFailure": "The old implementation generated a Measurable Impact section for every PRD regardless of whether the issue said anything about measurement — defaulting to whichever generic org metrics the outcomes API happened to return and an agent-invented improvement target, turning an unrelated dark-mode toggle request into a spurious pr_merged/time_to_merge_hours commitment.",
+    "note": "Must fail against the pre-#2774-fix universal-section behavior and pass once measurement is gated on an explicit causal contract detected from the issue text."
+  }
+}

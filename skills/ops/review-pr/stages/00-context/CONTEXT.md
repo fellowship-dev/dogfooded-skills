@@ -25,10 +25,10 @@ export REPO=$2
 PR_SNAPSHOT=$(gh pr view $PR --repo $REPO --json headRefOid,labels,comments)
 HEAD_SHA=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.headRefOid')
 HAS_REVIEWED=$(printf '%s' "$PR_SNAPSHOT" | jq '[.labels[].name] | contains(["reviewed"])')
-REVIEW_STATE=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.comments[].body' \
-  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
-printf '%s' "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE=""
-REVIEWED_SHA=$(printf '%s' "$REVIEW_STATE" | jq -r '.head_sha // empty' 2>/dev/null || true)
+# The receipt is the latest review comment's own "Head reviewed" line (G5 doctrine: a stage
+# label counts only if its producing comment names the current head).
+REVIEWED_SHA=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.comments[].body' \
+  | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 
 if [ "$HAS_REVIEWED" = "true" ] && [ -n "$REVIEWED_SHA" ] && [ "$REVIEWED_SHA" = "$HEAD_SHA" ]; then
   echo "[pylot] outcome=\"already complete — reviewed receipt matches current HEAD $HEAD_SHA\" status=success"

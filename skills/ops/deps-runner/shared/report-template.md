@@ -12,7 +12,7 @@ report. Do NOT POST it anywhere.
 
 **Date:** YYYY-MM-DD
 **Repo:** [org/repo]
-**Ona Environment:** [ENV_ID]
+**Worker:** [worker_id]
 **Baseline:** [N tests passing on main, build time]
 
 ## Source PRs

@@ -20,7 +20,7 @@ for PR in $BUILD_TRAIN_PRS; do
 done
 ```
 
-3. Resolve conflicts (same policy as release-train):
+3. Resolve conflicts (standard batch-integration policy):
    - **Lockfiles** (package-lock.json, yarn.lock, Cargo.lock, etc.): regenerate.
    - **Adjacent lines**: keep both.
    - **Irreconcilable**: skip that PR, log the reason, continue with the rest.

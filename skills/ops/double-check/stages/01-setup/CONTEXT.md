@@ -10,8 +10,8 @@ No upstream handoffs — this is the first stage.
 ## Task
 Gather everything the review stage needs and prepare a clean local working tree:
 PR metadata, CI status, the existing (first) review comments, the full diff, and a checked-out
-PR branch rebased onto the base branch (resolving conflicts automatically where possible and
-pushing the rebased branch so the PR stays current).
+base branch merged into the PR branch (resolving conflicts automatically where possible and
+pushing so the PR stays current — merge, never rebase; see dogfooded-skills#161).
 
 ## Steps
 
@@ -42,27 +42,16 @@ printf '%s' "$INITIAL_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || {
 gh pr checks $PR --repo $REPO 2>/dev/null || echo "CI checks not accessible via token"
 ```
 
-### Extract the review-state block (#2210) + read existing review comments
+### Read existing review comments + the first review's head receipt
 
-First try to extract the LAST `review-state v1` block from the PR comments — review-pr embeds a
-machine ledger (findings with IDs + verification manifest + risk tier) so this stage extends it
-instead of re-deriving everything cold:
-
-```bash
-REVIEW_STATE=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
-  | awk '/^<!-- review-state v1$/{buf="";f=1;next} f&&/^-->$/{f=0;last=buf;next} f{buf=buf $0 "\n"} END{printf "%s", last}')
-echo "$REVIEW_STATE" | jq . >/dev/null 2>&1 || REVIEW_STATE=""   # unparseable → treat as absent
-```
-
-- **Block found**: put it verbatim in the handoff's `## Review State` section. Carry over any OTHER
-  bot/CI findings NOT already in the ledger (compare by file/description) verbatim as before.
-- **Block absent or invalid** (pre-#2210 review, or review-pr failed): fall back to the original
-  behavior — capture ALL existing review comments verbatim, and write `## Review State` as `none`.
+Capture ALL existing review comments verbatim, and extract the head SHA the latest first review
+(review-pr) was bound to — its comment carries a `**Head reviewed:** \`<40-hex>\`` line:
 
 ```bash
 gh pr view $PR --repo $REPO --json comments --jq '.comments[].body'
 gh pr view $PR --repo $REPO --json reviews --jq '.reviews[].body'
-INITIAL_COMMENT_CURSOR=$(gh pr view $PR --repo $REPO --json comments --jq '[.comments[] | {id, createdAt, updatedAt}] | @json')
+REVIEW_HEAD_SHA=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
+  | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 ```
 
 Capture every finding from automated CI / the Claude GitHub App / bots verbatim — the review
@@ -86,7 +75,7 @@ If the diff is too large to include whole, say so **explicitly** in the handoff
 (`## Full Diff` → `TRUNCATED — first N of M hunks`). Never silently summarise it: stage 02 treats
 a silently-shortened diff as ground truth and will clear claims it never actually saw.
 
-### Checkout PR branch + rebase onto base
+### Checkout PR branch + merge base into it
 
 ```bash
 REPO_NAME=$(echo $REPO | cut -d/ -f2)
@@ -102,28 +91,35 @@ git fetch origin $PR_BRANCH
 git checkout $PR_BRANCH
 git pull origin $PR_BRANCH
 
-# Rebase onto base branch — resolves the PR branch against the latest base and pushes
-# so the PR is no longer conflicting. This is preferable to a merge: it keeps history
-# linear and unblocks downstream double-check/cto-review stages without human intervention.
+# MERGE the base branch into the PR branch — never rebase (dogfooded-skills#161).
+# A merge answers the only question that matters: does this branch integrate cleanly
+# with base? Its conflict semantics match the squash merge the factory actually
+# performs. Rebase replays old commits one-by-one, which (a) false-conflicts on
+# branches that carry an earlier base-merge whose resolution rebase discards —
+# exactly what blocked pylot#3177 on 2026-09-05 while a plain merge was clean —
+# and (b) rewrites history, forcing a force-push that invalidates head-bound
+# receipts even when nothing conflicted. "Linear history" buys nothing here: the
+# final squash merge flattens the branch anyway. If already up to date, the merge
+# is a no-op and the head SHA (and any current receipt) is preserved.
 git fetch origin $BASE_BRANCH
-if ! git rebase origin/$BASE_BRANCH --no-edit; then
-  # Rebase failed — collect conflict details, abort cleanly, report blocked
+if ! git merge origin/$BASE_BRANCH --no-edit; then
+  # Merge conflict — collect details, abort cleanly, report blocked
   CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
-  git rebase --abort 2>/dev/null || true
-  echo "Rebase conflict in: ${CONFLICT_FILES:-unknown files} — cannot auto-resolve, human intervention needed"
+  git merge --abort 2>/dev/null || true
+  echo "Merge conflict in: ${CONFLICT_FILES:-unknown files} — cannot auto-resolve, human intervention needed"
   # Fall through to write handoff with setup_ok: false
-  REBASE_FAILED=true
+  MERGE_FAILED=true
 fi
 
-if [ -z "$REBASE_FAILED" ]; then
-  # Push the rebased branch so the PR reflects the conflict resolution
-  git push origin $PR_BRANCH --force-with-lease
-  echo "Rebased $PR_BRANCH onto origin/$BASE_BRANCH and pushed — PR conflict cleared"
+if [ -z "$MERGE_FAILED" ]; then
+  # Plain push (no force needed — merge never rewrites existing commits).
+  # If the merge was a no-op this pushes nothing and the head is unchanged.
+  git push origin $PR_BRANCH
+  echo "Merged origin/$BASE_BRANCH into $PR_BRANCH and pushed — PR conflict cleared (or already current)"
 fi
 
 CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
-printf '%s' "$CURRENT_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || REBASE_FAILED=true
-REVIEW_HEAD_SHA=$(echo "$REVIEW_STATE" | jq -r '.head_sha // empty' 2>/dev/null || true)
+printf '%s' "$CURRENT_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' || MERGE_FAILED=true
 if [ -z "$REVIEW_HEAD_SHA" ]; then
   REVIEW_RECEIPT_STATUS="absent"
 elif [ "$REVIEW_HEAD_SHA" = "$CURRENT_HEAD_SHA" ]; then
@@ -133,7 +129,7 @@ else
 fi
 ```
 
-If the rebase cannot be auto-resolved (or the PR can't be fetched/checked out), write the
+If the merge cannot be auto-resolved (or the PR can't be fetched/checked out), write the
 handoff with `setup_ok: false` and the reason — the orchestrator will treat this as a blocked exit.
 
 ## Output: handoff.md
@@ -154,14 +150,13 @@ setup_ok: {true|false}
 - Size: +{additions} / -{deletions}, {N} files, {N} commits
 - Labels: {labels or none}
 - Initial HEAD SHA: {INITIAL_HEAD_SHA}
-- Current HEAD SHA: {CURRENT_HEAD_SHA after any rebase}
+- Current HEAD SHA: {CURRENT_HEAD_SHA after any base merge}
 - Setup head SHA: {CURRENT_HEAD_SHA, exactly 40 lowercase hex characters}
-- Initial comment cursor: {INITIAL_COMMENT_CURSOR}
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
-- Checked out: `{PR_BRANCH}` rebased onto `{BASE_BRANCH}`
-- Rebase: {succeeded and pushed | failed: details}
+- Checked out: `{PR_BRANCH}` with `{BASE_BRANCH}` merged in
+- Base merge: {succeeded and pushed | no-op (already current) | failed: details}
 
 ## CI Status
 {gh pr checks output, or "not accessible via token"}
@@ -170,8 +165,7 @@ setup_ok: {true|false}
 {PR body verbatim and UNTRUNCATED — this is the claims source stage 02 reconciles against the
 diff. Never summarise, trim, or paraphrase it.}
 
-## Review State
-{the LAST review-state v1 JSON verbatim — or "none" (pre-#2210 PR or unparseable block)}
+## First-Review Receipt
 - Receipt status: {current | stale | absent}
 - Receipt head SHA: {REVIEW_HEAD_SHA or none}
 
@@ -180,8 +174,7 @@ the old verification manifest as coverage of current HEAD.
 
 ## First Review (existing comments + reviews, verbatim)
 {every finding from CI / bots / reviewers, verbatim — or "No existing review comments found".
-When Review State is present, findings already in its ledger may be summarized by ID instead of
-repeated verbatim.}
+}
 
 ## Changed Files
 {TOTAL line, then one row per file with +additions/-deletions — verbatim from the `gh pr view
@@ -195,10 +188,10 @@ repeated verbatim.}
 ## Success criteria
 - `setup_ok: true`
 - PR metadata, CI status, first review (verbatim), changed files, and full diff all captured
-- Full remote setup head and complete initial comment cursor recorded; a failed live read is blocked
+- Full remote setup head recorded; a failed live read is blocked
 - PR body captured untruncated; changed-file manifest carries per-file line counts
 - Any diff truncation flagged explicitly (never silent)
-- PR branch checked out in REPO_DIR, rebased onto base, and pushed; REPO_DIR recorded for downstream stages
+- PR branch checked out in REPO_DIR, base merged in, and pushed; REPO_DIR recorded for downstream stages
 
 ## Failure
 - PR not found / `gh` error → write handoff with `setup_ok: false` + reason (orchestrator emits a blocked outcome)

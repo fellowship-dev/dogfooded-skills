@@ -20,34 +20,51 @@ This stage is **pure analysis — no checkouts, no merges, no side effects.** Re
 
 ## Steps
 
-Use `ENV_ID` from the preflight handoff. For each PR (process all groups sequentially):
+Read `worker_id` from the stage 02 handoff (it forwards stage 01's, or a respawned
+replacement). For each PR (process all groups sequentially):
 
 ### a) Check the diff — what changed?
 ```bash
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && git fetch origin <pr-branch>:refs/remotes/origin/<pr-branch> && git diff main..origin/<pr-branch> --name-only"
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && git diff main..origin/<pr-branch> -- package.json Gemfile requirements.txt pyproject.toml"
+WID="<worker_id from stage 02 handoff>"
+
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+  "Run: git fetch origin <pr-branch>:refs/remotes/origin/<pr-branch> && git diff main..origin/<pr-branch> --name-only. Report the file list."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
+```
+Read the file-list result back BEFORE sending the next prompt — per the pylot-cli worker
+contract, `output` returns only the latest turn's result, so a second prompt sent before reading
+this one silently discards the changed-file list that feeds the Direct-usage risk column below.
+
+```bash
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+  "Run: git diff main..origin/<pr-branch> -- package.json Gemfile requirements.txt pyproject.toml. Report the diff verbatim."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 Look at package.json / Gemfile / requirements.txt — what package, what version bump (patch/minor/major)?
 
 ### b) Compile-time or runtime dependency?
 ```bash
 # Node: dependencies vs devDependencies
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && cat package.json | python3 -c \"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+  "Run: cat package.json | python3 -c \"
 import sys,json; p=json.load(sys.stdin)
 pkg='<PACKAGE_NAME>'
 if pkg in p.get('dependencies',{}): print('RUNTIME')
 elif pkg in p.get('devDependencies',{}): print('DEV/BUILD')
 else: print('TRANSITIVE')
-\""
+\". Report the single word printed."
 
 # Rails: Gemfile group
-gitpod environment ssh $ENV_ID -- "cd /workspaces/\$(ls /workspaces/) && grep -A2 '<gem_name>' Gemfile"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+  "Run: grep -A2 '<gem_name>' Gemfile. Report the matched lines."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 
 ### c) Used directly in the codebase?
 ```bash
-gitpod environment ssh $ENV_ID -- \
-  "cd /workspaces/\$(ls /workspaces/) && grep -r '<package-name>' --include='*.{js,ts,jsx,tsx,rb,py}' -l | grep -v node_modules | grep -v vendor"
+pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
+  "Run: grep -r '<package-name>' --include='*.js' --include='*.ts' --include='*.jsx' --include='*.tsx' --include='*.rb' --include='*.py' -l | grep -v node_modules | grep -v vendor. Report the file list, or 'none' if empty."
+pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 ```
 
 ### d) Classify risk
@@ -64,6 +81,9 @@ Path: `.procedure-output/deps-runner/03-risk-eval/handoff.md`
 ```markdown
 # Stage 03: Risk Evaluation
 
+## Worker
+worker_id: {forwarded from stage 02}
+
 ## Per-PR Classification
 | PR | Package | Old → New | Bump | Dep type | Direct usage | Risk | Notes |
 |----|---------|-----------|------|----------|--------------|------|-------|
@@ -79,6 +99,7 @@ Path: `.procedure-output/deps-runner/03-risk-eval/handoff.md`
 ## Success criteria
 - Every candidate PR classified with bump / dep type / direct usage / risk
 - All groups evaluated in this single stage (no fan-out)
+- `worker_id` forwarded unchanged
 - Build/test order produced for stage 04
 
 ## Failure

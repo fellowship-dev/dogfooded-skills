@@ -35,6 +35,49 @@ Load into conversation: `pylot conversations resources-add <conv-id> type=secret
 
 ## Assets
 
+You do not have S3; you have the assets API. Anything durable — a screenshot, a
+long report, a recording — has to go through `pylot assets`, never a direct
+write and never a link to somewhere else. Never `raw.githubusercontent.com` on
+a feature branch, never a static S3 key: both rot once the branch or retention
+window is gone — see the [Hosting and durability
+rule](https://github.com/fellowship-dev/pylot/blob/develop/docs/visual-evidence.md#hosting-and-durability-rule)
+for the receipts.
+
+**Three lifetimes** — pick the one that matches what you're making, before you make it:
+
+| Lifetime | What it's for | How |
+|---|---|---|
+| Ephemeral scratch | A draft you're still iterating on in this turn | nothing — stays in-turn |
+| Resumable checkpoint | A private draft/report that must survive a turn ending | `presign --conversation <id>` → `PUT` → `finalize` (finalize takes only `--sha256`/`--size`, no scope flag) |
+| Published artifact | Evidence meant for a human or another repo (screenshot, PR proof) | the full presign → finalize → publish recipe below |
+
+Do not reach for `publish --conversation <id>` as a shortcut or retry path for a
+checkpoint — it sets `visibility: public`, which is a privacy regression for
+what is meant to be a private draft. Ownership is already fixed at `presign`
+time via `--conversation <id>`; there is no separate "attach to conversation"
+step for a checkpoint.
+
+A checkpoint's retention is not tied to `evidence_class` — there is no special
+TTL exemption for it. `retention_policy` already defaults to indefinite, so
+passing it explicitly changes nothing. That said, in staging every asset (any
+class, any `retention_policy` value) still auto-expires after 30 days — an
+S3 object-lifecycle rule outside the API, with no per-asset override. Treat a
+staging checkpoint as staging-ephemeral: good for surviving a turn boundary,
+not a substitute for promoting the finished artifact once the report is done.
+See [Retention](https://github.com/fellowship-dev/pylot/blob/develop/docs/assets.md#retention)
+for the full policy.
+
+Ephemeral scratch is not durable: a turn can end more abruptly than a normal
+function return drops it (see the [Lambda Freeze
+Convention](https://github.com/fellowship-dev/pylot/blob/develop/docs/lambda-freeze.md)
+for that failure shape in miniature). Concrete trigger, don't wait for a
+vaguer sense of "running low": if a `context capacity` system message shows up
+in the conversation (fires at ~90% of context, per issue #944), that turn is
+your last chance — checkpoint what you have as a private conversation asset
+before you do anything else. If no such message has fired yet but you're
+about to end a turn with a report still incomplete, checkpoint anyway; the
+warning is a backstop, not a permission slip to wait for it.
+
 Use the CLI for the complete Pylot asset lifecycle. The only operation outside
 the CLI is the direct `PUT` to the short-lived presigned object URL; never call a
 Pylot gateway asset endpoint with `curl`.
@@ -382,6 +425,70 @@ pylot automations get <name>     # single rule detail
 ```
 
 Per-repo coverage: filter `only_repos`/`skip_repos` from list output.
+
+### fellowship-dev/pylot admin procedures (dispatched by automations)
+
+> **Scoped placement-doctrine exception:** this skill operates the Pylot
+> gateway itself (see the file description above), so the org name, endpoint
+> shapes, and repo paths below are the skill's own subject matter, not
+> another repo's policy leaking in — unlike `create-compelling-prs` or
+> `double-check`, there is no playbook indirection to fall back to for "how
+> do I operate the Pylot gateway." This file already carried extensive
+> pylot-specific content before this section (dispatch, secrets, assets,
+> automations commands above). Recorded here per review finding R1 on PR
+> #170 so the exception doesn't re-trip as an unresolved doctrine violation
+> on future passes.
+
+These four fellowship-dev/pylot automations dispatch to `pylot.lead` with no
+`/skill-name` in their task — the procedure below IS the instruction; it used
+to live only in each rule's `context_template` (fellowship-dev/pylot#3447
+trimmed those to facts-only, so this is now the only copy — keep it in sync
+with the live rule via `pylot automations get <name>`, don't let it drift).
+
+**`publish-cli-on-main-version-bump`** — fires on every push to
+`fellowship-dev/pylot@main` (not file-filtered: GitHub's push payload commits
+array caps at 20 entries, and merge-commit promotions routinely exceed that,
+so a files filter risks silently missing a version bump).
+0. Read the version main now carries — ref-explicit, don't rely on the
+   container's own checkout: `git fetch origin <sha> && git show
+   <sha>:modules/cli/package.json | jq -r .version` → `CLI_VERSION`. Read what
+   npm actually serves: `npm view pylot-cli version` → `NPM_VERSION`. If they
+   match, nothing to publish: `PUT /admin/config/cli_publish_last` with
+   `{"sha","cli_version","npm_version","build_id":null,"phase":"skipped","verdict":"unchanged","checked_at"}`
+   and stop.
+1. Mismatch: `POST $PYLOT_API/admin/publish-cli` (Bearer `$PYLOT_DISPATCH_TOKEN`) — capture `build_id`.
+2. Poll `GET /admin/build-worker/<build_id>` every 30s (max 20 min) to a terminal phase.
+3. Re-read `npm view pylot-cli version` (refresh — don't reuse step 0's).
+4. Verdict: terminal phase not `SUCCEEDED` → `failed`. Else `NPM_VERSION == CLI_VERSION` → `ok`. Else → `drift`.
+5. Always `PUT /admin/config/cli_publish_last` with the full record — every branch above ends here, never exit after step 1/2 without writing it.
+6. On `drift`/`failed`: also comment on the repo with the log URL `$PYLOT_API/admin/deploy/logs/<build_id>` — nothing else reads `cli_publish_last` automatically, so the comment is the only alert.
+
+**`rebuild-images-on-cli-push`** — fires when `modules/cli/src/**` or its
+package files push to `main` (narrowed from all of `modules/cli/**` so a
+README-only push doesn't rebuild the fleet).
+1. `GET /devboxes/projects` — extract every `repo` field. Empty/failed → abort, don't call batch-rebuild with an empty list.
+2. `POST /admin/build-worker/batch` with `{"repos": [<all repos>]}` — capture the `builds` array (`repo` + `build_id` per entry).
+3. Poll each `GET /admin/build-worker/<build_id>` every 60s (max 30 min per build) to terminal.
+4. Log a fleet report: per repo, built+promoted / skipped / FAILED (name failures with their `build_id` + error).
+5. Log a verification entry: total attempted / succeeded / failed with final statuses — no silent completion.
+
+**`chat-worker-image-on-push`** — fires when gateway Lambda source
+(`gateway/lambda/**`, `gateway/shared/**`, `gateway/chat.mts`,
+`gateway/gateway.mjs`, `harness-versions.json`) pushes to `main`.
+1. `POST $PYLOT_API/admin/build-chat-worker` (Bearer `$PYLOT_DISPATCH_TOKEN`) — capture `build_id`.
+2. Poll `GET /admin/build-worker/<build_id>` every 30s (max 20 min) to terminal.
+3. Log a verification entry: `build_id` + final status — no silent completion.
+4. On `FAILED`: comment on fellowship-dev/pylot with the log URL `$PYLOT_API/admin/deploy/logs/<build_id>`.
+5. No Lambda repoint here — the next `POST /admin/deploy` picks up the new image.
+
+**`release-gate-on-pr-to-main`** — fires when a PR opens/updates against
+`main` in fellowship-dev/pylot. Runs the pre-merge corpus gate against the
+computed merge commit, not the PR head, so the gate reflects what will
+actually land.
+0. Strip a stale label (idempotent): `gh pr edit <number> --repo <repo> --remove-label release-gate-green 2>/dev/null || true`.
+1. `MERGE_SHA=$(gh pr view <number> --repo <repo> --json mergeCommitSha -q .mergeCommitSha)`. Empty/`null` → comment asking the author to resolve conflicts and push again, exit 0 (not a failure — GitHub hasn't computed a merge commit yet).
+2. `git fetch origin "$MERGE_SHA" && git checkout "$MERGE_SHA" && bash scripts/ci-test-gate.sh`.
+3. Pass → `gh pr edit <number> --repo <repo> --add-label release-gate-green`. Fail → comment with the failure and exit 1 (re-push retriggers).
 
 ## Slack Channel Routing
 

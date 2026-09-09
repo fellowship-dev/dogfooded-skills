@@ -29,8 +29,30 @@ case "${1:-}" in
     test "$before" != "$after"
     ;;
   compatibility)
-    specimen='[[ x = x ]]'
-    case "$specimen" in *'[['*) exit 0;; *) exit 1;; esac
+    # Genuine dialect probe: `[[ ... ]]` is a bashism. A POSIX-only shell
+    # (dash) must reject it; this must not depend on whatever /bin/sh
+    # happens to resolve to on the host running the test (on macOS,
+    # /bin/sh is bash, which silently accepts it). We explicitly invoke a
+    # named POSIX-only shell binary rather than the ambient /bin/sh.
+    posix_sh=""
+    for candidate in dash "busybox sh"; do
+      set -- $candidate
+      if command -v "$1" >/dev/null 2>&1; then
+        posix_sh=$candidate
+        break
+      fi
+    done
+    if [ -z "$posix_sh" ]; then
+      echo "compatibility: no POSIX-only shell binary (dash/busybox) available to probe; skipping" >&2
+      exit 1
+    fi
+    if $posix_sh -c '[[ x = x ]]' >/dev/null 2>&1; then
+      # A POSIX-only shell accepted a bashism: the seeded defect is present.
+      exit 1
+    else
+      # A POSIX-only shell correctly rejected the bashism: no defect.
+      exit 0
+    fi
     ;;
   *)
     echo "usage: $0 authorization|secret-handling|process-tree-cancellation|session-continuity|compatibility" >&2

@@ -9,6 +9,11 @@
 ## Success Metrics
 - [Metric]: [specific target or measurement approach]
 
+## Smallest version that works
+[The narrowest change that resolves the stated need — one or two sentences. If the scope below is
+larger than this, cite the specific failing case that requires the extra size; a preference is not
+a citation.]
+
 ## Measurable Impact
 
 [Include this section ONLY if the issue states an explicit causal goal/eval/outcome contract —
@@ -30,6 +35,11 @@ contract is established for this issue." or, if partial signals exist, "Needs a 
 
 ### Out of Scope
 - [Explicitly excluded item]
+
+## What this lets us delete
+[Config, code path, flag, doc, or second mechanism this change makes redundant — cite `file:line`
+or the mechanism's name. "Nothing" is valid only with a one-line reason (e.g. "net-new capability,
+nothing prior served this need"). Never leave this section templated or silent.]
 
 ## Technical Requirements
 - [Requirement referencing existing codebase patterns]

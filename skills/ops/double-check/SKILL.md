@@ -135,6 +135,44 @@ Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not ru
   `[pylot] outcome="double-check blocked: {reason}" status=blocked` (a deliberate stop — `blocked`
   is its own terminal state, not a failure)
 
+## Rework Follow-up Mode
+
+Whether — and how — a "produce the fix" follow-up dispatch exists at all is
+**repo policy, not protocol**: some orgs wire a CTO-rework automation on top
+of this skill, some don't. Read the repo playbook (`GET
+/admin/playbooks/<org>/<repo>`) for a rework-dispatch section; if it names a
+contract, it looks like this:
+
+> A gate rule dispatches back into this skill when a prior review left
+> `needs-work`, with a task string identifying it as a PRODUCE follow-up
+> (not a re-judge). The playbook names the exact trigger string/label to
+> match and the automation's identity — treat those as resolved values below,
+> not literal text to hardcode here.
+
+When dispatched under that contract, do the following BEFORE running the
+stages above (the playbook is the source of truth for the trigger and rule
+name — keep this protocol in sync with it, don't let the two drift):
+
+0. Scan the PR's comments first. If a prior attempt already posted a
+   `⚠️ NEEDS HUMAN` marker, or a previous rework already tried and failed on
+   this SAME gate, do NOT loop — leave it for a human and stop. Never re-check
+   and re-apply `needs-work` without producing anything.
+1. Read the latest CTO review comment for its specific action items.
+2. Actually ADDRESS them. Code/test/doc fixes: make the changes and push.
+   Staging evidence requested: deploy the branch to staging, run the required
+   procedures, and update the PR **body** (not a comment) with the evidence
+   plus a `deployed_sha: <sha>` line — the CTO gate scans the body. If the ask
+   genuinely exceeds this skill's scope (needs a specialized runner, a human
+   decision, or credentials you lack): do NOT silently re-apply `needs-work` —
+   post a comment beginning `⚠️ NEEDS HUMAN` stating exactly what's blocking
+   and what would unblock it, then STOP.
+3. Only after the items are actually addressed: `gh pr edit <number> --repo
+   <repo> --remove-label "double-checked,needs-work"`, then run the stages
+   above fresh so the label chain re-fires.
+
+> **No rework-dispatch section in the playbook?** This mode does not apply —
+> run the stages above as a normal review/fix/post pass.
+
 ## Hard Rules
 
 1. **SEQUENTIAL ONLY** — one Task per stage, run one after another. NO parallel Task launches, ever.

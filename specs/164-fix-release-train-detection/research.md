@@ -34,7 +34,7 @@
   field-absent literal-`main` fallback, not via `unconfigured`. The underlying decision (no-team-
   match → unconfigured, never a bare literal-main comparison) is unaffected and still correct in
   general; only the illustrative example was wrong. No repo used as the actual SC-003 test fixture
-  (`test_evidence_gate.py`'s T007, `acme/dogfooded-skills`) is a real, currently-team-matched repo,
+  (`test_evidence_gate.py`'s T007, `acme/undeclared-repo`) is a real, currently-team-matched repo,
   so the fixture itself remains valid — it was just confusingly named after the real repo whose
   reported symptom (comment 2026-09-09) inspired it.
 - **Alternatives considered**:

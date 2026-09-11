@@ -1,0 +1,114 @@
+{
+  "fixtures": [
+    {
+      "id": "pylot-3372",
+      "description": "Schema migration on the normal review path — touches production data but is not destructive (fellowship-dev/pylot#3372)",
+      "human_waiting_on_owner": false,
+      "security_label_present": false,
+      "owner_authority_class": "none",
+      "owner_authority_evidence": "none",
+      "owner_decision_line": "none",
+      "owner_answerer": "none",
+      "expect_gate_fired": false,
+      "expect_reaches_merge_bar": true
+    },
+    {
+      "id": "pylot-3408",
+      "description": "A file named credentials.env with no secret exposure in the diff — name alone is not secrets-handling (fellowship-dev/pylot#3408)",
+      "human_waiting_on_owner": false,
+      "security_label_present": false,
+      "owner_authority_class": "none",
+      "owner_authority_evidence": "none",
+      "owner_decision_line": "none",
+      "owner_answerer": "none",
+      "expect_gate_fired": false,
+      "expect_reaches_merge_bar": true
+    },
+    {
+      "id": "security-label-class-none",
+      "description": "review-pr applied `security` (new auth surface) but cto-review's classifier finds no owner-authority match — security alone must not park (SC-002)",
+      "human_waiting_on_owner": false,
+      "security_label_present": true,
+      "owner_authority_class": "none",
+      "owner_authority_evidence": "none",
+      "owner_decision_line": "none",
+      "owner_answerer": "none",
+      "expect_gate_fired": false,
+      "expect_reaches_merge_bar": true
+    },
+    {
+      "id": "human-label-class-none",
+      "description": "A human directly applied waiting-on-owner; the classifier independently returns none — the human trigger still hard-blocks (SC-004, US3)",
+      "human_waiting_on_owner": true,
+      "security_label_present": false,
+      "owner_authority_class": "none",
+      "owner_authority_evidence": "none",
+      "owner_decision_line": "none",
+      "owner_answerer": "none",
+      "expect_gate_fired": true,
+      "expect_reaches_merge_bar": false,
+      "expect_fallback_decision_line": true,
+      "expect_fallback_answerer": true
+    },
+    {
+      "id": "class-destructive-prod-data",
+      "description": "Diff drops a production table column with no backfill — destructive-prod-data",
+      "human_waiting_on_owner": false,
+      "security_label_present": true,
+      "owner_authority_class": "destructive-prod-data",
+      "owner_authority_evidence": "migrations/0042_drop_column.sql:12 — `ALTER TABLE orders DROP COLUMN legacy_status;` with no backfill or reversible migration",
+      "owner_decision_line": "Is it acceptable to permanently drop the `legacy_status` column, or must a reversible migration be used instead?",
+      "owner_answerer": "the on-call database owner",
+      "expect_gate_fired": true,
+      "expect_reaches_merge_bar": false
+    },
+    {
+      "id": "class-spend-above-budget",
+      "description": "Diff raises a cloud autoscaling ceiling past the approved monthly budget — spend-above-budget",
+      "human_waiting_on_owner": false,
+      "security_label_present": false,
+      "owner_authority_class": "spend-above-budget",
+      "owner_authority_evidence": "infra/autoscale.tf:31 — `max_instances = 200` (was 20), projected to exceed the approved monthly compute budget",
+      "owner_decision_line": "Is the increased autoscaling ceiling of 200 instances approved, or should it stay at 20?",
+      "owner_answerer": "the budget owner",
+      "expect_gate_fired": true,
+      "expect_reaches_merge_bar": false
+    },
+    {
+      "id": "class-secrets-handling",
+      "description": "Diff logs a plaintext API key to stdout on every request — secrets-handling",
+      "human_waiting_on_owner": false,
+      "security_label_present": true,
+      "owner_authority_class": "secrets-handling",
+      "owner_authority_evidence": "src/middleware/auth.ts:58 — `console.log('key:', apiKey)` runs on every request",
+      "owner_decision_line": "Is it acceptable that this middleware logs the raw API key on every request, or must the log statement be removed before merge?",
+      "owner_answerer": "the security owner",
+      "expect_gate_fired": true,
+      "expect_reaches_merge_bar": false
+    },
+    {
+      "id": "class-external-send",
+      "description": "Diff adds an automated email to all customers on deploy — external-send",
+      "human_waiting_on_owner": false,
+      "security_label_present": false,
+      "owner_authority_class": "external-send",
+      "owner_authority_evidence": "src/jobs/notify_customers.ts:19 — `sendEmail(allCustomers, template)` runs unconditionally on deploy",
+      "owner_decision_line": "Is it approved to send this email to all customers on deploy, or should it be gated behind a manual trigger?",
+      "owner_answerer": "the customer-comms owner",
+      "expect_gate_fired": true,
+      "expect_reaches_merge_bar": false
+    },
+    {
+      "id": "class-org-policy",
+      "description": "Diff changes the default data-retention window org-wide — org-policy",
+      "human_waiting_on_owner": false,
+      "security_label_present": false,
+      "owner_authority_class": "org-policy",
+      "owner_authority_evidence": "config/retention.yml:4 — `default_retention_days: 30` (was 365)",
+      "owner_decision_line": "Is a 30-day default retention window approved org-wide, or should the 365-day default remain until policy is updated?",
+      "owner_answerer": "the org-policy owner",
+      "expect_gate_fired": true,
+      "expect_reaches_merge_bar": false
+    }
+  ]
+}

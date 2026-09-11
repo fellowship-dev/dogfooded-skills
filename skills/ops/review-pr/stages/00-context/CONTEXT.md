@@ -88,7 +88,9 @@ subagent needs all of it.
 ### Step 2.5: New Auth Surface Detection (#2918)
 
 Check whether this PR introduces a new auth surface. The rule is deterministic — no judgement.
-A new auth surface triggers the `security` label in stage 02 regardless of whether any finding is raised.
+A new auth surface triggers the `security` classification label in stage 02 regardless of whether
+any finding is raised. The label is metadata for triage, not a merge hold (#3240) — cto-review's
+own owner-authority classifier decides independently whether a park is warranted.
 
 ```bash
 CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
@@ -104,7 +106,7 @@ echo "[review-pr] auth surface: $AUTH_SURFACE"
 ```
 
 Record `auth_surface: {none|new-auth-surface}` in the handoff. A `new-auth-surface` value means
-stage 02 MUST apply the `security` label, even if stage 01 raises zero findings.
+stage 02 MUST apply the `security` classification label, even if stage 01 raises zero findings.
 
 ### Step 3: Compute the Risk Tier (mechanical — #2210)
 

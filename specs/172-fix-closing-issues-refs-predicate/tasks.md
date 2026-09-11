@@ -9,15 +9,15 @@ must-fail-before proof plus a green fixture run, so fixtures are load-bearing, n
 
 ## Phase 1: Setup
 
-- [ ] T001 Re-confirm current anchors before editing: `.repository.nameWithOwner` at `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh:23`, `/workspace/skills/ops/speckit-runner/SKILL.md:53`, and the Python `jq` stub at `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh:26-41` (plan.md Scale/Scope; confirmed once already during planning, re-check for drift before implementation).
+- [X] T001 Re-confirm current anchors before editing: `.repository.nameWithOwner` at `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh:23`, `/workspace/skills/ops/speckit-runner/SKILL.md:53`, and the Python `jq` stub at `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh:26-41` (plan.md Scale/Scope; confirmed once already during planning, re-check for drift before implementation).
 
 ---
 
 ## Phase 2: Foundational (blocks all stories)
 
-- [ ] T002 Delete the Python `jq` reimplementation stub in `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh:26-41` so the real `jq` binary on `PATH` executes the shipped predicate string (FR-004).
-- [ ] T003 In `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh`'s `make_fixture` (line 44-48), reshape the fixture to the real payload: `{"id","number","repository":{"id","name","owner":{"id","login"}},"url"}`, replacing the flat `"repository":{"nameWithOwner":...}` shape.
-- [ ] T004 In `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh`, add a wrong-repo fixture case (right issue number, different `owner.login`/`name`) and assert rejection — keep the 3 existing cases (`head-and-linkage-accepted`, `wrong-head-rejected`, `issue-linkage-remains-required`).
+- [X] T002 Delete the Python `jq` reimplementation stub in `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh:26-41` so the real `jq` binary on `PATH` executes the shipped predicate string (FR-004).
+- [X] T003 In `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh`'s `make_fixture` (line 44-48), reshape the fixture to the real payload: `{"id","number","repository":{"id","name","owner":{"id","login"}},"url"}`, replacing the flat `"repository":{"nameWithOwner":...}` shape.
+- [X] T004 In `/workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh`, add a wrong-repo fixture case (right issue number, different `owner.login`/`name`) and assert rejection — keep the 3 existing cases (`head-and-linkage-accepted`, `wrong-head-rejected`, `issue-linkage-remains-required`).
 
 **Checkpoint**: test harness now executes the real predicate against a real-shaped fixture. Running it now must FAIL (old predicate + new fixture) — do not treat this as broken; it proves T002-T004 closed the blind spot. Record this red run for the must-fail-before evidence in Phase 5.
 
@@ -27,7 +27,7 @@ must-fail-before proof plus a green fixture run, so fixtures are load-bearing, n
 
 **Independent test**: run `bash /workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh`; the `head-and-linkage-accepted` and new wrong-repo cases (T004) must be green with the corrected predicate in place, and red if reverted.
 
-- [ ] T005 [US1] In `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh:23`, replace `.repository.nameWithOwner == $repo` with `((.repository.owner.login + "/" + .repository.name) == $repo)` inside the existing `any(.closingIssuesReferences[]?; .number == $issue and ...)` predicate (FR-001, FR-003).
+- [X] T005 [US1] In `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh:23`, replace `.repository.nameWithOwner == $repo` with `((.repository.owner.login + "/" + .repository.name) == $repo)` inside the existing `any(.closingIssuesReferences[]?; .number == $issue and ...)` predicate (FR-001, FR-003).
 
 **Checkpoint**: US1 fully functional — Step 8 postcondition accepts a correctly-formed PR and rejects a same-number ref from a different repo.
 
@@ -37,7 +37,7 @@ must-fail-before proof plus a green fixture run, so fixtures are load-bearing, n
 
 **Independent test**: hand-construct a two-PR `OPEN_PRS` JSON array (one closing issue N in-repo, one not) and confirm the Step 0 snippet in `SKILL.md` selects the correct PR via `jq -c` piped through the corrected predicate.
 
-- [ ] T006 [US2] In `/workspace/skills/ops/speckit-runner/SKILL.md:53`, replace `.repository.nameWithOwner == $repo` with `((.repository.owner.login + "/" + .repository.name) == $repo)` in the Step 0 `EXISTING_PR` selection snippet — byte-identical predicate clause to T005 (FR-002).
+- [X] T006 [US2] In `/workspace/skills/ops/speckit-runner/SKILL.md:53`, replace `.repository.nameWithOwner == $repo` with `((.repository.owner.login + "/" + .repository.name) == $repo)` in the Step 0 `EXISTING_PR` selection snippet — byte-identical predicate clause to T005 (FR-002).
 
 **Checkpoint**: US2 fully functional — Step 0 resume/dedup gate finds the linked PR by real repo-match instead of always missing it.
 
@@ -45,12 +45,12 @@ must-fail-before proof plus a green fixture run, so fixtures are load-bearing, n
 
 ## Phase 5: Polish & cross-cutting
 
-- [ ] T007 Run `bash /workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh` → all cases PASS, exit 0 (SC-001).
-- [ ] T008 Must-fail-before proof: in a scratch copy, revert only `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh:23`'s predicate to `.repository.nameWithOwner == $repo`, rerun T007's command → must FAIL. Restore the fix. Paste both outputs (red, then green) in the PR body (SC-002).
-- [ ] T009 [P] `grep -rn '\.repository\.nameWithOwner' /workspace/skills/ops/speckit-runner/` → zero results (SC-003).
-- [ ] T010 [P] Diff the predicate clause between `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh` and `/workspace/skills/ops/speckit-runner/SKILL.md` to confirm T005 and T006 are byte-identical (FR-002).
-- [ ] T011 `git diff --stat` → only the 3 scope-fenced files changed (plan.md Structure Decision).
-- [ ] T012 Walk through `/workspace/specs/172-fix-closing-issues-refs-predicate/quickstart.md` end-to-end as the final manual check.
+- [X] T007 Run `bash /workspace/skills/ops/speckit-runner/tests/pr-postcondition.test.sh` → all cases PASS, exit 0 (SC-001).
+- [X] T008 Must-fail-before proof: in a scratch copy, revert only `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh:23`'s predicate to `.repository.nameWithOwner == $repo`, rerun T007's command → must FAIL. Restore the fix. Paste both outputs (red, then green) in the PR body (SC-002).
+- [X] T009 [P] `grep -rn '\.repository\.nameWithOwner' /workspace/skills/ops/speckit-runner/` → zero results (SC-003).
+- [X] T010 [P] Diff the predicate clause between `/workspace/skills/ops/speckit-runner/shared/pr-postcondition.sh` and `/workspace/skills/ops/speckit-runner/SKILL.md` to confirm T005 and T006 are byte-identical (FR-002).
+- [X] T011 `git diff --stat` → only the 3 scope-fenced files changed (plan.md Structure Decision).
+- [X] T012 Walk through `/workspace/specs/172-fix-closing-issues-refs-predicate/quickstart.md` end-to-end as the final manual check.
 
 ## Dependencies
 

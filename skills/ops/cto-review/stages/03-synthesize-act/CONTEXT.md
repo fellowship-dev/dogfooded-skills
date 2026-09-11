@@ -78,75 +78,105 @@ own homework. Keep the token split or in prose, exactly as above.
 The notice never applies a label, never changes the verdict, and never affects the merge bar in
 Step 3.
 
-### Step 2: Security / Owner Gate — RUNS BEFORE VERDICT LABEL (#2918, #3009)
+### Step 2: Owner Gate — RUNS BEFORE VERDICT LABEL (#2918, #3009, #3240)
 
 This gate runs BEFORE the verdict label (Step 4) is applied. When it fires and exits, `needs-work`
 is never written to the PR — preventing phantom `rework-on-needs-work` missions on parked PRs.
 (#3009 — was Step 3.0, moved here to correct label ordering.)
 
-This check is **deterministic code, not judgement**. It runs immediately before the merge call,
-using a FRESH label read from GitHub (not from the stage 01 handoff cache). If the PR carries
-`security` OR `waiting-on-owner`, cto-review MUST NOT merge — full stop.
+This check is **deterministic code, not judgement** — it consumes stage 02's classification
+verbatim and never re-judges the diff. It runs immediately before the merge call, using a FRESH
+label read from GitHub (not from the stage 01 handoff cache) for the human trigger. cto-review
+MUST NOT merge if EITHER of two independent triggers holds: a human has applied
+`waiting-on-owner`, OR stage 02's `owner_authority_class` is anything other than `none`.
+`security` is never a trigger by itself — it is classification metadata only (#3240).
 
 ```bash
 # Fresh label read at merge time — must NOT use the cached handoff from stage 01
 LIVE_LABELS=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name]' 2>/dev/null || echo '[]')
-GATE_FIRED=false
+HUMAN_WAITING_ON_OWNER=false
+echo "$LIVE_LABELS" | grep -qE '"waiting-on-owner"' && HUMAN_WAITING_ON_OWNER=true
 
-if echo "$LIVE_LABELS" | grep -qE '"security"'; then
-  GATE_FIRED=true
-  GATE_REASON="security"
-elif echo "$LIVE_LABELS" | grep -qE '"waiting-on-owner"'; then
-  GATE_FIRED=true
-  GATE_REASON="waiting-on-owner"
-fi
+# Read stage 02's classification verbatim — never re-derive it from the diff here
+OWNER_CLASS=$(sed -n 's/^- owner_authority_class: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
+OWNER_CLASS="${OWNER_CLASS:-none}"
+
+GATE_FIRED=false
+[ "$HUMAN_WAITING_ON_OWNER" = "true" ] && GATE_FIRED=true
+[ "$OWNER_CLASS" != "none" ] && GATE_FIRED=true
 
 if [ "$GATE_FIRED" = "true" ]; then
-  # Ensure waiting-on-owner is applied (it may only be security right now)
   gh label create "waiting-on-owner" --repo $REPO --color "e99695" --description "Waiting for owner decision before merge" 2>/dev/null || true
   gh pr edit $PR --repo $REPO --add-label "waiting-on-owner"
+
+  DECISION_LINE=$(sed -n 's/^- owner_decision_line: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
+  ANSWERER=$(sed -n 's/^- owner_answerer: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
+  EVIDENCE=$(sed -n 's/^- owner_authority_evidence: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
+
+  # Pure human trigger with no classifier match: the fields above are legitimately "none" —
+  # every park still needs exactly one decision line and a named answerer (#3240 AC5/AC6).
+  if [ -z "$DECISION_LINE" ] || [ "$DECISION_LINE" = "none" ]; then
+    DECISION_LINE="Should this PR proceed as filed, or does it need changes before merge?"
+  fi
+  if [ -z "$ANSWERER" ] || [ "$ANSWERER" = "none" ]; then
+    ANSWERER=$(gh api repos/$REPO/issues/$PR/events --jq \
+      '[.[] | select(.event=="labeled" and .label.name=="waiting-on-owner")] | last | .actor.login' \
+      2>/dev/null)
+    ANSWERER="${ANSWERER:-the human who applied waiting-on-owner}"
+  fi
+  if [ -z "$EVIDENCE" ] || [ "$EVIDENCE" = "none" ]; then
+    EVIDENCE="waiting-on-owner applied directly by a human reviewer (no owner-authority classifier match)"
+  fi
 
   # Post the park comment — include receipts so the owner has full context
   RECEIPTS=$(grep -A20 '## Receipts' .procedure-output/cto-review/02-review/handoff.md 2>/dev/null \
     | head -20 || echo "Labels seen: $LIVE_LABELS")
 
   cat > /tmp/cto-owner-gate.md <<PARK_EOF
-## cto-review: Parked — Owner Gate (#2918)
+## cto-review: Parked — Owner Gate (#3240)
 
-This PR carries label(s) **${GATE_REASON}** that require a human decision before automation may merge.
+**Decision needed:** ${DECISION_LINE}
+**Who can answer:** ${ANSWERER}
+**Evidence:** ${EVIDENCE}
 
-**Why this gate exists:** the \`security\` and \`waiting-on-owner\` labels are explicit holds set by
-the pipeline or by a human reviewer to flag that a decision is beyond the automation's jurisdiction.
-An LLM reading context cannot override this — the gate is unconditional.
+**Why this gate exists:** \`waiting-on-owner\` is a human-set hold, or this diff matched one of
+cto-review's five closed owner-authority classes. Either way, the decision above is beyond the
+automation's jurisdiction — an LLM reading context cannot override this, the gate is unconditional.
 
-**To unpark:** remove the \`${GATE_REASON}\` label (and \`waiting-on-owner\` if present) after the
-human review is complete, then re-trigger cto-review.
+**To unpark:** the named answerer resolves the decision above, then a human removes
+\`waiting-on-owner\` and re-triggers cto-review.
 
 ${RECEIPTS}
 PARK_EOF
   gh pr comment $PR --repo $REPO --body-file /tmp/cto-owner-gate.md
 
-  echo "[cto-review] owner gate fired: $GATE_REASON — PR parked, NOT merged"
-  echo "[pylot] outcome=\"cto-review parked: PR #${PR} carries ${GATE_REASON} — owner review required\" status=blocked"
+  echo "[cto-review] owner gate fired (human_label=$HUMAN_WAITING_ON_OWNER class=$OWNER_CLASS) — PR parked, NOT merged"
+  echo "[pylot] outcome=\"cto-review parked: PR #${PR} — owner decision required\" status=blocked"
   exit 0
 fi
-echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS"
+echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS class=$OWNER_CLASS"
 ```
 
 **Rules that are absolute:**
 - This check fires EVEN IF stage 02 gave LGTM verdict — verdict cannot override the gate.
-- This check fires EVEN IF the labels were applied by mistake — label removal is the human's action.
-- `security` and `waiting-on-owner` are the ONLY two trigger labels; no other label blocks merge.
-- The gate reads labels from GitHub live, NOT from the stage 01 handoff. A label applied AFTER
-  stage 01 started (e.g. by a concurrent automation) will still trigger the gate.
+- This check fires EVEN IF `waiting-on-owner` was applied by mistake — label removal is the
+  human's action.
+- Exactly two independent triggers: a human-applied `waiting-on-owner` label, OR stage 02's
+  `owner_authority_class != none`. `security` is never a trigger by itself, and no other label
+  blocks merge.
+- The human trigger reads labels from GitHub live, NOT from the stage 01 handoff. A label applied
+  AFTER stage 01 started (e.g. by a concurrent automation) will still trigger the gate. The
+  classifier trigger is read verbatim from stage 02's handoff — this stage never re-judges the
+  diff.
 - `waiting-on-owner` is applied if not already present, so the PR is always clearly parked for
   humans to find via label filter.
-- The park comment MUST include the receipts block from stage 02 so the owner has full context.
+- The park comment MUST include exactly one decision line, a named answerer, the evidence, and
+  the receipts block from stage 02.
 - After firing, emit `status=blocked` and STOP — no merge, no further steps.
 - **The gate is LANE-INDEPENDENT (#2996).** It fires identically on `lane:fast` and `lane:staging`
   and on a PR with no lane label. The fast lane removes double-check and the staging deploy; it
-  removes nothing from this gate. A fast-lane PR carrying `security` parks here exactly as it does
-  today — that is the #2918 acceptance criterion, replayed.
+  removes nothing from this gate. A fast-lane PR matching an owner-authority class parks here
+  exactly as it does today — that is the #2918 acceptance criterion, replayed.
 
 ### Step 3: Resolve the merge bar for this lane (#2996)
 
@@ -295,7 +325,7 @@ report ends at the file write; operators surface it via the mission report.
 On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
 On the owner gate fire (Step 2), emit the parked marker and STOP:
 ```
-[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
+[pylot] outcome="cto-review parked: PR #{N} — owner decision required" status=blocked
 ```
 If a side effect failed hard (comment post errored), emit:
 ```
@@ -313,7 +343,7 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 - merge_state: {open | merged | closed-no-merge}
 - lane: {fast | staging} (from the fresh label read at merge time)
 - required_labels: {reviewed | reviewed double-checked}
-- owner_gate_fired: {true (label: security|waiting-on-owner) | false}
+- owner_gate_fired: {true (trigger: human-label|owner-authority-class:{class}) | false}
 - comment_posted: {url or "skipped (closed-no-merge)" or "park comment (owner gate)"}
 - label_applied: {approved | needs-work | ready-to-merge | waiting-on-owner (gate) | none}
 - merge_action: {merged | labeled-ready-to-merge | closed-superseded | held (CI-block only) | parked (owner gate) | skipped (already merged) | skipped (closed)}
@@ -324,12 +354,14 @@ Path: `.procedure-output/cto-review/03-synthesize-act/handoff.md`
 ```
 
 ## Success criteria
-- Owner gate (Step 2) ran using a FRESH GitHub label read, not the cached handoff.
+- Owner gate (Step 2) ran using a FRESH GitHub label read for the human trigger, and stage 02's
+  `owner_authority_class` verbatim for the classifier trigger — never re-judging the diff here.
 - Merge bar (Step 3) resolved from that SAME fresh label read: `reviewed` on `lane:fast`,
   `reviewed` + `double-checked` on `lane:staging` or no lane label.
 - On `lane:fast`, a missing `double-checked` was NOT treated as a blocker and did NOT produce
   `needs-work` or a request for a double-check.
-- If gate fired: park comment posted (with receipts), `waiting-on-owner` applied, `status=blocked` emitted. STOP.
+- If gate fired: park comment posted with exactly one decision line, a named answerer, the
+  evidence, and receipts; `waiting-on-owner` applied; `status=blocked` emitted. STOP.
 - If gate clear: comment posted (with `## Checked / Found` receipts section), label applied per verdict, merge/label honoring merge state and CI, report file written (no Quest), outcome marker emitted from the orchestrator.
 
 ## Failure

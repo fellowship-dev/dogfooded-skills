@@ -72,10 +72,13 @@ REVIEW_EOF
 > `reviewed` event would carry no lane label, `review-pr-on-reviewed` would not be excluded, and a
 > fast-lane PR would silently pay for a double-check + staging deploy anyway.
 
-### Step 2: Apply security Label (deterministic — #2918)
+### Step 2: Apply security Label (deterministic — #2918, #3240)
 
-The `security` label is a machine-readable hold signal consumed by cto-review's merge gate.
-Apply it NOW, in the same mission as the review, so the gate is set before any merge attempt.
+The `security` label is classification metadata — it flags a diff as security-sensitive for
+human triage and downstream reporting. It is never a hold or a block by itself: cto-review's
+owner gate fires only on a human-applied `waiting-on-owner` or its own owner-authority classifier
+match (#3240), never on this label. Apply it NOW, in the same mission as the review, so the
+classification is set and visible before any merge attempt.
 
 Read from the handoffs:
 - `auth_surface` field from stage 00 handoff (`new-auth-surface` or `none`)
@@ -91,7 +94,7 @@ if [ "$AUTH_SURFACE" = "new-auth-surface" ] || [ "$HAS_SEC" = "true" ]; then
 fi
 
 if [ "$APPLY_SECURITY" = "true" ]; then
-  gh label create "security" --repo $REPO --color "e11d48" --description "Security-sensitive — requires owner review before merge" 2>/dev/null || true
+  gh label create "security" --repo $REPO --color "e11d48" --description "Security-sensitive — classification metadata, not a merge hold" 2>/dev/null || true
   gh pr edit $PR --repo $REPO --add-label "security"
   echo "[review-pr] security label applied (auth_surface=$AUTH_SURFACE, has_security_findings=$HAS_SEC)"
 else
@@ -106,7 +109,8 @@ fi
   `modules/auth/`) — even with zero findings. New auth surface is owner-gated by default.
 - Do NOT apply `security` for non-auth findings (perf, docs, style, etc.).
 - The `security` label does NOT change the review-pr outcome — proceed to double-check as normal.
-- The cto-review merge gate reads the label at merge time; this step is just the setter.
+- The `security` label does NOT gate cto-review's merge decision — it is classification metadata
+  only; cto-review's owner gate runs its own five-class classifier independently (#3240).
 - `APPLY_SECURITY` is consumed by Step 2.5 — it is an INPUT to the lane classifier, so this step
   must stay ahead of it.
 

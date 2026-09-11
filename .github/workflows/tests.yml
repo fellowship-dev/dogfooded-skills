@@ -35,6 +35,7 @@ jobs:
             ./skills/ops/cto-review/stages/01-setup/test_collect_ci_evidence.py
             ./skills/ops/cto-review/stages/01-setup/test_evidence_gate.py
             ./skills/ops/cto-review/stages/01-setup/test_visual_gate.py
+            ./skills/ops/cto-review/tests/test_owner_gate_contract.py
             ./skills/ops/double-check/tests/exact-head-receipt.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-aggregate.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-dashboard.test.sh

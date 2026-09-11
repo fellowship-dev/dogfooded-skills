@@ -115,6 +115,22 @@ check("The `security` label does NOT gate cto-review's merge decision" in post, 
 check("not a merge hold" in ctx0, "review-pr 00-context must call the label metadata, not a hold")
 check("classification metadata, never a merge hold" in review_pr_skill, "review-pr/SKILL.md must call the label metadata")
 
+# Regression guard: no edited file may reintroduce "security"-as-hold language via a stray
+# sentence the line-numbered task scoping missed (found in review — "owner-gated by default"
+# survived one line below the AC1 rewrite in review-pr's 02-post/CONTEXT.md).
+HOLD_DRIFT_PHRASES = ("owner-gated", "owner gated")
+for label, text in (
+    ("cto-review/SKILL.md", cto_skill),
+    ("cto-review/02-review/CONTEXT.md", review),
+    ("cto-review/03-synthesize-act/CONTEXT.md", synth),
+    ("review-pr/SKILL.md", review_pr_skill),
+    ("review-pr/00-context/CONTEXT.md", ctx0),
+    ("review-pr/02-post/CONTEXT.md", post),
+):
+    lowered = text.lower()
+    for phrase in HOLD_DRIFT_PHRASES:
+        check(phrase not in lowered, f"{label} must not describe security/auth-surface as '{phrase}'")
+
 # AC3: the five-class taxonomy is verbatim and closed at exactly five, in the classifier step.
 for cls in TAXONOMY:
     check(cls in review, f"02-review/CONTEXT.md is missing taxonomy class verbatim: {cls}")

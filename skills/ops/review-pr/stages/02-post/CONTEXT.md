@@ -106,7 +106,7 @@ fi
 - Apply `security` if ANY finding is security-class (auth/privilege/IDOR/injection) — even if the
   overall verdict is "clean" after disproof (a surviving IDOR finding is a hard trigger).
 - Apply `security` if `auth_surface: new-auth-surface` (PR touches `route-capability.mts` or
-  `modules/auth/`) — even with zero findings. New auth surface is owner-gated by default.
+  `modules/auth/`) — even with zero findings.
 - Do NOT apply `security` for non-auth findings (perf, docs, style, etc.).
 - The `security` label does NOT change the review-pr outcome — proceed to double-check as normal.
 - The `security` label does NOT gate cto-review's merge decision — it is classification metadata

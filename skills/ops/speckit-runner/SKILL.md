@@ -50,7 +50,7 @@ OPEN_PRS=$(gh pr list --repo "$REPO" --state open --limit 100 \
   --json number,url,headRefName,closingIssuesReferences 2>/dev/null || echo '[]')
 EXISTING_PR=$(printf '%s' "$OPEN_PRS" | jq -c --argjson issue "$0" --arg repo "$REPO" '
   [.[] | select(any(.closingIssuesReferences[]?;
-    .number == $issue and .repository.nameWithOwner == $repo))][0] // empty')
+    .number == $issue and ((.repository.owner.login + "/" + .repository.name) == $repo)))][0] // empty')
 
 # A pushed checkpoint may not have a PR yet. If exactly one remote branch has
 # an issue-number segment, also reconcile an open PR by its exact head ref.

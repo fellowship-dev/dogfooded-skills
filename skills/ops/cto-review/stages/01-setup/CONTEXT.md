@@ -160,23 +160,50 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   # Staging evidence is required ONLY for release-train PRs: base = the team-declared promote
   # branch (pylot#164). Resolved from Pylot's DB-authoritative team config, the same object
   # resolve-merge-strategy.sh already reads .deploy.release_mode from (step 8 below) — never
-  # from repo default-branch metadata, and never a bare literal when unconfigured.
+  # from repo default-branch metadata. Owner dispatch (2026-09-10): when a team matches the repo
+  # but declares no production_branch, fall back to the literal `main` — but a repo with NO team
+  # match at all stays unconfigured (fail-open), so repos with no promote flow at all (e.g. this
+  # skills library) are never misclassified as a release train (SC-003).
   BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "")
   RELEASE_TRAIN_BASE=""
   RELEASE_TRAIN_REASON=""
+  RELEASE_TRAIN_SOURCE=""
   if TEAMS_JSON=$(pylot teams list 2>/dev/null); then
-    RELEASE_TRAIN_BASE=$(printf '%s' "$TEAMS_JSON" | jq -r --arg repo "$REPO" '
+    MATCH_JSON=$(printf '%s' "$TEAMS_JSON" | jq -c --arg repo "$REPO" '
       [
         .teams[]?
         | select(any(.repos[]?; ascii_downcase == ($repo | ascii_downcase)))
-        | (.deploy.production_branch // empty)
-      ]
-      | map(select(. != ""))
-      | if length == 1 then .[0] else empty end
-    ' 2>/dev/null || echo "")
-    if [ -z "$RELEASE_TRAIN_BASE" ]; then
-      RELEASE_TRAIN_REASON="no team declares deploy.production_branch for $REPO"
-    fi
+      ] as $matches
+      | if ($matches | length) == 0 then
+          {status: "no-match"}
+        elif ($matches | length) > 1 then
+          {status: "ambiguous"}
+        else
+          ($matches[0].deploy.production_branch // "") as $pb
+          | if $pb == "" then {status: "field-absent"} else {status: "declared", branch: $pb} end
+        end
+    ' 2>/dev/null || echo '{"status":"error"}')
+    MATCH_STATUS=$(printf '%s' "$MATCH_JSON" | jq -r '.status // "error"' 2>/dev/null || echo "error")
+    case "$MATCH_STATUS" in
+      declared)
+        RELEASE_TRAIN_BASE=$(printf '%s' "$MATCH_JSON" | jq -r '.branch')
+        RELEASE_TRAIN_SOURCE="declared"
+        ;;
+      field-absent)
+        RELEASE_TRAIN_BASE="main"
+        RELEASE_TRAIN_SOURCE="literal-fallback"
+        RELEASE_TRAIN_REASON="team matches $REPO but declares no deploy.production_branch; falling back to literal main per owner dispatch 2026-09-10"
+        ;;
+      no-match)
+        RELEASE_TRAIN_REASON="no team declares $REPO"
+        ;;
+      ambiguous)
+        RELEASE_TRAIN_REASON="multiple teams declare $REPO; ambiguous match"
+        ;;
+      *)
+        RELEASE_TRAIN_REASON="pylot teams list query failed"
+        ;;
+    esac
   else
     RELEASE_TRAIN_REASON="pylot teams list unreachable"
   fi
@@ -184,7 +211,11 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   NEEDS_EVIDENCE=false
   if [ -n "$BASE_BRANCH" ] && [ -n "$RELEASE_TRAIN_BASE" ] && [ "$BASE_BRANCH" = "$RELEASE_TRAIN_BASE" ]; then
     NEEDS_EVIDENCE=true
-    echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the team-declared promote branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+    if [ "$RELEASE_TRAIN_SOURCE" = "literal-fallback" ]; then
+      echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the owner-mandated literal main fallback; team declares no deploy.production_branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+    else
+      echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the team-declared promote branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+    fi
     RELEASE_TRAIN_HANDOFF="$RELEASE_TRAIN_BASE"
   elif [ -n "$RELEASE_TRAIN_BASE" ]; then
     echo "[cto-review] staging evidence gate: NOT REQUIRED — base=$BASE_BRANCH is not the team-declared promote branch ($RELEASE_TRAIN_BASE); per-PR staging retired by owner ruling 2026-09-06"

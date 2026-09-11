@@ -209,10 +209,12 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 16. **Prod's gate moved to the release train (pylot#3389)** — ordinary PRs merge with no staging
     deploy, by design. Every promote to the repo's team-declared `deploy.production_branch` must
     carry fresh `/test-in-staging` evidence at its exact head (this skill's stage-01 gate enforces
-    it, resolved from live team config — never from `defaultBranchRef`, and never a bare literal
-    when unconfigured, pylot#164), and `scripts/ci-release-gate.sh` still runs the unscoped full
-    corpus before anything reaches production. The staging *step* is mandatory per release; the
-    release *count* is not.
+    it, resolved from live team config — never from `defaultBranchRef`. Owner dispatch 2026-09-10:
+    a matched team with no declared `production_branch` falls back to the literal `main`; a repo
+    with no team match at all stays unconfigured/fail-open rather than defaulting to `main`, so
+    repos with no promote flow (e.g. this skills library) are never misclassified, pylot#164), and
+    `scripts/ci-release-gate.sh` still runs the unscoped full corpus before anything reaches
+    production. The staging *step* is mandatory per release; the release *count* is not.
 17. **Merge authority is explicit and DB-authoritative** — stage 01 MUST use
     `resolve-merge-strategy.sh`, which reads live team configuration through the Pylot CLI. Only
     `deploy.release_mode=ship` grants automated merge authority. `propose`, missing configuration,

@@ -20,7 +20,7 @@ a note on whether it is blocking.
 
 ## Clarity
 
-- [ ] CHK005 Is "the repo's matching team entry" in FR-002 unambiguous about what happens if MORE than one team entry matches the same repo? [Gap, non-blocking — not addressed; implementation resolves conservatively (ambiguous match → unconfigured) but the spec doesn't say so]
+- [ ] CHK005 Is "the repo's matching team entry" in FR-002 unambiguous about what happens if MORE than one team entry matches the same repo? [Gap, non-blocking — not addressed in spec prose; implementation now resolves this explicitly (ambiguous match → unconfigured, distinct status from "no match"), covered by fixture T008c, but the requirement text itself doesn't state it]
 - [x] CHK006 Is User Story 2's acceptance criterion free of grammatical ambiguity that could be read two ways? [Spec §User Story 2 — fixed 2026-09-11, was previously malformed]
 - [x] CHK007 Is "release-train status" in FR-001 defined precisely enough to distinguish it from "merge authority" (a separate, pre-existing decision covered by `deploy.release_mode`)? [Spec §FR-001, §FR-002]
 
@@ -44,7 +44,7 @@ a note on whether it is blocking.
 ## Edge Cases
 
 - [ ] CHK016 Is there a requirement for what happens when the team-config lookup returns malformed/unexpected JSON (not just "unreachable")? [Gap, non-blocking — FR-003 covers "no team declares" but not malformed-response handling explicitly; implementation's jq pipeline degrades malformed JSON to the same unconfigured/fail-open outcome via `2>/dev/null || echo ""`]
-- [ ] CHK017 Is there a requirement for how an ambiguous repo-to-team mapping (multiple teams claiming the same repo) should resolve, mirroring the existing `resolve-merge-strategy.sh` precedent? [Gap, non-blocking — not stated in spec.md; implementation mirrors `resolve-merge-strategy.sh`'s convention of treating ambiguity as "no clear answer"]
+- [ ] CHK017 Is there a requirement for how an ambiguous repo-to-team mapping (multiple teams claiming the same repo) should resolve, mirroring the existing `resolve-merge-strategy.sh` precedent? [Gap, non-blocking — not stated in spec.md; implementation now gives ambiguity its own explicit `ambiguous` status (distinct from "no match" and "field absent") resolving to `unconfigured`, mirroring `resolve-merge-strategy.sh`'s convention, and is fixture-covered (T008c) — the requirement text itself still doesn't state it]
 - [x] CHK018 Does the spec state that the fail-open default must never silently pass without a printed reason (i.e., "unconfigured" must always be distinguishable from "not required because it doesn't match")? [Spec §FR-004]
 
 ## Notes
@@ -52,9 +52,10 @@ a note on whether it is blocking.
 - All items reviewed against `spec.md` as written on 2026-09-11 (post-clarify, post-analyze fix).
 - CHK006 was a genuine defect (confirmed by `/speckit-analyze` finding A1) and has been fixed
   directly in spec.md.
-- The remaining gaps (CHK003, CHK005, CHK010, CHK013, CHK016, CHK017) are spec-completeness
-  notes, not implementation defects: in every case the shipped predicate already resolves the
-  unstated scenario conservatively (fail-open, unconfigured, rationale printed) — extending
-  spec.md to enumerate them would exceed this issue's scope fence (4 files, targeted bug fix)
-  without changing behavior. Left as documented, non-blocking gaps for a future spec revision
-  if this predicate grows new configuration sources.
+- The remaining gaps (CHK003, CHK005, CHK010, CHK013, CHK016, CHK017 — **6 items, confirmed by
+  recount during the 2026-09-11 correction pass**) are spec-completeness notes, not implementation
+  defects: in every case the shipped predicate already resolves the unstated scenario conservatively
+  (fail-open, unconfigured, rationale printed) — extending spec.md to enumerate them would exceed
+  this issue's scope fence (4 files, targeted bug fix) without changing behavior. Left as
+  documented, non-blocking gaps for a future spec revision if this predicate grows new
+  configuration sources.

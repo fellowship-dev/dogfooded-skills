@@ -7,9 +7,12 @@
 
 Replace the `base == default_branch` release-train proxy in cto-review step 5.5 with a
 team-declared promote branch (`deploy.production_branch`, read via `pylot teams list`, mirroring
-`resolve-merge-strategy.sh`'s existing `deploy.release_mode` lookup). No team entry or no declared
-branch → gate fails open (`NEEDS_EVIDENCE=false`) and logs why; never falls back to a literal
-`main`, per SC-003.
+`resolve-merge-strategy.sh`'s existing `deploy.release_mode` lookup). No team entry at all → gate
+fails open (`NEEDS_EVIDENCE=false`) and logs why, per SC-003. A team entry that matches but
+declares no `deploy.production_branch` falls back to the literal `main` (owner dispatch
+2026-09-10, FR-003, amended during the 2026-09-11 correction pass) — this fallback is scoped to a
+*matched* team only and never fires for a repo with no team match at all, which is what preserves
+SC-003.
 
 ## Technical Context
 
@@ -20,7 +23,7 @@ branch → gate fails open (`NEEDS_EVIDENCE=false`) and logs why; never falls ba
 - **Target Platform**: cto-review stage-01 subagent (any repo cto-review runs against)
 - **Project Type**: operational skill (bash procedure + Python test harness), no app/service layer
 - **Performance Goals**: N/A — single CLI call per PR review, same cost profile as the existing `resolve-merge-strategy.sh` call already made in the same stage
-- **Constraints**: zero `defaultBranchRef` reads; zero `main`/`master`/`develop` literals in live predicate (FR-005); must stay a single delimited bash block with stable anchors extractable by the test harness (mirrors `extract_gate_invocation()`)
+- **Constraints**: zero `defaultBranchRef` reads; zero `main`/`master`/`develop` literals in live predicate used to infer/guess the promote branch, except the single owner-mandated literal `main` fallback (FR-003/FR-005, amended correction pass 2026-09-11); must stay a single delimited bash block with stable anchors extractable by the test harness (mirrors `extract_gate_invocation()`)
 - **Scale/Scope**: 4 files (scope-fenced by the PRD): `stages/01-setup/CONTEXT.md`, `SKILL.md`, `stages/01-setup/test_evidence_gate.py`, `stages/02-review/CONTEXT.md:67`
 
 ## Constitution Check

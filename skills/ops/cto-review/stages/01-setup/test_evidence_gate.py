@@ -248,7 +248,11 @@ PYLOT_STUB_SCRIPT = """#!/usr/bin/env bash
 if [ "${PYLOT_TEST_FAIL:-}" = "1" ]; then
   exit 1
 fi
-printf '%s' "${PYLOT_TEST_TEAMS:-{\\"teams\\":[]}}"
+if [ -n "${PYLOT_TEST_TEAMS:-}" ]; then
+  printf '%s' "$PYLOT_TEST_TEAMS"
+else
+  printf '%s' '{"teams":[]}'
+fi
 """
 
 # Stub `gh`: `gh pr view ...` returns the fixture's base branch, `gh repo view ...`
@@ -325,6 +329,12 @@ PYLOT_TEAM_NO_FIELD = json.dumps({
 NO_MATCHING_TEAM = json.dumps({
     "teams": [{"repos": ["acme/other"], "deploy": {"production_branch": "main"}}]
 })
+PYLOT_TEAM_AMBIGUOUS = json.dumps({
+    "teams": [
+        {"repos": ["acme/pylot"], "deploy": {"production_branch": "main"}},
+        {"repos": ["acme/pylot"], "deploy": {"production_branch": "release"}},
+    ]
+})
 
 # (label, repo, base_branch, default_branch, teams_json, fail, expect_needs_evidence, handoff_substr)
 RELEASE_TRAIN_FIXTURES = [
@@ -337,8 +347,18 @@ RELEASE_TRAIN_FIXTURES = [
         "acme/dogfooded-skills", "main", "main", NO_MATCHING_TEAM, False, False, "unconfigured",
     ),
     (
-        "T008) US1: team matches but deploy.production_branch absent -> NOT REQUIRED, unconfigured (SC-003)",
-        "acme/pylot", "main", "develop", PYLOT_TEAM_NO_FIELD, False, False, "unconfigured",
+        "T008) US2: team matches but deploy.production_branch absent, base=main -> REQUIRED, literal "
+        "main fallback (owner dispatch 2026-09-10)",
+        "acme/pylot", "main", "develop", PYLOT_TEAM_NO_FIELD, False, True, "main",
+    ),
+    (
+        "T008b) US1: team matches but deploy.production_branch absent, base!=main -> NOT REQUIRED, "
+        "fallback resolved but doesn't match (SC-003 still holds for non-main bases)",
+        "acme/pylot", "develop", "develop", PYLOT_TEAM_NO_FIELD, False, False, "promote branch is main",
+    ),
+    (
+        "T008c) US1: multiple teams declare the same repo (ambiguous) -> NOT REQUIRED, unconfigured",
+        "acme/pylot", "main", "develop", PYLOT_TEAM_AMBIGUOUS, False, False, "unconfigured",
     ),
     (
         "T009) US1: pylot teams list unreachable -> NOT REQUIRED, unconfigured, no traceback",
@@ -394,7 +414,7 @@ def run_red_on_mutant_check() -> bool:
     and stay green against the real, deployed one."""
     print()
     print("-- red-on-mutant proof (T012): reverting to base == default_branch --")
-    mutant_targets = {"T006)", "T007)", "T010)"}
+    mutant_targets = {"T006)", "T007)", "T008)", "T010)"}
     mutant_fixtures = [f for f in RELEASE_TRAIN_FIXTURES if f[0].split(" ", 1)[0] in mutant_targets]
     red_ok = True
     for label, repo, base, default, teams, fail, want_needed, handoff_substr in mutant_fixtures:

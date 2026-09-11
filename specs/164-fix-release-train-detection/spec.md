@@ -12,8 +12,13 @@ branch exists at all.
 ### Session 2026-09-11
 - Q: Field name/path for the team-declared promote branch (no such field exists in `pylot teams
   list` today)? → A: `deploy.production_branch`, sibling to the existing `deploy.release_mode`
-  field already read by `resolve-merge-strategy.sh` — same object, same lookup pattern, cross-repo
-  addition tracked as a dependency, not built here.
+  field already read by `resolve-merge-strategy.sh` — same object, same lookup pattern. This is a
+  cross-repo schema/data dependency on `fellowship-dev/pylot`, NOT built here and, as of this
+  writing, **not yet filed as a tracking issue in that repo**. Until it lands, every repo resolves
+  `unconfigured` (fail-open) and the false-negative this issue exists to fix (SC-002) stays latent
+  in practice, not just on paper. **Action required at PR time**: file and link a tracking issue in
+  `fellowship-dev/pylot` for the schema addition, or explicitly accept the interim fail-open state
+  in the PR description — this worker has no write access to file it from here.
 
 ## User Scenarios & Testing
 
@@ -33,27 +38,42 @@ its promote branch isn't the repo's default branch.
 
 **Acceptance**:
 1. **Given** promote target `main` and default branch `develop`, **When** a PR targets `main`, **Then** REQUIRED.
+2. **Given** a team matches the repo but declares no `deploy.production_branch`, **When** a PR
+   targets `main`, **Then** REQUIRED (owner-mandated literal fallback, dispatch 2026-09-10).
 
 ## Requirements
 
 - **FR-001**: MUST NOT use repo default-branch metadata (`defaultBranchRef`) to decide release-train status, in either direction.
 - **FR-002**: MUST resolve the promote branch from `deploy.production_branch` in the repo's matching
   team entry (`pylot teams list`), sibling to the existing `deploy.release_mode` field, when present.
-- **FR-003**: MUST NOT fall back to comparing against the literal `main` when no team declares a promote branch — that reproduces the false positive on repos where `main` is the ordinary target (dogfooded-skills, comment 2026-09-09).
-- **FR-004**: Every decision (required / not-required / unconfigured) MUST print a rationale and record the resolved promote branch (or reason) in the stage-01 handoff.
-- **FR-005**: No company-specific branch literals (`main`/`master`/`develop`) in a live predicate — fixtures only.
+- **FR-003**: When a team entry matches the repo but declares no `deploy.production_branch`, MUST
+  fall back to the literal `main` (owner dispatch, 2026-09-10: "read it from the team's deploy
+  config when present, else the literal `main`"). This fallback is scoped to a *matched* team with
+  an unset field — it MUST NOT fire when no team declares the repo at all, which would reproduce
+  the false positive on repos where `main` is the ordinary merge target and no promote flow exists
+  (dogfooded-skills, comment 2026-09-09); that case resolves to `unconfigured` instead (see SC-003).
+- **FR-004**: Every decision (required / not-required / unconfigured) MUST print a rationale and record the resolved promote branch (or reason) in the stage-01 handoff, including which source produced it (team-declared vs. literal fallback vs. unconfigured).
+- **FR-005**: No company-specific branch literals (`main`/`master`/`develop`) in a live predicate to infer or guess the promote branch from repo metadata — fixtures only, EXCEPT the single owner-mandated literal `main` used by FR-003's scoped fallback, which is an explicit dispatched value, not an inference.
 
 ## Success Criteria
 
 - **SC-001**: Ordinary `feature -> develop` PRs never trigger the gate (false positive fixed).
 - **SC-002**: `develop -> main` release train triggers the gate although `main` isn't default (false negative fixed).
-- **SC-003**: A repo with no declared promote branch never triggers the gate on any PR (third failure mode fixed).
+- **SC-003**: A repo with NO team match at all never triggers the gate on any PR (third failure mode fixed) — distinct from a matched team with an unset field, which falls back to literal `main` per FR-003.
 - **SC-004**: Reverting to `base == default_branch` turns the SC-001/SC-002 fixtures red.
 
 ## Assumptions
 
-- Owner dispatch (2026-09-10) supersedes the PRD's playbook-GET mechanism and its ban on team
-  config, but not SC-003 (unmentioned by the dispatch; violated by an unqualified "else literal
-  main") — FR-002+FR-003 together is the only reading consistent with all owner input. PRD scope
-  fence/file list still applies (`stages/01-setup/CONTEXT.md`, `SKILL.md`, `test_evidence_gate.py`,
-  `stages/02-review/CONTEXT.md:67`); only the mechanism changes.
+- **Reconciling the owner dispatch (2026-09-10) with the third-failure-mode comment (2026-09-09)**:
+  the dispatch's literal wording ("read it from the team's deploy config when present, else the
+  literal `main`") is implemented with the field-level scoping in FR-003: "when present" is read as
+  "the specific `deploy.production_branch` field is present on a matched team," not "any team
+  config exists." This satisfies the dispatch's literal instruction for the case it was written to
+  fix (pylot's own PRs, where a team matches but the field was never populated) while preserving
+  SC-003 for the case the dispatch does not mention (no team declares the repo at all — the
+  dogfooded-skills shape). No team match is a strictly narrower, pre-existing case the dispatch's
+  sentence does not literally cover (there is no "the team" to have a deploy config for). This
+  scoping was chosen over a blanket unconditional `main` fallback because the latter would silently
+  regress SC-003.
+  PRD scope fence/file list still applies (`stages/01-setup/CONTEXT.md`, `SKILL.md`,
+  `test_evidence_gate.py`, `stages/02-review/CONTEXT.md:67`); only the mechanism changes.

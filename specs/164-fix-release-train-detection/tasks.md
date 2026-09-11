@@ -28,7 +28,9 @@ fixture run plus a red-on-mutant proof, so fixtures are load-bearing, not option
 
 - [x] T006 [US1] Add fixture in `/workspace/skills/ops/cto-review/stages/01-setup/test_evidence_gate.py`: base `develop`, team declares `deploy.production_branch: main` → NOT REQUIRED (SC-001).
 - [x] T007 [US1] Add fixture: no team entry matches the repo (dogfooded-skills shape) → NOT REQUIRED, rationale asserted (SC-003).
-- [x] T008 [US1] Add fixture: team entry present but `deploy.production_branch` absent/null → NOT REQUIRED, `unconfigured` rationale asserted (SC-003).
+- [x] T008 [US2] Add fixture: team entry present but `deploy.production_branch` absent/null, base=`main` → REQUIRED, literal `main` fallback (owner dispatch 2026-09-10; **amended during the 2026-09-11 correction pass** — originally specified as NOT REQUIRED/unconfigured, corrected to implement the owner's literal "else the literal main" instruction, scoped to fire only when a team matches; see spec.md Assumptions).
+- [x] T008b [US1] Add fixture (correction pass, 2026-09-11): same team-matched/field-absent shape as T008 but base≠`main` → NOT REQUIRED (SC-003 preserved for non-main bases).
+- [x] T008c [US1] Add fixture (correction pass, 2026-09-11): multiple team entries match the same repo (ambiguous) → NOT REQUIRED, `unconfigured` (closes CHK005/CHK017-adjacent gap).
 - [x] T009 [US1] Add fixture: `pylot teams list` fails/unreachable (`PYLOT_TEST_FAIL=1`) → NOT REQUIRED, no traceback, exit 0 (Edge Case).
 
 **Checkpoint**: US1 fully functional — every false-positive/no-promote-flow path proven green.
@@ -49,13 +51,17 @@ fixture run plus a red-on-mutant proof, so fixtures are load-bearing, not option
 
 ## Phase 5: Polish & cross-cutting
 
-- [x] T013 [P] Update `/workspace/skills/ops/cto-review/SKILL.md` lines 3, 81, 95, 153, 164, 181, 207 (Hard Rule 16) — replace "base = default branch" language with the team-declared promote branch, no `main`/`master`/`develop` literals outside examples (FR-005).
+- [x] T013 [P] Update `/workspace/skills/ops/cto-review/SKILL.md` lines 3, 81, 95, 153, 164, 181, 207 (Hard Rule 16) — replace "base = default branch" language with the team-declared promote branch, no `main`/`master`/`develop` literals outside examples (FR-005; **FR-005 amended in the correction pass** to carve out the single owner-mandated literal `main` fallback — see spec.md).
 - [x] T014 [P] Update `/workspace/skills/ops/cto-review/stages/02-review/CONTEXT.md:67` — same replacement, same constraint.
-- [x] T015 Run `python3 /workspace/skills/ops/cto-review/stages/01-setup/test_evidence_gate.py` → exit 0, all green.
+- [x] T015 Run `python3 /workspace/skills/ops/cto-review/stages/01-setup/test_evidence_gate.py` → exit 0, all green. Requires `jq` on `PATH` (quickstart.md Prerequisite, added correction pass 2026-09-11).
 - [x] T016 Run neighboring harnesses unchanged: `test_ci_gate.py`, `test_collect_ci_evidence.py`, `test_visual_gate.py`, `test_resolve_merge_strategy.sh` (shared directory/anchors — must stay green).
 - [x] T017 `grep -rn "defaultBranchRef" /workspace/skills/ops/cto-review/` → no results.
-- [x] T018 `grep -rnE '\b(main|master|develop)\b' /workspace/skills/ops/cto-review/SKILL.md /workspace/skills/ops/cto-review/stages/` → fixture/example context only, no live predicate.
+- [x] T018 `grep -rnE '\b(master|develop)\b' /workspace/skills/ops/cto-review/SKILL.md /workspace/skills/ops/cto-review/stages/` → fixture/example context only, no live predicate. (**Amended correction pass 2026-09-11**: `main` excluded from this grep — it now appears once in the live predicate as the explicit FR-003 literal fallback, not an inference.)
 - [x] T019 Walk through `/workspace/specs/164-fix-release-train-detection/quickstart.md` end-to-end as the final manual check.
+
+### Correction pass (2026-09-11) — post independent-review
+
+- [x] T020 Fix malformed `${PYLOT_TEST_TEAMS:-{...}}` bash default-expansion in `test_evidence_gate.py`'s `PYLOT_STUB_SCRIPT` and `test_resolve_merge_strategy.sh`'s embedded stub (both had the same copy-pasted bug; previously green only via jq's partial-stdout-before-parse-error behavior, not a deterministic assertion).
 
 ## Dependencies
 

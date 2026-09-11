@@ -343,8 +343,9 @@ RELEASE_TRAIN_FIXTURES = [
         "acme/pylot", "develop", "develop", PYLOT_TEAM_MAIN_PROMOTE, False, False, None,
     ),
     (
-        "T007) US1: no team declares this repo (dogfooded-skills shape) -> NOT REQUIRED, unconfigured (SC-003)",
-        "acme/dogfooded-skills", "main", "main", NO_MATCHING_TEAM, False, False, "unconfigured",
+        "T007) US1: no team declares this repo (generic undeclared repo; NOT the real dogfooded-skills, "
+        "which IS pylot-team-declared) -> NOT REQUIRED, unconfigured (SC-003)",
+        "acme/undeclared-repo", "main", "main", NO_MATCHING_TEAM, False, False, "unconfigured",
     ),
     (
         "T008) US2: team matches but deploy.production_branch absent, base=main -> REQUIRED, literal "

@@ -21,19 +21,28 @@
 - **Decision**: No team entry, or team entry with no `deploy.production_branch` → `NEEDS_EVIDENCE=false`,
   loud rationale line, `release_train_base: unconfigured (<reason>)` in handoff. Never compare
   against a bare literal `main`.
-- **Rationale**: The owner dispatch's literal "else `main`" fallback, read unqualified, regresses
-  SC-003 — dogfooded-skills has no team/deploy entry (it's a skills library, not deployed) and
-  every PR targets `main` directly (comment 2026-09-09), so an unqualified literal-main comparison
-  would misclassify every PR here as a release train again, reproducing the exact bug from a third
-  angle. Treating "no team match at all" as unconfigured is the only reading that satisfies both
-  the dispatch's stated goal (stop guessing from repo metadata) and the issue's own evidence.
+- **Rationale**: The owner dispatch's literal "else `main`" fallback, read unqualified, would
+  regress SC-003 for genuine no-team-match repos: an unqualified literal-main comparison with no
+  team-match gate at all would misclassify every PR on any undeclared repo as a release train,
+  reproducing the exact bug from a third angle. Treating "no team match at all" as unconfigured is
+  the only reading that satisfies both the dispatch's stated goal (stop guessing from repo
+  metadata) and the issue's own evidence of that third failure mode. **Correction (stage-03
+  double-check, 2026-09-11)**: this section originally cited `fellowship-dev/dogfooded-skills`
+  itself as the concrete no-team-match example. That citation was never checked against live
+  `pylot teams list` output and is wrong — this repo IS declared under the `pylot` team (`deploy:
+  {"release_mode":"ship"}`, no `production_branch`), so it resolves via the matched-team/
+  field-absent literal-`main` fallback, not via `unconfigured`. The underlying decision (no-team-
+  match → unconfigured, never a bare literal-main comparison) is unaffected and still correct in
+  general; only the illustrative example was wrong. No repo used as the actual SC-003 test fixture
+  (`test_evidence_gate.py`'s T007, `acme/dogfooded-skills`) is a real, currently-team-matched repo,
+  so the fixture itself remains valid — it was just confusingly named after the real repo whose
+  reported symptom (comment 2026-09-09) inspired it.
 - **Alternatives considered**:
   - *Literal `main` fallback whenever team config is unreachable/absent, no exception* — matches
-    the dispatch's literal wording but is disproved by the dogfooded-skills fixture already in
-    evidence; rejected.
+    the dispatch's literal wording but would regress SC-003 for genuine no-team-match repos;
+    rejected.
   - *Fail closed (require evidence) when unconfigured* — rejected by the PRD's explicit ruling
-    (dogfooded-skills bar #4, graceful degradation) and would block every train until every repo's
-    team config is populated.
+    (graceful degradation) and would block every train until every repo's team config is populated.
 
 ## Decision: test harness extension
 

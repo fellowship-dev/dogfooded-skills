@@ -212,7 +212,9 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     it, resolved from live team config — never from `defaultBranchRef`. Owner dispatch 2026-09-10:
     a matched team with no declared `production_branch` falls back to the literal `main`; a repo
     with no team match at all stays unconfigured/fail-open rather than defaulting to `main`, so
-    repos with no promote flow (e.g. this skills library) are never misclassified, pylot#164), and
+    genuinely undeclared repos with no promote flow are never misclassified, pylot#164 — this repo
+    (dogfooded-skills) is itself declared under the `pylot` team, so it hits the matched-team
+    fallback and IS subject to the gate on `main`, same as pylot's own PRs), and
     `scripts/ci-release-gate.sh` still runs the unscoped full corpus before anything reaches
     production. The staging *step* is mandatory per release; the release *count* is not.
 17. **Merge authority is explicit and DB-authoritative** — stage 01 MUST use

@@ -162,8 +162,10 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   # resolve-merge-strategy.sh already reads .deploy.release_mode from (step 8 below) — never
   # from repo default-branch metadata. Owner dispatch (2026-09-10): when a team matches the repo
   # but declares no production_branch, fall back to the literal `main` — but a repo with NO team
-  # match at all stays unconfigured (fail-open), so repos with no promote flow at all (e.g. this
-  # skills library) are never misclassified as a release train (SC-003).
+  # match at all stays unconfigured (fail-open), so genuinely undeclared repos with no promote
+  # flow at all are never misclassified as a release train (SC-003). Note: dogfooded-skills is
+  # declared under the pylot team (matched-team/field-absent case, NOT this no-match case) — see
+  # specs/164-fix-release-train-detection/spec.md FR-003 correction.
   BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "")
   RELEASE_TRAIN_BASE=""
   RELEASE_TRAIN_REASON=""

@@ -27,7 +27,7 @@ fixture run plus a red-on-mutant proof, so fixtures are load-bearing, not option
 **Independent test**: run `test_evidence_gate.py`; the `develop`-base and no-team-match fixtures below must be green while T002's predicate is in place, and red if step 5.5 is reverted to `base == default_branch`.
 
 - [x] T006 [US1] Add fixture in `/workspace/skills/ops/cto-review/stages/01-setup/test_evidence_gate.py`: base `develop`, team declares `deploy.production_branch: main` → NOT REQUIRED (SC-001).
-- [x] T007 [US1] Add fixture: no team entry matches the repo (dogfooded-skills shape) → NOT REQUIRED, rationale asserted (SC-003).
+- [x] T007 [US1] Add fixture: no team entry matches the repo (generic undeclared-repo shape; NOTE — corrected 2026-09-11, this is NOT the actual dogfooded-skills shape, since dogfooded-skills IS declared under the `pylot` team per live `pylot teams list`; see spec.md FR-003 correction) → NOT REQUIRED, rationale asserted (SC-003).
 - [x] T008 [US2] Add fixture: team entry present but `deploy.production_branch` absent/null, base=`main` → REQUIRED, literal `main` fallback (owner dispatch 2026-09-10; **amended during the 2026-09-11 correction pass** — originally specified as NOT REQUIRED/unconfigured, corrected to implement the owner's literal "else the literal main" instruction, scoped to fire only when a team matches; see spec.md Assumptions).
 - [x] T008b [US1] Add fixture (correction pass, 2026-09-11): same team-matched/field-absent shape as T008 but base≠`main` → NOT REQUIRED (SC-003 preserved for non-main bases).
 - [x] T008c [US1] Add fixture (correction pass, 2026-09-11): multiple team entries match the same repo (ambiguous) → NOT REQUIRED, `unconfigured` (closes CHK005/CHK017-adjacent gap).

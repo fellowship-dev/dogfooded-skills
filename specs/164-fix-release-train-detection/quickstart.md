@@ -6,7 +6,7 @@
 1. `python3 skills/ops/cto-review/stages/01-setup/test_evidence_gate.py` → exit 0, all green.
 2. Confirm the pylot ordinary-PR fixture (base `develop`, team declares `deploy.production_branch: main`) → NOT REQUIRED.
 3. Confirm the pylot release-train fixture (base `main`, same team config) → REQUIRED.
-4. Confirm the no-team-match fixture (dogfooded-skills shape: base `main`, no team entry) → NOT REQUIRED, rationale logged.
+4. Confirm the no-team-match fixture (generic undeclared-repo shape: base `main`, no team entry — NOT the actual dogfooded-skills shape; that repo IS declared under the `pylot` team, see spec.md FR-003 correction) → NOT REQUIRED, rationale logged.
 5. Confirm the team-entry-but-no-field fixture with base=main → REQUIRED, literal `main` fallback
    (owner dispatch 2026-09-10); the same fixture with a non-`main` base → NOT REQUIRED. Confirm the
    ambiguous-match fixture (two team entries claim the same repo) → NOT REQUIRED, `unconfigured`.

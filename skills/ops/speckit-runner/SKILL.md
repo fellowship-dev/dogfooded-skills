@@ -560,6 +560,6 @@ After the reporting command, emit exactly one resolved marker as your final full
   credentials.
 - **Suggestions never gate** — allow one producer correction pass, disclose anything residual, and continue to the PR boundary
 - **PR creation happens once and last** — verification, analyze/checklist, checkpoint push, and advisory review all precede `/create-compelling-prs`
-- **Emit the outcome marker** — `[pylot] outcome=... status=` is mandatory before exiting
+- **Emit the outcome marker** — `[pylot:$PYLOT_OUTCOME_NONCE] outcome=... status=` is mandatory as your final full assistant line before exiting
 - **"already complete" only at the dedup gate** — only emit this when the issue is genuinely CLOSED (Step 0); never for timeouts or missing notifications
 - **One task, one PR** — do not scope-creep into adjacent issues

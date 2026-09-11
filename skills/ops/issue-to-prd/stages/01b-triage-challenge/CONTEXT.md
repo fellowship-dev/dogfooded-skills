@@ -68,8 +68,18 @@ gh issue comment {number} --repo {repo} --body "..."
 ```
 
 Apply the label matching the verdict: `delete-retire` → `wontfix`; `close` → `wontfix`; `re-scope`
-→ `needs-rescope`. Do not close the issue directly — that is the owner's call once they see the
-verdict; this stage only posts the recommendation and its evidence.
+→ `needs-rescope`. `wontfix` is a GitHub default label and always exists; `needs-rescope` is not,
+so create it first (idempotent, matches this repo's convention in e.g.
+`skills/ops/double-check/stages/04-post/CONTEXT.md:276`):
+
+```bash
+gh label create "needs-rescope" --repo {repo} --color "fbca04" \
+  --description "Ask is larger than its smallest version — see triage comment" 2>/dev/null || true
+gh issue edit {number} --repo {repo} --add-label "needs-rescope"
+```
+
+Do not close the issue directly — that is the owner's call once they see the verdict; this stage
+only posts the recommendation and its evidence.
 
 Emit `[pylot:$PYLOT_OUTCOME_NONCE] outcome="triage: <verdict> — <one-line reason>" status=success`.
 

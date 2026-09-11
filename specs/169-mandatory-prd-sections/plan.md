@@ -44,3 +44,5 @@ Gate: each skill's diff stays inside its own directory (principle IX) — no sha
 2. One real `cto-review` run on a live PR shows both new checklist rows with a verdict (SC-002).
 3. `grep -rn "second mechanism" skills/` shows no instruction recommending anything but
    REWORK/retire (SC-003).
+4. `pylot skills sync --org fellowship-dev` completes clean after merge (SC-004) — requires an
+   admin-scoped token this worker's token lacks; deferred to post-merge, tracked as T017.

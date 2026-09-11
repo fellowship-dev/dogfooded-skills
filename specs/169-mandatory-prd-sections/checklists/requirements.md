@@ -24,7 +24,10 @@
 - [x] CHK010 Every functional requirement traces to a user story's acceptance criteria
 - [x] CHK011 User stories are independently deliverable (issue-to-prd changes vs. cto-review changes)
 - [x] CHK012 Spec is ≤50 lines
+- [x] CHK013 Every issue-stated acceptance criterion (including post-merge ops checks) has a Success Criterion
 
 ## Notes
 
 - All items pass on first pass; issue #169's owner ruling was explicit enough to avoid `[NEEDS CLARIFICATION]` markers.
+- CHK013 added post-`/speckit-analyze` (finding E1): SC-004 (skills-sync clean) was missing from the
+  first draft even though the issue's own acceptance criteria named it; added to close the gap.

@@ -135,6 +135,23 @@ Opt-in changes (env-var gated) are fine to merge. Changes requiring downstream c
 Read the whole diff for correctness regressions and security concerns: injected/leaked secrets,
 auth/permission changes, input handling, unsafe shell/SQL, supply-chain risk from new deps.
 
+### 4b. Second Mechanism & Smallest Version
+Owner ruling (Max, 2026-09-07, issue #169) encoding fellowship-dev/pylot `docs/principles.md`
+XI-XII: a diff can be correct and still be the wrong-sized fix.
+
+- **Second mechanism?** Does the diff add a new config flag, gate, pin, route, or check for a need
+  an existing mechanism in this repo already serves? Search for it (`git grep`, existing
+  config/gate names) before concluding yes. Found → **REWORK**, naming the existing mechanism to
+  retire in favor of the new one (or the new one to drop in favor of the existing one) — never
+  "keep both."
+- **Smallest version?** Does the diff introduce config with no caller that sets it to a non-default
+  value, or an abstraction (interface, factory, plugin point) with exactly one concrete caller and
+  no stated second caller on the way? Either → **REWORK**, naming the specific speculative element
+  to cut back to the smallest version that the diff's own use case requires.
+
+Both checks require a citation (the existing mechanism's `file:line`, or the unused-config/
+one-caller evidence) — an uncited suspicion is not a finding here.
+
 ### 5. Process Verification
 - **Was related code searched?** (the #1585 class of bug — reimplementing what already exists).
   Check PR description/commits for evidence of pattern search.
@@ -221,6 +238,10 @@ Wrong-but-plausible: {none | list of findings}
 ## Correctness & Security
 - {findings, or "none — no correctness/security concerns"}
 
+## Second Mechanism & Smallest Version
+- Second mechanism: {none | "adds <new thing> — existing mechanism at `file:line` already serves this need, retire <one>"}
+- Smallest version: {none | "unused config `X` — no caller sets a non-default value" | "one-caller abstraction `Y` at `file:line` — no second caller stated"}
+
 ## Earlier-Review Reconciliation
 - open findings from earlier reviews: {IDs/descriptions still open + how each affected the verdict, or "none open" / "no earlier reviews"}
 - executed-vs-read: {e.g. "tests executed by double-check; all else read-only" — or "nothing executed (read-only pipeline)"}
@@ -253,6 +274,9 @@ Blockers found:
 - Checklist tables and action items populated with no unresolved TBD/TODO.
 - `ci_classification: block` forces a non-merge verdict; pass and N/A remain subject to every
   other review and merge requirement.
+- Second Mechanism & Smallest Version dimension checked and populated; a second-mechanism or
+  speculative-generality finding always carries a citation and always forces **REWORK**, never a
+  softer verdict.
 
 ## Failure
 - Setup handoff missing or unreadable → write handoff with `verdict: BLOCKED` and reason "setup

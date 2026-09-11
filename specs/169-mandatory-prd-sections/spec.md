@@ -43,6 +43,7 @@ Before drafting, `issue-to-prd` rejects requests that duplicate an existing mech
 - **SC-001**: One real `issue-to-prd` run on a live issue shows both new sections, non-templated.
 - **SC-002**: One real `cto-review` run on a live PR shows both new checklist rows with a verdict.
 - **SC-003**: No skill source in this repo still recommends anything but REWORK/retire for a second mechanism.
+- **SC-004**: `pylot skills sync --org fellowship-dev` completes clean after this change merges.
 
 ## Assumptions
 

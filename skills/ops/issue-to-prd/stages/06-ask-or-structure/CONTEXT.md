@@ -93,7 +93,20 @@ was removed, or no marker-carrying question exists yet — this pass owns the wr
    - If stage 05c's `Contract` field itself is ambiguous, missing, or unreadable → treat as
      "needs a goal decision": one line, "Needs a goal decision — outcomes baseline stage did not
      produce a clear contract verdict." Never fall back to a generic metric or a computed target.
-7. Write draft to `stages/06-ask-or-structure/output/handoff.md`
+7. Fill `## Smallest version that works` from stage 01b's `Core need` line. If `## Scope` ends up
+   larger than that smallest version, cite the specific failing case in the issue/comments that
+   requires the extra size — a stated preference is not a citation, and an uncited larger scope
+   must be trimmed back to the smallest version instead.
+8. Fill `## What this lets us delete` from stage 01b's handoff (it already searched for an existing
+   mechanism and recorded "no match found" or a citation) plus anything else discovered while
+   drafting. If truly nothing is superseded, write "Nothing — net-new capability; no existing
+   mechanism serves this need" rather than leaving the section templated. Never write a bare
+   "Nothing" with no reason.
+9. Citation rule, applied to every claim in the draft (Problem Statement, Scope, Technical
+   Requirements, and the two sections above): each factual claim cites `file:line` or a measured
+   number from stage 01b/02/03/04/05's handoffs. A claim with no citation and no measurement is not
+   asserted in the body — it becomes a `## Open Questions` entry instead.
+10. Write draft to `stages/06-ask-or-structure/output/handoff.md`
 
 ## Routing stage 05b's verdict
 
@@ -156,6 +169,10 @@ Full PRD draft (see `shared/prd-template.md` for structure).
 ## Success criteria
 - Questions: single comment, `open-questions` label applied, exit emitted, stage stops
 - PRD: all sections populated, no unresolved TBD/TODO
+- PRD: `## Smallest version that works` and `## What this lets us delete` are both present,
+  non-templated, and — for a larger-than-minimal scope or a bare "nothing to delete" — carry the
+  required citation/reason; every other claim in the draft cites `file:line`/a measured number or
+  is moved to `## Open Questions`
 - Stage 05b's verdict is routed into the existing comment or PRD — **never into a second comment**
 - Dedup guard: when all three conditions hold, zero comments posted, zero labels applied, and the
   stage exits success on that alone — never a second questions comment on an already-parked issue

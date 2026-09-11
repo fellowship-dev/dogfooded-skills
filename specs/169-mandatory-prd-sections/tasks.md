@@ -8,7 +8,7 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] Create `skills/ops/issue-to-prd/stages/01b-triage-challenge/output/.gitkeep` (mirrors existing stage output-dir convention, e.g. `skills/ops/issue-to-prd/stages/01-read-issue/output/.gitkeep`)
+- [X] T001 [P] Create `skills/ops/issue-to-prd/stages/01b-triage-challenge/output/.gitkeep` (mirrors existing stage output-dir convention, e.g. `skills/ops/issue-to-prd/stages/01-read-issue/output/.gitkeep`)
 
 ---
 
@@ -22,15 +22,15 @@ None — US1 (`issue-to-prd`) and US2 (`cto-review`) touch disjoint skill direct
 
 **Independent test**: run `issue-to-prd` on a test issue that duplicates an existing mechanism — verdict names it and stops before stage 02 runs; run on a genuine-gap issue — the published PRD contains both new sections, non-templated, with every claim either cited or an Open Question.
 
-- [ ] T002 [P] [US1] Write triage verdict logic in `skills/ops/issue-to-prd/stages/01b-triage-challenge/CONTEXT.md` (new file): read stage-01 handoff, search repo for an existing mechanism serving the same need, verdict `delete-retire|close|re-scope|prd` in that priority order, non-`prd` names the mechanism and stops
-- [ ] T003 [US1] Insert stage `01b-triage-challenge` into the stage list in `skills/ops/issue-to-prd/SKILL.md` (lines 24-38), documenting its stop condition (stages 02-07 skipped on non-`prd` verdict)
-- [ ] T004 [US1] Update the "Execution" section of `skills/ops/issue-to-prd/SKILL.md` (lines 56-60) to document the new hard gate, same shape as stage 00 (depends on T003, same file)
-- [ ] T005 [US1] Insert `## Smallest version that works` section into `skills/ops/issue-to-prd/shared/prd-template.md` after `## Success Metrics` (before current line 12)
-- [ ] T006 [US1] Insert `## What this lets us delete` section into `skills/ops/issue-to-prd/shared/prd-template.md` after `## Scope` (before current line 34; depends on T005, same file)
-- [ ] T007 [US1] Add fill-steps for both new sections to the PRD-path steps of `skills/ops/issue-to-prd/stages/06-ask-or-structure/CONTEXT.md` (between step 6 and "Write draft", ~line 95-96): larger-than-minimal scope cites a failing case; "nothing to delete" needs a one-line reason (depends on T005, T006)
-- [ ] T008 [US1] Add the citation rule to the same PRD-path steps of `skills/ops/issue-to-prd/stages/06-ask-or-structure/CONTEXT.md`: every claim cites file:line or a measured number, else becomes an `## Open Questions` entry (depends on T007, same file)
-- [ ] T009 [US1] Update the success criteria list in `skills/ops/issue-to-prd/stages/06-ask-or-structure/CONTEXT.md` (lines 156-158) to require both new sections present and non-templated (depends on T008, same file)
-- [ ] T010 [P] [US1] Add `skills/ops/issue-to-prd/evals/redundant-mechanism-001.json` fixture covering a non-`prd` triage verdict, mirroring the shape of `skills/ops/issue-to-prd/evals/no-causal-contract-001.json`
+- [X] T002 [P] [US1] Write triage verdict logic in `skills/ops/issue-to-prd/stages/01b-triage-challenge/CONTEXT.md` (new file): read stage-01 handoff, search repo for an existing mechanism serving the same need, verdict `delete-retire|close|re-scope|prd` in that priority order, non-`prd` names the mechanism and stops
+- [X] T003 [US1] Insert stage `01b-triage-challenge` into the stage list in `skills/ops/issue-to-prd/SKILL.md` (lines 24-38), documenting its stop condition (stages 02-07 skipped on non-`prd` verdict)
+- [X] T004 [US1] Update the "Execution" section of `skills/ops/issue-to-prd/SKILL.md` (lines 56-60) to document the new hard gate, same shape as stage 00 (depends on T003, same file)
+- [X] T005 [US1] Insert `## Smallest version that works` section into `skills/ops/issue-to-prd/shared/prd-template.md` after `## Success Metrics` (before current line 12)
+- [X] T006 [US1] Insert `## What this lets us delete` section into `skills/ops/issue-to-prd/shared/prd-template.md` after `## Scope` (before current line 34; depends on T005, same file)
+- [X] T007 [US1] Add fill-steps for both new sections to the PRD-path steps of `skills/ops/issue-to-prd/stages/06-ask-or-structure/CONTEXT.md` (between step 6 and "Write draft", ~line 95-96): larger-than-minimal scope cites a failing case; "nothing to delete" needs a one-line reason (depends on T005, T006)
+- [X] T008 [US1] Add the citation rule to the same PRD-path steps of `skills/ops/issue-to-prd/stages/06-ask-or-structure/CONTEXT.md`: every claim cites file:line or a measured number, else becomes an `## Open Questions` entry (depends on T007, same file)
+- [X] T009 [US1] Update the success criteria list in `skills/ops/issue-to-prd/stages/06-ask-or-structure/CONTEXT.md` (lines 156-158) to require both new sections present and non-templated (depends on T008, same file)
+- [X] T010 [P] [US1] Add `skills/ops/issue-to-prd/evals/redundant-mechanism-001.json` fixture covering a non-`prd` triage verdict, mirroring the shape of `skills/ops/issue-to-prd/evals/no-causal-contract-001.json`
 
 **Checkpoint**: `issue-to-prd` fully functional and independently testable — triage gate + mandatory sections + citation rule all in place.
 
@@ -40,9 +40,9 @@ None — US1 (`issue-to-prd`) and US2 (`cto-review`) touch disjoint skill direct
 
 **Independent test**: run `cto-review` on a PR that adds a second config/gate/pin/route for an already-served need, or unused config / a one-caller abstraction — verdict is REWORK naming the specific problem.
 
-- [ ] T011 [US2] Insert new dimension `4b. Second Mechanism & Smallest Version` into `skills/ops/cto-review/stages/02-review/CONTEXT.md`, between dimension 4 (ends line 136) and dimension 5 (starts line 138)
-- [ ] T012 [US2] Write the "Second mechanism?" check in that dimension: second config/gate/pin/route for an already-served need → REWORK naming the mechanism to retire (depends on T011, same file)
-- [ ] T013 [US2] Write the "Smallest version?" check in that dimension: unused config for a choice nobody made, or a one-caller abstraction → REWORK (depends on T011, same file)
+- [X] T011 [US2] Insert new dimension `4b. Second Mechanism & Smallest Version` into `skills/ops/cto-review/stages/02-review/CONTEXT.md`, between dimension 4 (ends line 136) and dimension 5 (starts line 138)
+- [X] T012 [US2] Write the "Second mechanism?" check in that dimension: second config/gate/pin/route for an already-served need → REWORK naming the mechanism to retire (depends on T011, same file)
+- [X] T013 [US2] Write the "Smallest version?" check in that dimension: unused config for a choice nobody made, or a one-caller abstraction → REWORK (depends on T011, same file)
 
 **Checkpoint**: `cto-review` fully functional and independently testable — new dimension verdicts REWORK on both trigger conditions.
 
@@ -50,10 +50,10 @@ None — US1 (`issue-to-prd`) and US2 (`cto-review`) touch disjoint skill direct
 
 ## Phase 5: Polish & Verification
 
-- [ ] T014 [P] Run `grep -rn "Refs #\|second mechanism" skills/` and confirm no remaining instruction recommends anything but REWORK/retire for a second mechanism (SC-003)
-- [ ] T015 Run one real pass of `skills/ops/issue-to-prd/` on a live issue and capture the output showing both new sections, non-templated (SC-001)
-- [ ] T016 Run one real pass of `skills/ops/cto-review/` on a live PR and capture the output showing both new checklist rows with a verdict (SC-002)
-- [ ] T017 Run `pylot skills sync --org fellowship-dev` and confirm it completes clean; note the synced version in the closing PR
+- [X] T014 [P] Run `grep -rn "Refs #\|second mechanism" skills/` and confirm no remaining instruction recommends anything but REWORK/retire for a second mechanism (SC-003)
+- [X] T015 Run one real pass of `skills/ops/issue-to-prd/` on a live issue and capture the output showing both new sections, non-templated (SC-001)
+- [X] T016 Run one real pass of `skills/ops/cto-review/` on a live PR and capture the output showing both new checklist rows with a verdict (SC-002)
+- [ ] T017 Run `pylot skills sync --org fellowship-dev` and confirm it completes clean; note the synced version in the closing PR — **blocked**: this worker's token lacks the `admin` scope required by `pylot skills sync` (`error: forbidden — your token (source: PYLOT_BROKER_TOKEN) lacks the 'admin' scope`), and the issue's own acceptance criteria frames this check as post-merge; an owner/admin token must run it after this branch merges
 
 ## Dependencies
 

@@ -28,8 +28,8 @@ repo's default branch.
 
 ### User Story 2 — The real release train is never exempt (P2)
 
-The PR class owner ruling pylot#3389 requires staging evidence for must trigger the gate even when
-the promote branch isn't the default branch.
+The owner ruling (pylot#3389) requires the gate to trigger for the real release-train PR even when
+its promote branch isn't the repo's default branch.
 
 **Acceptance**:
 1. **Given** promote target `main` and default branch `develop`, **When** a PR targets `main`, **Then** REQUIRED.

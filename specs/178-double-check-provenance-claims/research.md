@@ -16,10 +16,12 @@ open design questions. Recorded here for traceability.
 ## Decision: evidence source for the new category
 
 - **Decision**: `git diff --stat <cited-sha>..<setup-head-sha>` in the `REPO_DIR` recorded by stage
-  01's `## Local Checkout` handoff block; `gh pr diff` at both SHAs when no checkout exists.
+  01's `## Local Checkout` handoff block.
 - **Rationale**: stage 01 already records `Setup head SHA` and the checkout path — no new plumbing
-  needed. Terminating at local `HEAD` instead would inflate the range, because stage 01 merges the
-  base branch into the checkout (01-setup lines 81-100).
+  needed. Stage 01's own success criteria guarantee `REPO_DIR` always exists whenever stage 02 runs,
+  so no fallback path is needed for a missing checkout. Terminating at local `HEAD` instead would
+  inflate the range, because stage 01 merges the base branch into the checkout (01-setup lines
+  81-100).
 - **Alternatives considered**: diffing to local `HEAD` — rejected, produces false `unbacked`
   verdicts on honest PRs (spec Edge Cases).
 

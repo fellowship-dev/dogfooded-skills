@@ -15,7 +15,7 @@ disposition to `unbacked` (never `unknown`) when the range contradicts the claim
 
 - **Language/Version**: N/A — prose edit to an agent-facing Markdown context file
 - **Primary Dependencies**: none; reuses stage 01's existing `## Local Checkout` / `Setup head SHA`
-  handoff fields and `git diff --stat` / `gh pr diff`
+  handoff fields and `git diff --stat`
 - **Storage**: N/A
 - **Testing**: manual replay against the recorded live-instance sentence (see spec SC-001..SC-003);
   no automated test entry point — issue scope explicitly forbids adding one

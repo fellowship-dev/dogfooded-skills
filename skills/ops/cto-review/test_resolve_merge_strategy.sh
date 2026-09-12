@@ -9,7 +9,11 @@ trap 'rm -rf "$tmp_dir"' EXIT
 cat > "$tmp_dir/pylot" <<'SH'
 #!/usr/bin/env bash
 if [ "${PYLOT_TEST_FAIL:-}" = "1" ]; then exit 1; fi
-printf '%s' "${PYLOT_TEST_TEAMS:-{\"teams\":[]}}"
+if [ -n "${PYLOT_TEST_TEAMS:-}" ]; then
+  printf '%s' "$PYLOT_TEST_TEAMS"
+else
+  printf '%s' '{"teams":[]}'
+fi
 SH
 chmod +x "$tmp_dir/pylot"
 

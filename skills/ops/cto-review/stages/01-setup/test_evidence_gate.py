@@ -22,11 +22,19 @@ the python snippet as environment. Verified red-on-mutant: with the argv-positio
 `PR_HEAD_SHA="$PR_HEAD_SHA"` (the pre-fix form), the stale-sha and empty-sha
 fixtures go RED.
 
-COMMENT-SCAN and NECESSITY layers added 2026-07-13 (fellowship-dev/pylot#1861
-residue items 2+3): comment-scan fixtures verify that evidence found only in a PR
-comment is detected by the same heading regex (body scan misses it, comment scan
-catches it). Necessity fixtures verify that *.d.mts files do NOT trigger the gate
-and that a waiver rationale line is emitted.
+COMMENT-SCAN layer added 2026-07-13 (fellowship-dev/pylot#1861 residue item 2):
+comment-scan fixtures verify that evidence found only in a PR comment is detected
+by the same heading regex (body scan misses it, comment scan catches it).
+
+RELEASE-TRAIN layer replaced 2026-09-11 (fellowship-dev/dogfooded-skills#164): the
+old NECESSITY layer modelled a `*.d.mts`/`infra/` path filter that was retired from
+the deployed gate and tested dead code. This layer instead extracts the real
+release-train predicate block from CONTEXT.md step 5.5 (`BASE_BRANCH=$(gh pr view
+...` through the `# End release-train predicate` marker) and runs it in bash with a
+stub `pylot` binary on PATH and a stubbed `gh`, proving the gate resolves the
+promote branch from team config (`deploy.production_branch`) and never from
+`defaultBranchRef` or a bare `main` literal. Verified red-on-mutant: reverting the
+block to `base == default_branch` must fail the SC-001/SC-002 fixtures.
 
 Run: python3 test_evidence_gate.py   (exit 0 = all green)
 """
@@ -35,6 +43,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -136,37 +145,6 @@ FIXTURES = [
     ),
 ]
 
-# Necessity fixtures: (label, changed_files_list, expects_waived)
-# *.d.mts files must NOT trigger necessity; infra/ files must.
-NECESSITY_FIXTURES = [
-    (
-        "n1) *.d.mts only — must be waived (type-declaration, no runtime effect)",
-        ["gateway/types.d.mts", "gateway/api.d.mts"],
-        True,   # waived
-    ),
-    (
-        "n2) gateway/*.ts (non-declaration) — must require evidence",
-        ["gateway/handler.mts"],
-        False,  # not waived — evidence required
-    ),
-    (
-        "n3) infra/ path — must require evidence",
-        ["infra/lib/stack.ts"],
-        False,
-    ),
-    (
-        "n4) docs-only *.md — must be waived",
-        ["docs/deploy-policy.md", "README.md"],
-        True,
-    ),
-    (
-        "n5) mixed: *.d.mts + infra/ — infra wins, evidence required",
-        ["gateway/types.d.mts", "infra/lib/stack.ts"],
-        False,
-    ),
-]
-
-
 # -- SUBSTANCE layer: freshness check, run via the REAL CONTEXT.md invocation --
 # Extracts the `GATE_RESULT=$(...)` block from CONTEXT.md step 5.5 verbatim and runs
 # it in bash with PR_HEAD_SHA set exactly as the gate sets it (a plain shell var,
@@ -257,36 +235,203 @@ def run_freshness_fixtures() -> bool:
     return ok
 
 
-def needs_evidence(changed_files: list) -> bool:
-    """Mirror the bash necessity filter from CONTEXT.md step 5.5.
+# -- RELEASE-TRAIN layer: the promote-branch predicate, run via the REAL --------
+# CONTEXT.md invocation (fellowship-dev/dogfooded-skills#164). Extracts the
+# `BASE_BRANCH=$(gh pr view ...` ... `# End release-train predicate` block verbatim
+# and runs it in bash with a stub `pylot` binary on PATH (mirrors
+# test_resolve_merge_strategy.sh's fake-binary pattern) and a stubbed `gh`.
 
-    Returns True if staging evidence is required; False if the change is
-    limited to non-runtime paths and should be waived.
-    """
-    INFRA_PREFIXES = ("infra/", "gateway/", "crew.mjs")
-    MIGRATION_SUFFIX = "/migrations/"
-    for f in changed_files:
-        if f.endswith(".d.mts"):
-            continue  # type-declaration — excluded from necessity trigger
-        if any(f.startswith(p) for p in INFRA_PREFIXES):
-            return True
-        if MIGRATION_SUFFIX in f and f.endswith(".sql"):
-            return True
-    return False
+# Fake `pylot` binary — same shape as test_resolve_merge_strategy.sh's shim:
+# PYLOT_TEST_TEAMS supplies the `teams list` JSON payload; PYLOT_TEST_FAIL=1
+# simulates the CLI being unreachable.
+PYLOT_STUB_SCRIPT = """#!/usr/bin/env bash
+if [ "${PYLOT_TEST_FAIL:-}" = "1" ]; then
+  exit 1
+fi
+if [ -n "${PYLOT_TEST_TEAMS:-}" ]; then
+  printf '%s' "$PYLOT_TEST_TEAMS"
+else
+  printf '%s' '{"teams":[]}'
+fi
+"""
+
+# Stub `gh`: `gh pr view ...` returns the fixture's base branch, `gh repo view ...`
+# returns the fixture's default branch — kept distinct so a mutant predicate that
+# still reads defaultBranchRef is provably wrong, while the real predicate (which
+# never calls `gh repo view`) is unaffected by this value.
+GH_STUB_FUNCTION = """gh() {
+  if [ "$1" = "pr" ]; then
+    printf '%s' "$STUB_BASE_BRANCH"
+  elif [ "$1" = "repo" ]; then
+    printf '%s' "$STUB_DEFAULT_BRANCH"
+  fi
+}"""
 
 
-def run_necessity_fixtures() -> bool:
+def extract_release_train_invocation(text: str = None) -> str:
+    """The release-train predicate block from CONTEXT.md step 5.5, verbatim."""
+    if text is None:
+        text = (Path(__file__).parent / "CONTEXT.md").read_text()
+    lines = text.splitlines()
+    start = next(
+        i for i, ln in enumerate(lines)
+        if 'BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq' in ln
+        and "2>/dev/null" in ln
+    )
+    end = next(
+        i for i, ln in enumerate(lines[start:], start)
+        if "End release-train predicate (pylot#164)" in ln
+    )
+    return "\n".join(lines[start : end + 1])
+
+
+def run_release_train_predicate(
+    repo: str, base_branch: str, default_branch: str, teams_json: str, fail: bool,
+    invocation: str = None,
+) -> dict:
+    """Run the release-train predicate in bash with pylot/gh stubbed; return its vars."""
+    if invocation is None:
+        invocation = extract_release_train_invocation()
+    with tempfile.TemporaryDirectory() as tmp:
+        stub = Path(tmp) / "pylot"
+        stub.write_text(PYLOT_STUB_SCRIPT)
+        stub.chmod(0o755)
+        script = "\n".join([
+            f'export PATH={shlex.quote(tmp)}:"$PATH"',
+            f"export PYLOT_TEST_TEAMS={shlex.quote(teams_json)}",
+            f"export PYLOT_TEST_FAIL={'1' if fail else ''}",
+            f"REPO={shlex.quote(repo)}",
+            f"STUB_BASE_BRANCH={shlex.quote(base_branch)}",
+            f"STUB_DEFAULT_BRANCH={shlex.quote(default_branch)}",
+            "PR=1",
+            GH_STUB_FUNCTION,
+            invocation,
+            'printf "NEEDS_EVIDENCE=%s\\n" "$NEEDS_EVIDENCE"',
+            'printf "RELEASE_TRAIN_HANDOFF=%s\\n" "$RELEASE_TRAIN_HANDOFF"',
+        ])
+        out = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, timeout=30
+        )
+    result = {"_stdout": out.stdout, "_stderr": out.stderr}
+    for line in out.stdout.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            result[k] = v
+    return result
+
+
+PYLOT_TEAM_MAIN_PROMOTE = json.dumps({
+    "teams": [{"repos": ["acme/pylot"], "deploy": {"production_branch": "main"}}]
+})
+PYLOT_TEAM_NO_FIELD = json.dumps({
+    "teams": [{"repos": ["acme/pylot"], "deploy": {}}]
+})
+NO_MATCHING_TEAM = json.dumps({
+    "teams": [{"repos": ["acme/other"], "deploy": {"production_branch": "main"}}]
+})
+PYLOT_TEAM_AMBIGUOUS = json.dumps({
+    "teams": [
+        {"repos": ["acme/pylot"], "deploy": {"production_branch": "main"}},
+        {"repos": ["acme/pylot"], "deploy": {"production_branch": "release"}},
+    ]
+})
+
+# (label, repo, base_branch, default_branch, teams_json, fail, expect_needs_evidence, handoff_substr)
+RELEASE_TRAIN_FIXTURES = [
+    (
+        "T006) US1: ordinary PR into develop, team promote branch is main -> NOT REQUIRED (SC-001)",
+        "acme/pylot", "develop", "develop", PYLOT_TEAM_MAIN_PROMOTE, False, False, None,
+    ),
+    (
+        "T007) US1: no team declares this repo (generic undeclared repo; NOT the real dogfooded-skills, "
+        "which IS pylot-team-declared) -> NOT REQUIRED, unconfigured (SC-003)",
+        "acme/undeclared-repo", "main", "main", NO_MATCHING_TEAM, False, False, "unconfigured",
+    ),
+    (
+        "T008) US2: team matches but deploy.production_branch absent, base=main -> REQUIRED, literal "
+        "main fallback (owner dispatch 2026-09-10)",
+        "acme/pylot", "main", "develop", PYLOT_TEAM_NO_FIELD, False, True, "main",
+    ),
+    (
+        "T008b) US1: team matches but deploy.production_branch absent, base!=main -> NOT REQUIRED, "
+        "fallback resolved but doesn't match (SC-003 still holds for non-main bases)",
+        "acme/pylot", "develop", "develop", PYLOT_TEAM_NO_FIELD, False, False, "promote branch is main",
+    ),
+    (
+        "T008c) US1: multiple teams declare the same repo (ambiguous) -> NOT REQUIRED, unconfigured",
+        "acme/pylot", "main", "develop", PYLOT_TEAM_AMBIGUOUS, False, False, "unconfigured",
+    ),
+    (
+        "T009) US1: pylot teams list unreachable -> NOT REQUIRED, unconfigured, no traceback",
+        "acme/pylot", "main", "develop", "", True, False, "unconfigured",
+    ),
+    (
+        "T010) US2: release-train PR base=main matches promote branch, default is develop -> REQUIRED (SC-002)",
+        "acme/pylot", "main", "develop", PYLOT_TEAM_MAIN_PROMOTE, False, True, None,
+    ),
+    (
+        "T011) US2: conventional repo, ordinary PR into feature-x, default is main -> NOT REQUIRED",
+        "acme/pylot", "feature-x", "main", PYLOT_TEAM_MAIN_PROMOTE, False, False, None,
+    ),
+]
+
+
+def run_release_train_fixtures(invocation: str = None) -> bool:
     ok = True
-    for label, files, expect_waived in NECESSITY_FIXTURES:
-        required = needs_evidence(files)
-        got_waived = not required
-        passed = got_waived == expect_waived
+    for label, repo, base, default, teams, fail, want_needed, handoff_substr in RELEASE_TRAIN_FIXTURES:
+        result = run_release_train_predicate(repo, base, default, teams, fail, invocation)
+        got_needed = result.get("NEEDS_EVIDENCE") == "true"
+        passed = got_needed == want_needed
+        if passed and handoff_substr:
+            passed = handoff_substr in result.get("RELEASE_TRAIN_HANDOFF", "")
+        if passed and "Traceback" in result.get("_stderr", ""):
+            passed = False
         ok = ok and passed
         flag = "green" if passed else "RED  "
         print(f"[{flag}] {label}")
         if not passed:
-            print(f"        want waived={expect_waived}  got waived={got_waived}  (files={files})")
+            print(f"        want NEEDS_EVIDENCE={want_needed} handoff~={handoff_substr!r}")
+            print(f"        got  {result}")
     return ok
+
+
+# Mutant of the release-train predicate: the original `base == default_branch`
+# proxy this issue fixes. Never written to CONTEXT.md — held here only to prove
+# the current fixtures are load-bearing (red-on-mutant, pylot#164).
+MUTANT_PREDICATE = """BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "")
+DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
+NEEDS_EVIDENCE=false
+if [ -n "$BASE_BRANCH" ] && [ "$BASE_BRANCH" = "$DEFAULT_BRANCH" ]; then
+  NEEDS_EVIDENCE=true
+  RELEASE_TRAIN_HANDOFF="$BASE_BRANCH"
+else
+  RELEASE_TRAIN_HANDOFF="not-required (mutant: base=$BASE_BRANCH default=$DEFAULT_BRANCH)"
+fi
+# End release-train predicate (pylot#164)"""
+
+
+def run_red_on_mutant_check() -> bool:
+    """T012: SC-001/SC-003/SC-002 fixtures must go RED against the old predicate,
+    and stay green against the real, deployed one."""
+    print()
+    print("-- red-on-mutant proof (T012): reverting to base == default_branch --")
+    mutant_targets = {"T006)", "T007)", "T008)", "T010)"}
+    mutant_fixtures = [f for f in RELEASE_TRAIN_FIXTURES if f[0].split(" ", 1)[0] in mutant_targets]
+    red_ok = True
+    for label, repo, base, default, teams, fail, want_needed, handoff_substr in mutant_fixtures:
+        result = run_release_train_predicate(repo, base, default, teams, fail, MUTANT_PREDICATE)
+        got_needed = result.get("NEEDS_EVIDENCE") == "true"
+        mutant_passed = got_needed == want_needed
+        red_ok = red_ok and not mutant_passed
+        flag = "RED  " if not mutant_passed else "green (BAD — mutant should fail this)"
+        print(f"[{flag}] {label}")
+    if red_ok:
+        print("RED confirmed: mutant fails SC-001/SC-003/SC-002 fixtures as expected.")
+    else:
+        print("mutant unexpectedly passed one or more fixtures — proof is not load-bearing.")
+    print("-- confirming the real, deployed predicate is GREEN on the same fixtures --")
+    green_ok = run_release_train_fixtures()
+    return red_ok and green_ok
 
 
 def main() -> int:
@@ -301,7 +446,7 @@ def main() -> int:
         if not passed:
             print(f"        want {want}\n        got  {got}")
     ok = run_freshness_fixtures() and ok
-    ok = run_necessity_fixtures() and ok
+    ok = run_red_on_mutant_check() and ok
     print()
     print("ALL GREEN" if ok else "FAILURES PRESENT")
     return 0 if ok else 1

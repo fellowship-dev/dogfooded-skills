@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: Use when performing a CTO-level PR review — includes a staging evidence gate for release-train PRs (base = default branch; per-PR staging retired 2026-09-06, pylot#3389) and a non-blocking visual evidence notice for UI PRs.
+description: Use when performing a CTO-level PR review — includes a staging evidence gate for release-train PRs (base = team-declared promote branch; per-PR staging retired 2026-09-06, pylot#3389) and a non-blocking visual evidence notice for UI PRs.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---
@@ -78,8 +78,9 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
 - If `short_circuit: closed-no-merge` → skip stage 02, go straight to stage 03 (which posts
   nothing and emits the blocked/closed outcome).
 - If `short_circuit: missing-staging-evidence` → **only possible on a RELEASE-TRAIN PR**
-  (base = default branch; owner ruling 2026-09-06, pylot#3389 — ordinary PRs never require
-  staging evidence and must never produce this short-circuit). **DO NOT run stage 02 or 03**.
+  (base = the repo's team-declared promote branch, `deploy.production_branch`; owner ruling
+  2026-09-06, pylot#3389 — ordinary PRs never require staging evidence and must never produce
+  this short-circuit). **DO NOT run stage 02 or 03**.
   Instead, run these steps inline:
   1. Apply `needs-work` label:
      ```bash
@@ -150,7 +151,7 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
    │
    ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
    └── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
-       (release-train PRs only — base = default branch; pylot#3389)
+       (release-train PRs only — base = team-declared promote branch; pylot#3389)
 
    (visual evidence: notice only — flows through 02/03 as an advisory line, never blocks)
 ```
@@ -161,7 +162,7 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 - **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
 - **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
 - **Blocked (owner gate)**: `[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked` (#2918 — fires when `security` OR `waiting-on-owner` is present at merge time; park comment + `waiting-on-owner` label applied)
-- **Blocked (staging evidence)**: `[pylot] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = default branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
+- **Blocked (staging evidence)**: `[pylot] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = the team-declared promote branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
 
 ## Hard Rules
 
@@ -178,8 +179,9 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
    the normal review, lane, owner-gate, and merge-authority requirements.
 10. **No Quest** — reporting is the local report file only.
 11. **The staging gate fires first and is the only evidence short-circuit** (step 5.5). It
-    applies to release-train PRs only (base = default branch, pylot#3389); on any other PR it
-    must never fire. On the short-circuit, skip everything else and post its rejection inline.
+    applies to release-train PRs only (base = the repo's team-declared promote branch,
+    `deploy.production_branch`, pylot#3389); on any other PR it must never fire. On the
+    short-circuit, skip everything else and post its rejection inline.
     It cannot be bypassed by prose or by verdict.
     **Visual evidence (step 5.6) is a notice, never a blocker** — it is evaluated after staging,
     recorded in the handoff, and appended by stage 03 as an advisory line. It never short-circuits,
@@ -204,9 +206,15 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     default is `reviewed double-checked`; the historical fast-lane exception (a `lane:fast` PR
     where double-check was deliberately never dispatched) still merges on `reviewed` alone —
     never `needs-work` such a PR for a missing `double-checked`. No new lane labels are emitted.
-16. **Prod's gate moved to the release train (pylot#3389)** — ordinary PRs merge to develop with
-    no staging deploy, by design. Every promote develop→default-branch train must carry fresh
-    `/test-in-staging` evidence at its exact head (this skill's stage-01 gate enforces it), and
+16. **Prod's gate moved to the release train (pylot#3389)** — ordinary PRs merge with no staging
+    deploy, by design. Every promote to the repo's team-declared `deploy.production_branch` must
+    carry fresh `/test-in-staging` evidence at its exact head (this skill's stage-01 gate enforces
+    it, resolved from live team config — never from `defaultBranchRef`. Owner dispatch 2026-09-10:
+    a matched team with no declared `production_branch` falls back to the literal `main`; a repo
+    with no team match at all stays unconfigured/fail-open rather than defaulting to `main`, so
+    genuinely undeclared repos with no promote flow are never misclassified, pylot#164 — this repo
+    (dogfooded-skills) is itself declared under the `pylot` team, so it hits the matched-team
+    fallback and IS subject to the gate on `main`, same as pylot's own PRs), and
     `scripts/ci-release-gate.sh` still runs the unscoped full corpus before anything reaches
     production. The staging *step* is mandatory per release; the release *count* is not.
 17. **Merge authority is explicit and DB-authoritative** — stage 01 MUST use

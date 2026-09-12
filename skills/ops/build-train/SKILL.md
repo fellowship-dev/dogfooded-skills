@@ -123,9 +123,9 @@ Run yourself. Read CONTEXT.md and emit the `[pylot] outcome=...` marker from the
 
 ## Exit paths
 
-- **Success**: stage 05 emits `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
-- **Blocked**: stage 00 finds an existing `build/*` train in progress → `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`
+- **Success**: stage 05 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train complete: final PR #N (M/N issues)" status=success`
+- **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train failed at stage NN: {reason}" status=failed`
+- **Blocked**: stage 00 finds an existing `build/*` train in progress → `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train blocked: existing build branch {name}" status=blocked`
 
 Per-build failures inside stage 02 do NOT fail the train — the failed issue is skipped and the
 train proceeds (skip-rather-than-break). The train only fails if zero builds succeed.

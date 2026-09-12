@@ -92,7 +92,7 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
      ```
   3. Emit outcome:
      ```
-     [pylot] outcome="cto-review blocked: release train missing staging evidence on PR #{PR}" status=blocked
+     [pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: release train missing staging evidence on PR #{PR}" status=blocked
      ```
   Then stop — no further stages.
 - Otherwise → continue to stage 02.
@@ -157,11 +157,11 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 
 ## Exit paths
 
-- **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- **Blocked (owner gate)**: `[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked` (#2918 — fires when `security` OR `waiting-on-owner` is present at merge time; park comment + `waiting-on-owner` label applied)
-- **Blocked (staging evidence)**: `[pylot] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = default branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
+- **Success**: stage 03 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
+- **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage NN: {reason}" status=failed`
+- **Blocked (closed)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- **Blocked (owner gate)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked` (#2918 — fires when `security` OR `waiting-on-owner` is present at merge time; park comment + `waiting-on-owner` label applied)
+- **Blocked (staging evidence)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = default branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
 
 ## Hard Rules
 

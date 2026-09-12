@@ -202,16 +202,16 @@ Failures: {file → reason, or "none"}
 ### 5. Emit outcome marker (from the orchestrator, never a subagent)
 ```
 # all passed
-[pylot] outcome="flowchad ${FLOW_NAME} on ${REPO}: all flows passed" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad ${FLOW_NAME} on ${REPO}: all flows passed" status=success
 
 # one or more failed (issues already created in step 3)
-[pylot] outcome="flowchad ${FLOW_NAME} on ${REPO}: {N} flow(s) failed" status=failed
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad ${FLOW_NAME} on ${REPO}: {N} flow(s) failed" status=failed
 
 # browser/deploy/credential capability missing
-[pylot] outcome="flowchad blocked: ${BLOCK_REASON}" status=blocked
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad blocked: ${BLOCK_REASON}" status=blocked
 
 # irrelevant PR; no preview created
-[pylot] outcome="flowchad N/A: no affected interactive flow" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad N/A: no affected interactive flow" status=success
 ```
 
 ## Success criteria

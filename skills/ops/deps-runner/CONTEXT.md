@@ -93,7 +93,7 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
-- Failure: `[pylot] outcome="deps-runner failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="deps-runner blocked: {reason}" status=blocked` (main doesn't
+- Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner failed at stage NN: {reason}" status=failed`
+- Blocked: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner blocked: {reason}" status=blocked` (main doesn't
   compile, or the repo has no devbox image)

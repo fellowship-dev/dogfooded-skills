@@ -74,6 +74,6 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
-- Failure: `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`
+- Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train complete: final PR #N (M/N issues)" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train failed at stage NN: {reason}" status=failed`
+- Blocked: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train blocked: existing build branch {name}" status=blocked`

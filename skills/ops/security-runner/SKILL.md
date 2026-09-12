@@ -374,8 +374,8 @@ cron:
 Emit on completion:
 
 ```
-[pylot] outcome="N alerts triaged: X PRs, Y issues, Z dismissed" status=success
-[pylot] outcome="blocked: Dependabot API returned 403 — token missing security_events scope" status=blocked
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="N alerts triaged: X PRs, Y issues, Z dismissed" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="blocked: Dependabot API returned 403 — token missing security_events scope" status=blocked
 ```
 
 ---

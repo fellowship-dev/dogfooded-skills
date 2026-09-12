@@ -98,9 +98,9 @@ PR, Summary, and Lessons sections from the handoffs of stages 02–05 (or note "
 devbox image" if 02-05 never ran).
 
 ### 3. Emit the outcome marker (orchestrator only)
-- Success: `[pylot] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
-- Failure: `[pylot] outcome="deps-runner failed at stage NN: {reason}" status=failed`
-- Blocked (preflight failed, or no devbox image for the repo): `[pylot] outcome="deps-runner blocked: {reason}" status=blocked`
+- Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner complete: {merged}/{total} merged, {flagged} flagged" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner failed at stage NN: {reason}" status=failed`
+- Blocked (preflight failed, or no devbox image for the repo): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="deps-runner blocked: {reason}" status=blocked`
 
 ## Output: handoff.md
 

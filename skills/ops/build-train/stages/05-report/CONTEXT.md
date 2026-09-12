@@ -40,9 +40,9 @@ orchestrator — the `[pylot] outcome=...` marker MUST come from here, never a s
 ```
 
 3. Emit the outcome marker (orchestrator only):
-   - Success (final PR opened): `[pylot] outcome="build-train complete: final PR #N (M/N issues)" status=success`
-   - Failure (nothing shipped): `[pylot] outcome="build-train failed at stage NN: {reason}" status=failed`
-   - Blocked (set at stage 00): `[pylot] outcome="build-train blocked: existing build branch {name}" status=blocked`
+   - Success (final PR opened): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train complete: final PR #N (M/N issues)" status=success`
+   - Failure (nothing shipped): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train failed at stage NN: {reason}" status=failed`
+   - Blocked (set at stage 00): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="build-train blocked: existing build branch {name}" status=blocked`
 
 ## Output: handoff.md
 

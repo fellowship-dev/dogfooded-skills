@@ -63,7 +63,7 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
-- Failure: `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- Blocked (closed): `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- Blocked (evidence): `[pylot] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked`
+- Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage NN: {reason}" status=failed`
+- Blocked (closed): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- Blocked (evidence): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked`

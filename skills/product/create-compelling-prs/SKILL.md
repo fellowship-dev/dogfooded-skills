@@ -145,13 +145,20 @@ For any UI-impacting change, capture before/after screenshots (Playwright prefer
 
 Run this before opening or marking a PR ready for review:
 
-- [ ] **Complete?** Does this finish every deliverable in the original task?
-- [ ] **Shippable?** If merged as-is, would the task be done — no follow-up tickets created?
+- [ ] **Complete?** Does this complete the bounded work represented by this PR's one driving issue?
+- [ ] **Shippable?** If merged as-is, will the PR close its driving issue, with every deliberately
+      deferred named criterion captured verbatim in a linked follow-up using the shared
+      [follow-up issue contract](../../shared/follow-up-issue-template.md)?
 - [ ] **No manual caveats?** Zero "you'll need to X manually" instructions in the PR body.
 - [ ] **Tests pass?** Ran them yourself right now — not trusting earlier cached output.
 - [ ] **Evidence present?** Screenshots or test output embedded for every meaningful change.
 - [ ] **Policy honored?** The playbook's deployment-evidence block is present, verbatim, in the location it names — or the "no policy in playbook" note is in the body.
-- [ ] **Issue linked?** `Closes #N` when this PR delivers the issue — that is the default. `Refs #N` ONLY when the PR is one phase of deliberately multi-PR work; the final phase carries the `Closes`. Do not default to `Refs` out of caution: issues whose work merged but never closed are tracker drift, and premature-close is the close-audit's job to catch, not this checkbox's.
+- [ ] **Issue linked?** The PR has exactly one driving issue and uses `Closes #N`, `Fixes #N`, or
+      `Resolves #N` for it. Every later PR in deliberate multi-PR work gets its own driving issue;
+      file and link a follow-up using the shared
+      [follow-up issue contract](../../shared/follow-up-issue-template.md), then close that follow-up
+      from the later PR. Use `Refs #N` only for an issue clearly identified as related context,
+      never for the issue that drove the current PR.
 
 **If the "No manual caveats?" check fails: close the PR and report the blocker instead** — in whatever form the repo playbook names (blocker report, issue, mission report); an issue on the repo if it names none. A PR that punts work back is worse than no PR. Reroute around obstacles — if the UI is the only path, use the API; if the API is missing, script it.
 

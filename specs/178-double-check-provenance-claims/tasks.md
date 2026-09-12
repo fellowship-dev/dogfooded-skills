@@ -18,7 +18,8 @@ the amended file.
       extraction sentence (currently lines 41-46), add diff-provenance/range claims as a distinct
       category, bounded by shape (a commit range other than the PR's own merge-base diff), and name
       its evidence source: `git diff --stat <cited-sha>..<setup-head-sha>` in the stage 01
-      handoff's recorded `REPO_DIR` (or `gh pr diff` at both SHAs when no checkout exists).
+      handoff's recorded `REPO_DIR` — guaranteed present whenever stage 02 runs, per stage 01's
+      success criteria, so no fallback clause is needed.
 - [X] T002 [US1] In the same file's disposition list (currently lines 47-51), add the sentence: a
       provenance claim citing no SHA, or whose range cannot be diffed, is `unbacked` (not
       `unknown`, not "not a claim"). Depends on T001 (same list, sequential).

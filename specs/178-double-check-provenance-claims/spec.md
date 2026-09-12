@@ -37,7 +37,7 @@ so it's classified instead of silently passing through.
 - **FR-001**: Extraction list MUST include diff-provenance/range claims as a distinct category,
   bounded by shape (a commit range other than the PR's own merge-base diff).
 - **FR-002**: Evidence source MUST be named: `git diff --stat <cited-sha>..<setup-head-sha>` in
-  the stage 01 handoff's recorded checkout (or `gh pr diff` at both SHAs if no checkout).
+  the stage 01 handoff's recorded checkout (guaranteed present whenever stage 02 runs).
 - **FR-003**: A claim citing no SHA, or an undiffable range, MUST disposition to `unbacked`.
 - **FR-004**: Non-range claims MUST be unaffected; change MUST be additive to the extraction and
   disposition lists in `skills/ops/double-check/stages/02-review/CONTEXT.md` step 2 only — no

@@ -64,3 +64,10 @@ gate — not the implementation.
   `backed` case for this category falls out of the same range-diff mechanism when it confirms the
   claim, and multi-SHA claims are a rarer shape the base rule already generalizes to (check the
   *cited* range, whichever SHA(s) it names). Neither required a spec.md edit; resolved below.
+- Independent review (post-implementation) proposed closing CHK004 by adding an explicit `backed`
+  clause to the taxonomy bullet in `02-review/CONTEXT.md`. Declined: the issue's Out-of-Scope
+  section freezes the `backed`/`elsewhere`/`unbacked` bullet definitions verbatim — only the
+  extraction sentence and the `unbacked` bullet may grow. A `backed` case for this category is
+  already covered implicitly (the claim is checked against the same range diff; if it doesn't
+  contradict or fail to produce, it falls through to `backed` like any other claim) — CHK004
+  remains a documented, non-blocking gap rather than a code change.

@@ -48,8 +48,8 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    Diff; check them instead against a range diff terminating at the handoff's `Setup head SHA`
    (never local `HEAD`, which the setup stage may have advanced past that SHA by merging the base
    branch in): `git diff --stat <cited-sha>..<Setup head SHA>` in the `REPO_DIR` the handoff
-   records under `## Local Checkout`, or `gh pr diff` at both SHAs when no checkout exists.
-   Classify each claim:
+   records under `## Local Checkout` — stage 01's success criteria guarantee this checkout exists
+   whenever this stage runs. Classify each claim:
 
    - **backed** — the change is present in this diff.
    - **elsewhere** — the body explicitly scopes it out, or names the specific other PR / merged

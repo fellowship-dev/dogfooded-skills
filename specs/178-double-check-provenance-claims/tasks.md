@@ -14,15 +14,15 @@ artifact is one existing file, edited additively.
 **Independent test**: run `quickstart.md` steps 1-3 (positive / negative / SHA-less replay) against
 the amended file.
 
-- [ ] T001 [US1] In `/workspace/skills/ops/double-check/stages/02-review/CONTEXT.md` step 2's
+- [X] T001 [US1] In `/workspace/skills/ops/double-check/stages/02-review/CONTEXT.md` step 2's
       extraction sentence (currently lines 41-46), add diff-provenance/range claims as a distinct
       category, bounded by shape (a commit range other than the PR's own merge-base diff), and name
       its evidence source: `git diff --stat <cited-sha>..<setup-head-sha>` in the stage 01
       handoff's recorded `REPO_DIR` (or `gh pr diff` at both SHAs when no checkout exists).
-- [ ] T002 [US1] In the same file's disposition list (currently lines 47-51), add the sentence: a
+- [X] T002 [US1] In the same file's disposition list (currently lines 47-51), add the sentence: a
       provenance claim citing no SHA, or whose range cannot be diffed, is `unbacked` (not
       `unknown`, not "not a claim"). Depends on T001 (same list, sequential).
-- [ ] T003 [US1] Confirm the existing `unknown` paragraph (currently lines 68-70) is untouched and
+- [X] T003 [US1] Confirm the existing `unknown` paragraph (currently lines 68-70) is untouched and
       does not blur into the new text (spec Edge Cases / research.md decision). Depends on T002.
 
 **Checkpoint**: US1 fully functional — a provenance claim in a PR body now resolves to a named
@@ -32,16 +32,16 @@ evidence source and a `backed`/`unbacked` disposition instead of silent pass-thr
 
 ## Phase 2: Polish
 
-- [ ] T004 Run `quickstart.md` step 1 (positive replay): confirm the recorded live-instance
+- [X] T004 Run `quickstart.md` step 1 (positive replay): confirm the recorded live-instance
       sentence resolves `unbacked` ⇒ `claims_reconciled: fail`.
-- [ ] T005 Run `quickstart.md` step 2 (negative replay): confirm an ordinary claim still resolves
+- [X] T005 Run `quickstart.md` step 2 (negative replay): confirm an ordinary claim still resolves
       `backed` via the existing manifest.
-- [ ] T006 Run `quickstart.md` step 3 (SHA-less replay): confirm it resolves `unbacked`, not
+- [X] T006 Run `quickstart.md` step 3 (SHA-less replay): confirm it resolves `unbacked`, not
       `unknown`.
-- [ ] T007 Run `quickstart.md` step 4 (diff review): `git diff main --
+- [X] T007 Run `quickstart.md` step 4 (diff review): `git diff main --
       skills/ops/double-check/stages/02-review/CONTEXT.md` shows exactly one file, additive hunks
       only, taxonomy/`unknown` text byte-identical to `main`.
-- [ ] T008 Run `quickstart.md` step 5 (doctrine check): `grep -niE 'pylot|fellowship|[0-9]{4}'`
+- [X] T008 Run `quickstart.md` step 5 (doctrine check): `grep -niE 'pylot|fellowship|[0-9]{4}'`
       over the changed hunks returns nothing.
 
 ## Dependencies

@@ -42,13 +42,22 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    endpoints or routes, functions, migrations, config keys, test files and test counts,
    `Closes`/`Implements`/`Fixes` issue refs, and any staging/deploy evidence (build ids,
    `deployed_sha`, smoke results). Check each against the setup handoff's **Changed Files**
-   manifest and **Full Diff**. Classify each claim:
+   manifest and **Full Diff**. Also extract **diff-provenance / range claims** — assertions about
+   a commit range other than this PR's own merge-base diff, e.g. what a base-branch merge brought
+   in, or "no source delta since `<sha>`". These have no evidence source in the manifest or Full
+   Diff; check them instead against a range diff terminating at the handoff's `Setup head SHA`
+   (never local `HEAD`, which the setup stage may have advanced past that SHA by merging the base
+   branch in): `git diff --stat <cited-sha>..<Setup head SHA>` in the `REPO_DIR` the handoff
+   records under `## Local Checkout`, or `gh pr diff` at both SHAs when no checkout exists.
+   Classify each claim:
 
    - **backed** — the change is present in this diff.
    - **elsewhere** — the body explicitly scopes it out, or names the specific other PR / merged
      SHA that carries it. A bare "already shipped" / "handled previously" assertion with no
      pointer is NOT `elsewhere`.
-   - **unbacked** — claimed, absent from the diff, no pointer.
+   - **unbacked** — claimed, absent from the diff, no pointer. A diff-provenance/range claim that
+     cites no SHA, or whose cited range the range diff contradicts or cannot produce, is
+     **unbacked** — never `unknown` and never "not a claim".
 
    **Any `unbacked` claim ⇒ `claims_reconciled: fail` ⇒ `verdict: needs-work`.** Non-waivable:
    - "The mismatch is intentional / the commit message explains it" is **not** a waiver. A body

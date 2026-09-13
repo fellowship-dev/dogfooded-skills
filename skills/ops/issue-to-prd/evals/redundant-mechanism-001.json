@@ -1,0 +1,57 @@
+{
+  "id": "issue-to-prd-redundant-mechanism-001",
+  "scenario": "redundant-mechanism",
+  "description": "An issue asks for a second config/gate for a need an existing, citable mechanism already fully serves. Stage 01b must verdict delete-retire, cite the existing mechanism by file:line or name, post exactly one comment, apply wontfix, and stop the pipeline before stage 02 runs.",
+  "skill": "issue-to-prd",
+  "scope": "procedure",
+  "gate": "zero-tolerance",
+  "rule": "second-mechanism-is-rework",
+  "thread": {
+    "channel": "fellowship-dev/example-app#512",
+    "channelType": "issue",
+    "participants": ["issue-author", "pylot"],
+    "messages": [
+      {
+        "from": "issue-author",
+        "text": "Add a second env var, SKIP_NO_AUTOMATION_CHECK, so the pipeline can be told to ignore the no-automation label on a per-run basis."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "existing-mechanism-cited",
+      "setup": "Stage 01b reads the stage 01 handoff and searches the repo. `stages/00-automation-guard/CONTEXT.md` already gates on the `no-automation` label for every run, and no comment or code shows that gate is insufficient for this issue's stated need.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=01b-triage-challenge"
+      },
+      "expectedBehavior": {
+        "type": "triage-verdict",
+        "assertion": "delete_retire_cites_existing_mechanism",
+        "description": "The stage 01b handoff records Verdict: delete-retire and cites `stages/00-automation-guard/CONTEXT.md` (the existing no-automation gate) as the mechanism already serving the need. It must not invent a distinct rationale for a second gate.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "pipeline-stops-before-stage-02",
+      "setup": "Stage 01b's verdict is delete-retire.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=02-context-completeness"
+      },
+      "expectedBehavior": {
+        "type": "pipeline-control",
+        "assertion": "non_prd_verdict_skips_02_through_07_single_comment",
+        "description": "Stages 02-07 do not run. Exactly one comment is posted naming the verdict and the cited mechanism, the `wontfix` label is applied, and `status=success` is emitted. No PRD is drafted and the issue body is not rewritten.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "incident": "pre-#169 issue-to-prd (owner ruling, Max, 2026-09-07)",
+    "observedFailure": "Before this stage existed, every issue went straight from read-issue to context-completeness with nothing challenging the ask itself, so a request for a second mechanism serving an already-met need would sail through to a full PRD and, eventually, a second gate/config/flag duplicating one that already worked.",
+    "note": "Must fail against the pre-#169 straight-to-PRD behavior and pass once a citable existing mechanism stops the pipeline at stage 01b with a named mechanism, never a guessed one."
+  }
+}

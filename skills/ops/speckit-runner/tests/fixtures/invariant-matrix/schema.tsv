@@ -1,0 +1,3 @@
+id	class	provenance	success_behavior	negative_behavior	evidence_method	expected_check	applicability	state	repository	checkpoint	receipt	finding_ids
+INV-001	authorization-trust	issue#134:trust-boundary	trusted guidance only is executed	untrusted guidance cannot reach credentialed execution	supervisor inspection	bash trust-boundary.test.sh	applicable	passed	fellowship-dev/example	1111111111111111111111111111111111111111	supervisor:exit=0	F-001
+INV-002	failure-degradation	spec.md:FR-005	reviewer unavailability remains disclosed	reviewer failure cannot suppress PR preparation	fixture inspection	bash invariant-matrix.test.sh	applicable	not-run	-	-	-	-

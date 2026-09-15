@@ -1,0 +1,7 @@
+scenario	state	repository	checkpoint	receipt	review_status	finding_status	pr_reachable
+old-head	stale	fellowship-dev/example	1111111111111111111111111111111111111111	supervisor:exit=0	available	open	yes
+corrected-head	passed	fellowship-dev/example	2222222222222222222222222222222222222222	supervisor:exit=0	available	resolved	yes
+failed-check	failed	fellowship-dev/example	2222222222222222222222222222222222222222	supervisor:exit=1	available	open	yes
+not-run-check	not-run			planned only	available	declined	yes
+unavailable-check	unavailable	fellowship-dev/example	2222222222222222222222222222222222222222	missing runtime	unavailable	open	yes
+not-applicable-check	not-applicable			source-backed exclusion	available	resolved	yes

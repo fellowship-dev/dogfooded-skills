@@ -1,0 +1,7 @@
+source_id	class	provenance	source_backed	expected_row_id
+SRC-101	authorization-trust	SKILL.md:repository-trust-boundary	yes	INV-101
+SRC-102	state-data-integrity	spec.md:FR-003	yes	INV-102
+SRC-103	failure-degradation	spec.md:FR-005	yes	INV-103
+SRC-104	concurrency-idempotency	SKILL.md:Step-0	yes	INV-104
+SRC-105	lifecycle-cleanup	SKILL.md:Step-C	yes	INV-105
+SRC-106	observability	no issue spec task or repository requirement	no	OMITTED

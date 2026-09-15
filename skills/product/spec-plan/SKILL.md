@@ -14,12 +14,12 @@ Interview the user relentlessly about every aspect of a plan until reaching shar
 
 - User wants to stress-test a plan or design
 - User says "grill me" or "poke holes in this"
-- Before running `build-prd` — spec-plan resolves ambiguity, build-prd structures the output
+- Before running `issue-to-prd` — spec-plan resolves ambiguity, issue-to-prd structures the output
 - Complex feature with many interacting decisions that need to be resolved sequentially
 
 ## When NOT to Use
 
-- Requirements are already clear and documented — go straight to `build-prd`
+- Requirements are already clear and documented — go straight to `issue-to-prd`
 - User just wants a quick opinion, not a deep interview
 - Implementation is already underway
 
@@ -48,7 +48,7 @@ For each branch of the design tree:
 - Wait for the user's response
 - Incorporate the answer and move to the next branch
 
-> **Warning:** ONE question at a time. This is not build-prd's batched Q1-Qn format. Go deep on each branch before moving to the next.
+> **Warning:** ONE question at a time. This is not issue-to-prd's batched Q1-Qn format. Go deep on each branch before moving to the next.
 
 If a question can be answered by exploring the codebase, explore the codebase instead of asking.
 
@@ -59,15 +59,15 @@ When decisions depend on each other, resolve the dependency first:
 - Ask about the blocker first
 - Then proceed to the dependent decisions
 
-### 4. Handoff to build-prd (optional)
+### 4. Handoff to issue-to-prd (optional)
 
 When all branches are resolved, offer:
 
 ```text
-All branches resolved. Want me to run /build-prd to structure this into a PRD?
+All branches resolved. Want me to run issue-to-prd to structure this into a PRD?
 ```
 
-If yes, the shared understanding from this interview becomes the input — build-prd can skip its discussion phase (Steps 1-3) and go straight to drafting.
+If yes, the shared understanding from this interview becomes the input; issue-to-prd can skip its clarity assessment and go straight to drafting.
 
 ## Critical Rules
 

@@ -8,7 +8,7 @@ before an agent starts work — preventing wasted tokens and off-target PRs.
 
 ## Replaces
 - `external-rule` (greet) event rule: replaced by `challenge-new-issue`
-- Manual `build-prd` skill for the autonomous pipeline case (manual stays for interactive use)
+- Manual `build-prd` skill (retired 2026-09-14; its gap checklist lives in stage 03 references)
 
 ## Architecture
 9 sequential stages. Each stage is atomic: defined inputs, defined outputs, explicit side effects.

@@ -5,6 +5,24 @@ user-invocable: false
 allowed-tools: Bash, Read
 ---
 
+## Choose the execution mode
+
+Work with a human in the loop belongs on a devbox, not a mission. Missions are
+autonomous operator runs (cron, auto-pylot, skill-routed tasks).
+
+- Use an **autonomous mission** when the task contract is complete enough for a
+  worker to execute, review, and report without live steering. Dispatch it and
+  let the factory own the implementation loop.
+- Use an **interactive devbox** when the work genuinely requires live choices,
+  iterative diagnosis, cross-worker relays, or frequent user direction. The
+  active session owns prompts, verification, snapshots, and shutdown.
+- Interactive does not imply continuous steering. Prefer one self-contained
+  prompt that lets the selected skill or runner own its normal phases, then
+  wait for a question, failure, or result before adding direction.
+- Do not turn an autonomous mission into an interactive one merely because its
+  progress can be watched. If a recurring mission needs steering, improve the
+  factory skill that should have handled the case.
+
 ## Dispatch a Mission
 
 ```bash
@@ -165,6 +183,53 @@ never accepted-and-dropped (the round-trip corpus test enforces this; team-level
 `skills` was removed from the set for exactly that reason — operator skills live
 under `operators.<role>.skills`). If a write "succeeds" but reads back null,
 that is a bug — file it; do not retry with creative payloads.
+
+## Runner contract
+
+A skill whose name ends in `-runner` is **run from outside a devbox and requires
+one**. That is the whole definition. It applies wherever the caller sits: a
+Pylot operator on a cron, or this session on this Mac spawning a devbox through
+the gateway. Consequences:
+
+- A runner never executes the engine itself. It spawns or targets a devbox,
+  sends the prompt, polls, verifies, and reports. If you catch yourself running
+  the engine's steps inline, you are in the wrong skill.
+- A runner depends on **engine skills being installed inside the devbox** (for
+  example `improve-code-quality-runner` needs `improve-code-quality` and
+  `test-in-staging` in the worker). Today that dependency is a prose line in
+  the runner's Prerequisites and nothing installs it; the worker only has the
+  engine if the target repo vendors it. Until the Pylot frontmatter contract
+  and worker-boot install land (fellowship-dev/pylot#3540), check
+  the target repo's `.claude/skills/` before dispatching a runner at it.
+- Engines carry no suffix and must work inside any checkout with no gateway
+  access. Wrappers that only dispatch a worker on a schedule are runners too,
+  and stay private in `pylot-skills`.
+- `pylot skills list --kind runner` is the filter contract for runners.
+
+## Preflight and dispatch
+
+Before dispatch, confirm:
+
+- the authenticated CLI can reach Pylot;
+- the live team, role, skill route, repository, worker image, and budget support
+  the selected mode;
+- relevant automations will not duplicate or conflict with the work;
+- the task contract is self-contained, contains no secrets, and names the
+  intended skill explicitly.
+
+Dispatch through the CLI and retain the returned mission or worker identifier.
+Do not substitute raw gateway calls or undocumented local state. For evidence
+and assets, follow `pylot-cli`; do not reproduce its lifecycle here.
+For substantial remote work, settle branch/base, Git identity and evidence
+visibility up front, and prove a small authorized durable checkpoint early.
+Do not accumulate hours of work before discovering that publication is blocked.
+Preserve prior scoped authorization; distinguish an actual tool rejection from
+an agent's interpretation, and investigate the latter using current evidence.
+After recovery or compaction, verify claimed blockers against actual tool receipts
+and the accepted task. A missing named model tool does not establish that an
+installed CLI is unavailable; check its help through the available shell. Resume
+with concrete bounded actions, preserved authority and explicit artifact destinations
+rather than an elaborate handoff narrative. Never override an actual access denial.
 
 ## Workers — Spawn, Drive, Stop
 
@@ -330,6 +395,47 @@ curl -s --max-time 30 -X POST "${AUTH[@]}" "$BASE/$WID/stop" >/dev/null 2>&1 || 
 
 Same routes, same semantics as §2–4. Prefer the CLI wherever it exists — one
 transport, one source of truth.
+
+## Supervise a run
+
+After starting a worker or prompt, make one immediate compact status check to
+confirm it was accepted and is starting; queued/provisioning is not yet running.
+Prefer a completion event or a detached status monitor that wakes the session
+only on a terminal state. When scheduled checks are necessary, use adaptive
+**10–30 minute intervals**: about 10 minutes near an expected result or a known
+failure, 20–30 minutes for healthy hour-long implementation or test work. An
+unchanged healthy check should lengthen the next wait, not trigger another
+prompt. Use shorter checks only for a concrete startup or failure diagnosis.
+Keep at most one follow-up owner per task; pause the old follow-up when another
+session takes over, and pause on completion or a decision that blocks safe work.
+An automation error or safety rejection is a reason to inspect and stop repeated
+retries, not to keep waking the same blocked action or change routes to evade it.
+
+Intervene only when evidence shows the factory cannot continue safely: a
+materially ambiguous task contract, an unrecoverable execution condition, or a
+result that would violate scope or safety. Prefer resuming from durable remote
+state. Do not coach routine implementation, rewrite merely imperfect work, or
+build session-local workarounds for a recurring factory defect.
+
+## Verify the terminal result
+
+A successful process exit is not the deliverable. Independently verify the
+requested outcome against the task scope:
+
+- terminal mission state, report, and cost are coherent;
+- the expected branch or PR exists with the correct target and scope;
+- PR claims match the actual diff and recorded checks;
+- review suggestions and any remaining risks are visible;
+- for delivery tasks, review findings are resolved and authorized release work
+  proceeds through target-environment workflow acceptance, with deployed revision
+  and runtime evidence; a PR or worker completion is an intermediate result;
+- attached evidence is accessible through the intended Pylot asset flow;
+- the execution resource is stopped or otherwise left in its intended terminal
+  state.
+
+The coordinator owns the remaining delivery tail after worker completion.
+Explicit PR-only tasks can finish at a verified PR. When verification exposes a
+reusable defect, correct the owning skill rather than working around it here.
 
 ## GitHub Auth Through the CLI
 
@@ -536,11 +642,3 @@ Default-team fallback: when a Slack message arrives on a channel with no explici
 Dispatch with `--context conversation_id=…` → auto-wake on mission terminal + PR lifecycle.
 Self-wake fallback: `pylot conversations wakes-add <conv-id> in_seconds=300 content="check X"`
 One wake at a time; re-schedule rather than stack.
-
-## Dispatch vs. Local
-
-| Do locally | Dispatch |
-|------------|----------|
-| Answer questions, check status, query API | Code changes, PRs, reviews |
-| Read logs, explain code | Docker builds, deploys |
-| Quick lookups (< 2 min) | Test suites, anything > 10 min |

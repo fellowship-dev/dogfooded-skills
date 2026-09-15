@@ -385,4 +385,4 @@ Emit on completion:
 - `/security-check` — the classification framework this skill executes
 - `/deps-runner` — non-security dependency updates; same PR pattern
 - `/entropy-check` — can incorporate security scores into domain grades
-- `/maintenance` — checks whether Dependabot is configured at all
+- Check directly whether Dependabot is configured; the `maintenance` skill was retired 2026-09-14

@@ -185,5 +185,5 @@ Action required:
 
 - `/security-runner` — executes the triage: opens PRs, creates issues, dismisses via API
 - `/entropy-check` — doc/architecture health; scorecard scores can feed into entropy grades
-- `/maintenance` — checks Dependabot coverage (is Dependabot even configured?)
+- Dependabot coverage (is Dependabot even configured?) is a repo setting to check directly; the `maintenance` skill was retired 2026-09-14
 - `/deps-runner` — handles non-security dependency updates; follows same PR pattern

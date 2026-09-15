@@ -33,7 +33,6 @@ Skills about the skills system itself.
 | Skill | Description |
 |-------|-------------|
 | [`meta/skill-builder`](skills/meta/skill-builder/) | How to write a high-quality agent skill for this library |
-| [`meta/migrate-skill`](skills/meta/migrate-skill/) | Move a skill from toolkit/local into dogfooded-skills and import it back |
 
 ### product
 
@@ -55,14 +54,12 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
 | [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
-| [`ops/maintenance`](skills/ops/maintenance/) | Infra-only health audit — LaunchAgents, cron logs, system health, secrets scan |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
 | [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
 | [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
 | [`ops/weekly-plan`](skills/ops/weekly-plan/) | Interactive weekly planning session for ONE team (CC / pylot chat) — plan-vs-actual scorecard, full linked briefing (last week, in-flight, half-done epics, colleagues' work), then a spec-plan-style interview (one question per turn, recommendation-first), anti-ghost triage, agent-ready epic slices, goals with done-conditions + expiring focus block, budget + hourly auto-pylot tuning. Run once per team, sequentially |
-| [`ops/refactor-codebase`](skills/ops/refactor-codebase/) | Autonomously refactor a codebase across many behavior-preserving cycles — decompose fat files by domain, deepen shallow modules, pay down architectural debt — driven by a persistent masterplan and verification gates. Complements `improve-codebase-architecture` (which only finds and reports opportunities) by actually doing the refactor, safely, over many sessions |
 | [`ops/seo-ops`](skills/ops/seo-ops/) | Evidence-first pre-launch, production, incident, and recurring SEO audits with deterministic static checks, browser boundaries, multilingual controls, and a reusable casebook |
 | [`ops/vercel-ops`](skills/ops/vercel-ops/) | Safe project guards, environment-variable synchronization, explicit previews, deployment-protection checks, and custom-domain verification for existing Vercel projects |
 | [`ops/dx-metrics`](skills/ops/dx-metrics/) | Measure AI-agent adoption and its effect on delivery — DX Core 4 speed/quality/impact, `Co-Authored-By` adoption curves, cycle time, ownership risk — from git + the GitHub API into a self-contained HTML dashboard. Aggregate by default; per-person data is opt-in and never a throughput leaderboard |

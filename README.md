@@ -52,7 +52,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 |-------|-------------|
 | [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
-| [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
+| [`ops/hookshot`](skills/ops/hookshot/) | Agent enforcement hooks for Claude Code and Codex — doc reminders before edits, skill-drift and markdown-lint warnings, session preflight and the delivery gate that checks a session against its outcome contract |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |

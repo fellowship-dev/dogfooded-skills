@@ -1,9 +1,8 @@
 ---
 name: label-and-act
 description: Use when building or extending recurring stored-evidence classification and action selection. Keep query-specific search and reranking in a separate pattern.
-metadata:
-  status: experimental
-  modes: [builder, operator]
+user-invocable: false
+allowed-tools: Read, Bash, Glob, Grep
 ---
 
 # Label and act

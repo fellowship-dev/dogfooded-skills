@@ -1,6 +1,6 @@
 # dogfooded-skills
 
-A cross-platform agent skill library compatible with 41+ agents via the [Vercel `npx skills`](https://skills.new) ecosystem. Built and battle-tested internally at [fellowship-dev](https://github.com/fellowship-dev) — every skill here has run hundreds of times in real production workflows before being published.
+A cross-platform agent skill library compatible with 41+ agents via the [Vercel `npx skills`](https://skills.new) ecosystem. Built and battle-tested internally at [fellowship-dev](https://github.com/fellowship-dev) — established skills come from real production workflows. New experimental entries are identified explicitly and do not inherit those usage claims.
 
 ## What Are Skills?
 
@@ -50,6 +50,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 
 | Skill | Description |
 |-------|-------------|
+| [`ops/label-and-act`](skills/ops/label-and-act/) | Experimental: extract reusable stored-evidence labeling, local action selection, budget controls and feedback from a working consumer |
 | [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
 | [`ops/hookshot`](skills/ops/hookshot/) | Agent enforcement hooks for Claude Code and Codex — doc reminders before edits, skill-drift and markdown-lint warnings, session preflight and the delivery gate that checks a session against its outcome contract |

@@ -1,9 +1,9 @@
 ---
-name: search-and-rerank
+name: jev-search-and-rerank
 description: Use when operating or building saved-item recall or public conversation discovery with bounded semantic screening, reranking and conversational feedback.
 ---
 
-# search-and-rerank
+# jev-search-and-rerank
 
 Retrieve evidence for a particular query or campaign, preserve its provenance, and improve screening and ranking from attributable conversational feedback.
 

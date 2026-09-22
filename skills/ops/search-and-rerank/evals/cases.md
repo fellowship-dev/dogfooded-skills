@@ -14,3 +14,21 @@ Status: experimental. These are review scenarios, not claims of five production 
 | Repeat the same query after cache hit | Fresh usage ID with full response; reuse cached judgments without extra inference |
 
 Motivating user correction: search happens mid-conversation; gather normal conversational feedback and recover omissions weekly, without a separate labeler UI. One weekly recovery-and-learning run; do not replace unrelated schedules.
+
+
+Public discovery additions:
+- A user requests meme reply opportunities: all acquired unique posts are screened;
+  a manual shortlist is not represented as full semantic screening.
+- A matching question has a parent complaining about repetitive promotional replies:
+  preserve parent context and reject or flag the apparent opportunity.
+- A 109-item dataset is replayed forty times: report 109 unique items, not 4,360.
+- The user confirms displayed results: preserve exact response/source-turn mapping;
+  do not label unseen or rejected candidates negative.
+- A corpus has only model judgments: throughput is measurable, human precision is
+  unavailable; it cannot be promoted to independent acceptance gold.
+
+- Same target and query, different meme or announcement asset: recompute fit using
+  the changed campaign identity; do not reuse the earlier fit judgment.
+- New parent/reply evidence reveals hostility or an existing answer: invalidate
+  the deep-stage judgment using context revisions and coverage, preserving the
+  unchanged first-stage screening cache where its actual inputs are identical.

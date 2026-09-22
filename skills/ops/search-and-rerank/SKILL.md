@@ -1,11 +1,11 @@
 ---
 name: search-and-rerank
-description: Use when implementing or operating query-specific search over retained evidence with bounded semantic reranking and conversational feedback.
+description: Use when operating or building saved-item recall or public conversation discovery with bounded semantic screening, reranking and conversational feedback.
 ---
 
 # search-and-rerank
 
-Retrieve retained evidence for a particular query, preserve its provenance, and improve ranking from attributable conversational feedback.
+Retrieve evidence for a particular query or campaign, preserve its provenance, and improve screening and ranking from attributable conversational feedback.
 
 Experimental: fixture-tested integration pattern; production quality must be measured by the installing application. This is separate from durable classification of stored items.
 
@@ -24,6 +24,17 @@ If the host lacks durable invocation logging, do not claim a learning loop. Retu
 5. When the user naturally corrects or evaluates the results, submit structured feedback using the host command. Reference the original search, exact human words and source turn, and affected revisions/URLs. Capture relevance, missing items, pairwise preferences, list failure or an explicit undo as supported. Keep interpretation separate from the quotation. A user's unambiguous verdict can be recorded without another confirmation; an agent's opinion, silence, later topic change or tool click is not human approval.
 6. Let the configured weekly worker recover missed feedback from the referenced followup conversation and review all structured feedback. Do not create another schedule per invocation. Recovery preserves model provenance and uncertainty, verifies human source spans, distinguishes inaccessible/partial transcripts from no feedback, and never turns its own predictions into human evaluation gold.
 7. In that same review, test a bounded set of ranking-policy changes against frozen feedback and features. Separate development from untouched acceptance by session and intent lineage; related queries/paraphrases must stay together. Use independent explicit human judgments for acceptance, not the reranker's own labels. Consume held-out evidence only once. Promote a version only after improvement and regression gates pass; retain an immutable receipt and rollback target. Insufficient evidence is a successful no-change outcome.
+
+## Public conversation discovery
+
+When the request is to find places where a particular reply or announcement fits,
+read [discovery and real-data evaluation](references/discovery-evaluation.md).
+Use an explicit public-discovery mode; public posts are not saved interactions.
+The host must provide durable discovery receipts and bounded collection. Let the
+configured semantic screener judge every acquired unique candidate, recording
+unprocessed candidates when limits intervene. Fetch deeper context only for the
+promising set, then judge the specific reply opportunity. Preserve the same budget,
+privacy, feedback provenance and one-weekly-review boundaries.
 
 ## Feedback decisions
 

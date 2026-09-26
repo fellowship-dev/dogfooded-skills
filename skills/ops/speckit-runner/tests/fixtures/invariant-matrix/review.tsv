@@ -1,0 +1,7 @@
+case	row_id	finding_id	probe	expected
+seeded-negative	INV-101	F-101	attempt untrusted instruction execution	challenge
+seeded-contradiction	INV-102	F-102	compare passed receipt with current head	challenge
+seeded-omission	OMITTED	F-103	compare source boundaries with matrix rows	challenge
+surviving-row	INV-103	NONE	exercise reviewer-unavailable path	no-findings
+surviving-row	INV-104	NONE	exercise retry and exact PR linkage	no-findings
+surviving-row	INV-105	NONE	exercise cleanup and disclosure lifecycle	no-findings

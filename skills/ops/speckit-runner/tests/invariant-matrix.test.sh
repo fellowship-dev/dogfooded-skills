@@ -104,6 +104,28 @@ sed 's/ROW INV-001 verdict=no-findings/FINDING F-001 row_id=INV-001 status=open/
 if "$REVIEW_VALIDATOR" "$FIXTURES/schema.tsv" "$TMP/malformed-review.txt"; then fail 'malformed reviewer finding accepted'; fi
 pass 'reviewer output completeness enforced at runtime'
 
+# Adversarial records must be rejected by the actual runtime consumer, not a
+# test-local reimplementation of the review-output grammar.
+cat >"$TMP/finding-review.txt" <<'EOF'
+FINDING F-001 row_id=INV-001 priority=P1 status=open evidence=source:12 observed violation suggested_action=fix the boundary
+ROW INV-002 verdict=no-findings
+[pylot] phase=independent-review status=done actionable=yes
+EOF
+"$REVIEW_VALIDATOR" "$FIXTURES/schema.tsv" "$TMP/finding-review.txt" || fail 'valid finding review rejected'
+sed 's/ROW INV-002 verdict=no-findings/FINDING F-001 row_id=INV-002 priority=P1 status=open evidence=source:24 other violation suggested_action=fix other boundary/' "$TMP/finding-review.txt" >"$TMP/duplicate-finding-id.txt"
+sed 's/actionable=yes/actionable=no/' "$TMP/finding-review.txt" >"$TMP/contradictory-actionable.txt"
+sed 's/evidence=source:12 observed violation/evidence=-/' "$TMP/finding-review.txt" >"$TMP/sentinel-evidence.txt"
+sed 's/suggested_action=fix the boundary/suggested_action=-/' "$TMP/finding-review.txt" >"$TMP/sentinel-action.txt"
+{ cat "$TMP/finding-review.txt"; tail -n 1 "$TMP/finding-review.txt"; } >"$TMP/duplicate-terminal.txt"
+{ tail -n 1 "$TMP/finding-review.txt"; head -n 2 "$TMP/finding-review.txt"; } >"$TMP/nonterminal-marker.txt"
+sed 's/row_id=INV-001/row_id=INV-999/' "$TMP/finding-review.txt" >"$TMP/unknown-row.txt"
+for malformed in duplicate-finding-id contradictory-actionable sentinel-evidence sentinel-action duplicate-terminal nonterminal-marker unknown-row; do
+  if "$REVIEW_VALIDATOR" "$FIXTURES/schema.tsv" "$TMP/$malformed.txt" 2>/dev/null; then
+    fail "runtime consumer accepted $malformed reviewer output"
+  fi
+done
+pass 'runtime consumer rejects ambiguous finding identity, content, coverage, and terminal claims'
+
 ROUTING_REPO="$TMP/routing-repo"
 mkdir -p "$ROUTING_REPO/.specify/scripts/bash" "$ROUTING_REPO/specs/134-stale" "$ROUTING_REPO/specs/999-current"
 cp "$FIXTURES/specify-scripts/common.sh" "$ROUTING_REPO/.specify/scripts/bash/common.sh"

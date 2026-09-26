@@ -364,7 +364,7 @@ if [ -n "$RWID" ]; then
     FIRST_REVIEW_STATUS="available"
   else
     FIRST_REVIEW_STATUS="unavailable"
-    REVIEW_OUT="Independent review unavailable: reviewer output was incomplete or malformed."
+    REVIEW_OUT=$(printf 'Independent review unavailable: reviewer output was incomplete or malformed.\nPreserved raw output below is advisory only; do not treat it as complete coverage.\n\n%s\n' "$REVIEW_OUT")
     curl -s --max-time 20 -X POST -H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" \
       "${PYLOT_API}/missions/${PYLOT_JOB_ID}/workers/${RWID}/stop" >/dev/null 2>&1 || true
     RWID=""
@@ -525,7 +525,7 @@ boundary** in the pipeline.
 ```bash
 PR_PROMPT=$(SUPERVISOR_VERIFICATION="$SUPERVISOR_VERIFICATION" SUPERVISOR_MATRIX="$SUPERVISOR_MATRIX" SUPERVISOR_MATRIX_RECEIPT="$SUPERVISOR_MATRIX_RECEIPT" FIRST_REVIEW_STATUS="$FIRST_REVIEW_STATUS" REVIEW_OUT="$REVIEW_OUT" CORRECTION_OUT="$CORRECTION_OUT" RESIDUAL_REVIEW="$RESIDUAL_REVIEW" python3 -c "import json,os; print(json.dumps('''Create the single PR for issue #$0 from the already-pushed branch. First confirm the worktree is clean and the remote head matches local HEAD. Invoke /create-compelling-prs and use that skill to compose and open the PR — do not substitute a placeholder template.
 
-Base the PR's Verification section on the supervisor verification summary below. It is authoritative over any producer claim. Reconcile the invariant matrix to the exact current repository/head, then disclose every applicable row whose state is failed, not-run, unavailable, or stale; preserve not-applicable rows without presenting them as gaps. Never state or imply readiness when any current check is non-passing. Include an Independent review section summarizing first-review availability, every unresolved or declined F-NNN finding, correction decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR or create another PR boundary. Emit [pylot] phase=pr status=done pr=<PR_URL>.
+Base the PR's Verification section on the supervisor verification summary below. It is authoritative over any producer claim. Consume the supervisor-owned matrix only when its receipt matches the exact current repository/head. Never reconcile or restore execution states yourself. If that identity does not match, disclose executed rows as stale or the matrix as unavailable; do not claim passed evidence for the current head. Disclose every applicable row whose state is failed, not-run, unavailable, or stale; preserve not-applicable rows without presenting them as gaps. Never state or imply readiness when any current check is non-passing. Include an Independent review section summarizing first-review availability, every unresolved or declined F-NNN finding, correction decisions, and residual or unavailable final review. Review suggestions and verification failures are transparent advisory context, not a reason to suppress the PR or create another PR boundary. Emit [pylot] phase=pr status=done pr=<PR_URL>.
 
 CURRENT SUPERVISOR VERIFICATION:
 ''' + os.environ['SUPERVISOR_VERIFICATION'] + '''

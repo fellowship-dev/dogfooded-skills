@@ -16,7 +16,7 @@ stage runs inline in the orchestrator — do NOT spawn a Task. All GH side effec
   Post nothing, label nothing, merge nothing. Write a one-line report noting the PR was closed
   without merge. Emit:
   ```
-  [pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=success
+  [pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=success
   ```
   STOP. (A closed-without-merge PR is a normal terminal state — not a blocker requiring human
   intervention. `status=blocked` would trigger an unnecessary escalation to the human operator.)
@@ -127,11 +127,16 @@ PARK_EOF
   gh pr comment $PR --repo $REPO --body-file /tmp/cto-owner-gate.md
 
   echo "[cto-review] owner gate fired: $GATE_REASON — PR parked, NOT merged"
-  echo "[pylot] outcome=\"cto-review parked: PR #${PR} carries ${GATE_REASON} — owner review required\" status=blocked"
+  echo "[cto-review] terminal: PR #${PR} carries ${GATE_REASON} — owner review required"
   exit 0
 fi
 echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS"
 ```
+
+If the owner-gate branch exits, emit the following resolved marker as your final full assistant
+line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #${PR} carries ${GATE_REASON} — owner review required" status=blocked
 
 **Rules that are absolute:**
 - This check fires EVEN IF stage 02 gave LGTM verdict — verdict cannot override the gate.
@@ -290,16 +295,16 @@ report ends at the file write; operators surface it via the mission report.
 
 ### Step 7: Emit the outcome marker (orchestrator only)
 ```
-[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
 ```
 On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
 On the owner gate fire (Step 2), emit the parked marker and STOP:
 ```
-[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked
 ```
 If a side effect failed hard (comment post errored), emit:
 ```
-[pylot] outcome="cto-review failed at stage 03: {reason}" status=failed
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage 03: {reason}" status=failed
 ```
 
 ## Output: handoff.md

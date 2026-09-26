@@ -5,6 +5,24 @@ user-invocable: false
 allowed-tools: Bash, Read
 ---
 
+## Choose the execution mode
+
+Work with a human in the loop belongs on a devbox, not a mission. Missions are
+autonomous operator runs (cron, auto-pylot, skill-routed tasks).
+
+- Use an **autonomous mission** when the task contract is complete enough for a
+  worker to execute, review, and report without live steering. Dispatch it and
+  let the factory own the implementation loop.
+- Use an **interactive devbox** when the work genuinely requires live choices,
+  iterative diagnosis, cross-worker relays, or frequent user direction. The
+  active session owns prompts, verification, snapshots, and shutdown.
+- Interactive does not imply continuous steering. Prefer one self-contained
+  prompt that lets the selected skill or runner own its normal phases, then
+  wait for a question, failure, or result before adding direction.
+- Do not turn an autonomous mission into an interactive one merely because its
+  progress can be watched. If a recurring mission needs steering, improve the
+  factory skill that should have handled the case.
+
 ## Dispatch a Mission
 
 ```bash
@@ -13,6 +31,20 @@ pylot dispatch "<task>" --agent <team>.<role> --repo <org/repo> --context "conve
 ```
 
 Always pass `--context conversation_id=…` for auto-wake. Prompt limit: 4 KB — put full specs in issue comments.
+
+The task text **must start with an explicit `/skill`**. The operator harness routes
+deterministically on that prefix; free text fails at boot with
+`routing failed: task has no explicit /skill` (exit 1, zero tokens). The only
+keyword fallbacks are `auto-pylot` and `investigate … report findings`. Team names
+and roles drift — `pylot teams list` is truth, and `pylot route` validates a
+`<team>.<role>` before you spend a dispatch.
+
+**Cross-org:** the repository owner and the selected credential are separate
+inputs. Outside the CLI's default org, select the credential explicitly with the
+global option first: `pylot --org <Org> context <Org>/<repo> …`. A plain
+`403 forbidden` from an unscoped cross-org call does not prove the repo, playbook
+or capability is unavailable — retry with the repo's org before diagnosing
+authorization. `pylot auth status` shows which orgs hold a credential.
 
 ## Monitor Missions
 
@@ -183,6 +215,53 @@ deploy — these are separate failure modes:
   sync can ship this doc ahead of the deploy). Diagnose by reading the entry
   back with `teams get <team> --fields cron` if unsure.
 
+## Runner contract
+
+A skill whose name ends in `-runner` is **run from outside a devbox and requires
+one**. That is the whole definition. It applies wherever the caller sits: a
+Pylot operator on a cron, or this session on this Mac spawning a devbox through
+the gateway. Consequences:
+
+- A runner never executes the engine itself. It spawns or targets a devbox,
+  sends the prompt, polls, verifies, and reports. If you catch yourself running
+  the engine's steps inline, you are in the wrong skill.
+- A runner depends on **engine skills being installed inside the devbox** (for
+  example `improve-code-quality-runner` needs `improve-code-quality` and
+  `test-in-staging` in the worker). Today that dependency is a prose line in
+  the runner's Prerequisites and nothing installs it; the worker only has the
+  engine if the target repo vendors it. Until the Pylot frontmatter contract
+  and worker-boot install land (fellowship-dev/pylot#3540), check
+  the target repo's `.claude/skills/` before dispatching a runner at it.
+- Engines carry no suffix and must work inside any checkout with no gateway
+  access. Wrappers that only dispatch a worker on a schedule are runners too,
+  and stay private in `pylot-skills`.
+- `pylot skills list --kind runner` is the filter contract for runners.
+
+## Preflight and dispatch
+
+Before dispatch, confirm:
+
+- the authenticated CLI can reach Pylot;
+- the live team, role, skill route, repository, worker image, and budget support
+  the selected mode;
+- relevant automations will not duplicate or conflict with the work;
+- the task contract is self-contained, contains no secrets, and names the
+  intended skill explicitly.
+
+Dispatch through the CLI and retain the returned mission or worker identifier.
+Do not substitute raw gateway calls or undocumented local state. For evidence
+and assets, follow `pylot-cli`; do not reproduce its lifecycle here.
+For substantial remote work, settle branch/base, Git identity and evidence
+visibility up front, and prove a small authorized durable checkpoint early.
+Do not accumulate hours of work before discovering that publication is blocked.
+Preserve prior scoped authorization; distinguish an actual tool rejection from
+an agent's interpretation, and investigate the latter using current evidence.
+After recovery or compaction, verify claimed blockers against actual tool receipts
+and the accepted task. A missing named model tool does not establish that an
+installed CLI is unavailable; check its help through the available shell. Resume
+with concrete bounded actions, preserved authority and explicit artifact destinations
+rather than an elaborate handoff narrative. Never override an actual access denial.
+
 ## Workers — Spawn, Drive, Stop
 
 A worker is a Fargate devbox running the target repo. Ownership is by scope:
@@ -211,6 +290,14 @@ pylot workers spawn --mission "$PYLOT_JOB_ID" repo=<org/repo>
 pylot workers spawn --conversation "$CONV_ID" repo=<org/repo> name=<short-purpose>
 ```
 
+```bash
+# from a local session (a laptop running `pylot auth login`, no mission context):
+pylot devboxes spawn <org/repo> --idle-ttl 3600 name=<short-purpose>   # standalone box, the default
+pylot devboxes view <task-arn>                                          # wait for RUNNING before the first prompt
+# persistent-conversation variant — capture only the id so the session credential is never printed
+CONV_ID=$(pylot conversations create --org <org> --team <team> --repos <repo-name> --title "<task>" | jq -r .id)
+pylot devboxes connect <task-arn>      # → ssh_command; drive by SSH when direct command control beats prompting
+```
 201 → `{worker_id, task_arn, last_status}`. Boot runs PROVISIONING → RUNNING
 (~1–2 min). Prompts are queued server-side and claimed once the in-container
 daemon boots, so an early prompt is not lost; if you need RUNNING confirmed,
@@ -235,6 +322,19 @@ A devbox that dies mid-turn is reaped with `last_exit_code: -1`, so the loop
 cannot hang forever. Between phases, read the output before sending the next
 prompt — a failed phase should not be built on.
 
+Before invoking a remote slash command, send a plain-text discovery prompt to list
+the worker's installed commands and skills and the repo's instructions — local
+skills are not installed remotely. An `Unknown command` result is a failed turn
+even when the harness reports exit code 0.
+
+Two boot failures, both fixable without archaeology:
+- Prompt queues forever, `view` shows `queued → idle`, `last_exit_code: -1`,
+  `session_id: null`, frozen `heartbeat_at`, and `/ecs/pylot-workers` has no
+  `[worker-prompt-daemon]` boot line → the worker image predates the prompt
+  daemon. `pylot deploy build-worker <org/repo>` and respawn.
+- A turn fails `403 unknown job` / `unknown devbox worker` → proxy-principal
+  regression; check the worker row's `job_id` and file it against the gateway.
+
 If `--wait` / `--follow` / `output` are absent from `pylot workers prompt --help`,
 this container's CLI predates them: poll `view` on a sleep loop, or use §7.
 
@@ -255,6 +355,10 @@ Conversation-owned devboxes snapshot on stop and `resume` restores that snapshot
 with `session_id` preserved; mission-worker snapshots are opt-in and OFF by default
 (cost control), so treat a mission worker's stop as final unless you know the flag
 is on.
+Harvest the completed turn's full output **before** stopping: stop can replace
+`last_output` with a truncated snapshot transcript. `stopped: true` does not mean
+recovery is available — require `snapshot_status: verified` before relying on
+`resume`. Deleting a conversation is destructive; never do it without an explicit ask.
 
 ### 5. Multi-box work — you are the message bus
 
@@ -322,6 +426,60 @@ curl -s --max-time 30 -X POST "${AUTH[@]}" "$BASE/$WID/stop" >/dev/null 2>&1 || 
 
 Same routes, same semantics as §2–4. Prefer the CLI wherever it exists — one
 transport, one source of truth.
+
+## Supervise a run
+
+After starting a worker or prompt, make one immediate compact status check to
+confirm it was accepted and is starting; queued/provisioning is not yet running.
+Prefer a completion event or a detached status monitor that wakes the session
+only on a terminal state. When scheduled checks are necessary, use adaptive
+**10–30 minute intervals**: about 10 minutes near an expected result or a known
+failure, 20–30 minutes for healthy hour-long implementation or test work. An
+unchanged healthy check should lengthen the next wait, not trigger another
+prompt. Use shorter checks only for a concrete startup or failure diagnosis.
+Keep at most one follow-up owner per task; pause the old follow-up when another
+session takes over, and pause on completion or a decision that blocks safe work.
+An automation error or safety rejection is a reason to inspect and stop repeated
+retries, not to keep waking the same blocked action or change routes to evade it.
+
+Intervene only when evidence shows the factory cannot continue safely: a
+materially ambiguous task contract, an unrecoverable execution condition, or a
+result that would violate scope or safety. Prefer resuming from durable remote
+state. Do not coach routine implementation, rewrite merely imperfect work, or
+build session-local workarounds for a recurring factory defect.
+
+## Verify the terminal result
+
+A successful process exit is not the deliverable. Independently verify the
+requested outcome against the task scope:
+
+- terminal mission state, report, and cost are coherent;
+- the expected branch or PR exists with the correct target and scope;
+- PR claims match the actual diff and recorded checks;
+- review suggestions and any remaining risks are visible;
+- for delivery tasks, review findings are resolved and authorized release work
+  proceeds through target-environment workflow acceptance, with deployed revision
+  and runtime evidence; a PR or worker completion is an intermediate result;
+- attached evidence is accessible through the intended Pylot asset flow;
+- the execution resource is stopped or otherwise left in its intended terminal
+  state.
+
+The coordinator owns the remaining delivery tail after worker completion.
+Explicit PR-only tasks can finish at a verified PR. When verification exposes a
+reusable defect, correct the owning skill rather than working around it here.
+
+## GitHub Auth Through the CLI
+
+`pylot auth login` stores per-org credentials in `~/.pylot/credentials`;
+`pylot auth git-token --repo <org>/<repo>` mints a one-off short-lived App
+installation token. The App has org-wide access, but each minted token is scoped
+to the single repo you asked for — a narrow `gh repo list` under that token is
+not an App limit; mint another token for another repo. A repo "lacking pylot
+support" means its devbox config is missing (not in a team, no worker image),
+never that the App cannot reach it. **Never export a session-wide `GH_TOKEN`.**
+App tokens cannot read user-specific surfaces (GitHub notifications); those need
+a logged-in `gh` identity or event-ledger routing. Secrets: never in prompts or
+payloads — `pylot secrets`, then reference env var names.
 
 ## Org Setup From a Conversation (admin-action)
 
@@ -515,11 +673,3 @@ Default-team fallback: when a Slack message arrives on a channel with no explici
 Dispatch with `--context conversation_id=…` → auto-wake on mission terminal + PR lifecycle.
 Self-wake fallback: `pylot conversations wakes-add <conv-id> in_seconds=300 content="check X"`
 One wake at a time; re-schedule rather than stack.
-
-## Dispatch vs. Local
-
-| Do locally | Dispatch |
-|------------|----------|
-| Answer questions, check status, query API | Code changes, PRs, reviews |
-| Read logs, explain code | Docker builds, deploys |
-| Quick lookups (< 2 min) | Test suites, anything > 10 min |

@@ -72,7 +72,7 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- First-check PASS: `[pylot] outcome="double-checked {repo}#{pr} — verdict ready" status=success`
-- First-check fail closed: `[pylot] outcome="double-check BLOCKED {repo}#{pr} — {reason}, double-checked withheld, needs-work retained" status=success`
-- Failure: `[pylot] outcome="double-check failed at stage NN: {reason}" status=failed`
-- Blocked: `[pylot] outcome="double-check blocked: {reason}" status=blocked`
+- First-check PASS: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked {repo}#{pr} — verdict ready" status=success`
+- First-check fail closed: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check BLOCKED {repo}#{pr} — {reason}, double-checked withheld, needs-work retained" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check failed at stage NN: {reason}" status=failed`
+- Blocked: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: {reason}" status=blocked`

@@ -62,6 +62,6 @@ Written at runtime in the repo working directory (not inside the skill directory
 
 ## Emit on completion
 
-- Already complete: `[pylot] outcome="already complete — reviewed label already applied" status=success`
-- Success: `[pylot] outcome="review-pr complete — reviewed label applied" status=success`
-- Failure: `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`
+- Already complete: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — reviewed label already applied" status=success`
+- Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr complete — reviewed label applied" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage NN: {reason}" status=failed`

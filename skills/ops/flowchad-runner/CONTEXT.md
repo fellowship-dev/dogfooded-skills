@@ -60,6 +60,6 @@ Per-flow evidence (screenshots, video, GIF, results.json) lands under
 
 ## Emit on completion
 
-- Success: `[pylot] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
-- Failure: `[pylot] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
-- Blocked: `[pylot] outcome="flowchad blocked: {reason}" status=blocked`
+- Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
+- Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
+- Blocked: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad blocked: {reason}" status=blocked`

@@ -31,7 +31,7 @@ REVIEWED_SHA=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.comments[].body' \
   | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 
 if [ "$HAS_REVIEWED" = "true" ] && [ -n "$REVIEWED_SHA" ] && [ "$REVIEWED_SHA" = "$HEAD_SHA" ]; then
-  echo "[pylot] outcome=\"already complete — reviewed receipt matches current HEAD $HEAD_SHA\" status=success"
+  echo "[review-pr] already complete — reviewed receipt matches current HEAD $HEAD_SHA"
   exit 0
 fi
 
@@ -41,6 +41,11 @@ if [ "$HAS_REVIEWED" = "true" ]; then
   echo "[review-pr] stale reviewed evidence: receipt=${REVIEWED_SHA:-missing} current=$HEAD_SHA — continuing"
 fi
 ```
+
+If the current-head receipt branch exits, emit the following resolved marker as your final full
+assistant line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — reviewed receipt matches current HEAD $HEAD_SHA" status=success
 
 If this exits, STOP the whole procedure. Do not spawn stage 01.
 
@@ -143,10 +148,15 @@ Append to the handoff, after the PR metadata section:
 
 ### Step 4: Closes vs Refs raw data (for the mandatory check in stage 01)
 
+Set `REVIEW_SKILL_DIR` to the absolute directory containing this installed skill's
+`SKILL.md`, using the runtime-provided skill location. The target repository need not
+vendor this library; do not resolve the helper relative to its working directory.
+
 ```bash
+: "${REVIEW_SKILL_DIR:?Set the absolute installed review-pr skill directory}"
 PR_BODY=$(gh pr view "$PR" --repo "$REPO" --json body --jq '.body')
 ISSUE_LINKS=$(printf '%s\n' "$PR_BODY" \
-  | bash skills/ops/review-pr/scripts/extract-issue-links.sh)
+  | bash "$REVIEW_SKILL_DIR/scripts/extract-issue-links.sh")
 printf '%s\n' "$ISSUE_LINKS"
 ```
 
@@ -161,6 +171,7 @@ can assess them against the diff without re-fetching:
 
 ```bash
 printf '%s\n' "$ISSUE_LINKS" | cut -f2 | sort -u | while IFS= read -r ISSUE_N; do
+  [ -n "$ISSUE_N" ] || continue
   printf 'ISSUE_%s\n' "$ISSUE_N"
   gh issue view "$ISSUE_N" --repo "$REPO" --json body --jq '.body' \
     | grep -E '^\s*- \[[ x]\]' || echo "NO_AC_ITEMS"
@@ -225,4 +236,4 @@ or NO_AC_ITEMS}
 - handoff.md written before the stage 01 Task is spawned
 
 ## Failure
-- PR not found / `gh` auth failure → emit `[pylot] outcome="review-pr failed at stage 00: {reason}" status=failed` and stop
+- PR not found / `gh` auth failure → emit `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage 00: {reason}" status=failed` and stop

@@ -100,8 +100,14 @@ Use the Closes-vs-Refs raw data in the handoff. For each linked issue with a `Cl
 Assess each item against the actual diff:
 
 - ALL items plausibly satisfied by this diff → `Closes #N` is appropriate; generate NO finding.
-- Some named items are NOT addressed by this diff → add a finding that NAMES each unaddressed
-  criterion and requires either completing it in this PR or filing a conforming follow-up while
+- Some named items are NOT addressed by this diff → inspect the linked follow-up issue, if any.
+  If it conforms to the shared contract below and carries every deferred criterion verbatim,
+  retain the closing reference and generate NO finding for that transferred remainder. The
+  follow-up carries its operational or post-merge acceptance; closing the driving issue does not
+  claim that deferred work has already passed.
+- Any named remainder is neither implemented nor covered by a conforming linked follow-up →
+  add a finding that NAMES each unaddressed criterion and requires either completing it in this
+  PR or filing a conforming follow-up while
   retaining the closing reference. The follow-up must use
   [`skills/shared/follow-up-issue-template.md`](../../../../shared/follow-up-issue-template.md) and be
   linked from this PR. Severity: **Bug**. Confidence is a calibrated judgment on the same 80–100
@@ -180,4 +186,4 @@ If no findings ≥ 80 confidence: "No issues found above confidence threshold."]
 
 ## Failure
 - Diff missing/empty in the handoff → emit a handoff noting the failure; the orchestrator emits
-  `[pylot] outcome="review-pr failed at stage 01: {reason}" status=failed`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage 01: {reason}" status=failed`

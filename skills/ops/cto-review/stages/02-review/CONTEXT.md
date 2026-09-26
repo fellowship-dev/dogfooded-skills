@@ -64,7 +64,7 @@ comment and influences the verdict.
 | `security` | Auth/security hold | Unresolved unless owner has explicitly cleared it; machine cannot clear this |
 | `chad-rejects` | FlowChad QA failure (LEGACY) | FlowChad per-PR runs were retired 2026-09-06 (pylot#3388); a stale `chad-rejects` from before then is context, not a blocker — weigh the underlying evidence comment on its merits |
 | `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
-| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. Staging evidence is required only on release-train PRs (base = default branch, pylot#3389); the setup stage gates that. |
+| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. Staging evidence is required only on release-train PRs (base = the team-declared promote branch, pylot#3389); the setup stage gates that. |
 
 **For each comment thread, identify blockers:**
 - Explicit hold comments (e.g. "do not merge", "waiting for owner") — resolved only if a subsequent comment or commit addresses them

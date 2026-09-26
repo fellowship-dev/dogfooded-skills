@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../../.." && pwd)
 REVIEW="$ROOT/skills/ops/review-pr/stages/01-cohesive-review/CONTEXT.md"
 AUTHOR="$ROOT/skills/product/create-compelling-prs/SKILL.md"
+DOUBLE_CHECK="$ROOT/skills/ops/double-check/stages/02-review/CONTEXT.md"
 TEMPLATE="$ROOT/skills/shared/follow-up-issue-template.md"
 EXTRACTOR="$ROOT/skills/ops/review-pr/scripts/extract-issue-links.sh"
 REFS_FIXTURE="$ROOT/skills/ops/review-pr/tests/fixtures/refs-driving-pr-body.md"
@@ -48,6 +49,22 @@ assert_contains "$REVIEW" 'clearly identified as related' reviewer-related-refs-
 assert_contains "$REVIEW" '../../../../shared/follow-up-issue-template.md' reviewer-shared-contract
 assert_not_contains "$REVIEW" 'finding recommending `Refs #N`' reviewer-obsolete-downgrade-removed
 
+# A previously completed transfer must pass both review stages; requiring another
+# follow-up forever would make the author's conforming workflow unshippable.
+assert_contains "$REVIEW" 'inspect the linked follow-up issue, if any.' reviewer-reads-existing-followup
+assert_contains "$REVIEW" 'carries every deferred criterion verbatim' reviewer-verifies-full-transfer
+assert_contains "$REVIEW" 'generate NO finding for that transferred remainder.' reviewer-accepts-conforming-followup
+assert_contains "$REVIEW" 'neither implemented nor covered by a conforming linked follow-up' reviewer-uncovered-remainder-is-bug
+assert_contains "$REVIEW" 'claim that deferred work has already passed.' reviewer-transfer-is-not-completion
+assert_contains "$DOUBLE_CHECK" 'A conforming transfer backs the' double-check-accepts-conforming-transfer
+assert_contains "$DOUBLE_CHECK" 'generate no finding merely because that remainder is absent' double-check-does-not-reject-transferred-remainder
+assert_contains "$DOUBLE_CHECK" 'follow-up: it must carry the deferred criteria verbatim.' double-check-reads-and-verifies-followup
+assert_contains "$DOUBLE_CHECK" 'If a criterion is neither implemented nor transferred' double-check-uncovered-remainder-requires-fix
+assert_contains "$DOUBLE_CHECK" 'Operational or post-merge acceptance remains owed by the follow-up, not claimed done.' double-check-transfer-is-not-completion
+assert_contains "$DOUBLE_CHECK" 'Never recommend downgrading the' double-check-retains-closing-reference
+assert_contains "$DOUBLE_CHECK" '../../../../shared/follow-up-issue-template.md' double-check-shared-contract
+assert_not_contains "$DOUBLE_CHECK" 'implement it is unbacked.' double-check-unconditional-rejection-removed
+
 # Author behavior: exactly one closing driving issue, decomposition, and the same shared contract.
 assert_contains "$AUTHOR" 'exactly one driving issue' author-one-driving-issue
 assert_contains "$AUTHOR" '`Closes #N`, `Fixes #N`, or' author-closing-keyword
@@ -71,8 +88,8 @@ expected_links=$(printf '%s\n' \
 printf 'PASS refs-driving-fixture\n'
 assert_contains "$REVIEW" 'driving issue only with `Refs #N`' refs-fixture-reviewer-consumer
 
-# Both consumer references must resolve to the one canonical file.
-for consumer in "$REVIEW" "$AUTHOR"; do
+# All three consumer references must resolve to the one canonical file.
+for consumer in "$REVIEW" "$AUTHOR" "$DOUBLE_CHECK"; do
   target=$(grep -oE '\([^)]*follow-up-issue-template\.md\)' "$consumer" | head -1 | tr -d '()')
   resolved=$(cd "$(dirname "$consumer")" && realpath "$target")
   [ "$resolved" = "$TEMPLATE" ] || {
@@ -80,5 +97,5 @@ for consumer in "$REVIEW" "$AUTHOR"; do
     exit 1
   }
 done
-printf 'PASS both-consumers-resolve-canonical-template\n'
+printf 'PASS all-three-consumers-resolve-canonical-template\n'
 printf 'PASS driving issue contract\n'

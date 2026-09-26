@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")/../../../.." && pwd)
+ROOT=$(cd "$(dirname "$0")/../../../.." && pwd -P)
 REVIEW="$ROOT/skills/ops/review-pr/stages/01-cohesive-review/CONTEXT.md"
 AUTHOR="$ROOT/skills/product/create-compelling-prs/SKILL.md"
 DOUBLE_CHECK="$ROOT/skills/ops/double-check/stages/02-review/CONTEXT.md"

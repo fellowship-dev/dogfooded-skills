@@ -16,7 +16,7 @@ stage runs inline in the orchestrator — do NOT spawn a Task. All GH side effec
   Post nothing, label nothing, merge nothing. Write a one-line report noting the PR was closed
   without merge. Emit:
   ```
-  [pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=success
+  [pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=success
   ```
   STOP. (A closed-without-merge PR is a normal terminal state — not a blocker requiring human
   intervention. `status=blocked` would trigger an unnecessary escalation to the human operator.)
@@ -93,25 +93,55 @@ MUST NOT merge if EITHER of two independent triggers holds: a human has applied
 
 ```bash
 # Fresh label read at merge time — must NOT use the cached handoff from stage 01
-LIVE_LABELS=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name]' 2>/dev/null || echo '[]')
+if ! LIVE_LABELS=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name]' 2>/dev/null); then
+  echo "[cto-review] verification failed: fresh label read unavailable; do not merge"
+  exit 1
+fi
+if ! printf '%s' "$LIVE_LABELS" | jq -e 'type == "array" and all(.[]; type == "string")' >/dev/null 2>&1; then
+  echo "[cto-review] verification failed: fresh label read malformed; do not merge"
+  exit 1
+fi
 HUMAN_WAITING_ON_OWNER=false
 echo "$LIVE_LABELS" | grep -qE '"waiting-on-owner"' && HUMAN_WAITING_ON_OWNER=true
 
 # Read stage 02's classification verbatim — never re-derive it from the diff here
-OWNER_CLASS=$(sed -n 's/^- owner_authority_class: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
-OWNER_CLASS="${OWNER_CLASS:-none}"
+OWNER_CLASS=$(sed -n 's/^- owner_authority_class: //p' .procedure-output/cto-review/02-review/handoff.md 2>/dev/null)
+case "$OWNER_CLASS" in
+  none|destructive-prod-data|spend-above-budget|secrets-handling|external-send|org-policy) ;;
+  *)
+    echo "[cto-review] verification failed: missing, duplicate or invalid owner classification; do not merge"
+    exit 1
+    ;;
+esac
 
 GATE_FIRED=false
 [ "$HUMAN_WAITING_ON_OWNER" = "true" ] && GATE_FIRED=true
 [ "$OWNER_CLASS" != "none" ] && GATE_FIRED=true
 
 if [ "$GATE_FIRED" = "true" ]; then
+  DECISION_LINE=$(sed -n 's/^- owner_decision_line: //p' .procedure-output/cto-review/02-review/handoff.md)
+  ANSWERER=$(sed -n 's/^- owner_answerer: //p' .procedure-output/cto-review/02-review/handoff.md)
+  EVIDENCE=$(sed -n 's/^- owner_authority_evidence: //p' .procedure-output/cto-review/02-review/handoff.md)
+
+  # A positive class must carry its own complete decision/evidence contract. Human-only
+  # fallbacks below must never fabricate evidence for an incomplete classifier result.
+  if [ "$OWNER_CLASS" != "none" ]; then
+    for OWNER_FIELD in "$DECISION_LINE" "$ANSWERER" "$EVIDENCE"; do
+      case "$OWNER_FIELD" in
+        ""|none|null|*$'\n'*)
+          echo "[cto-review] verification failed: incomplete or duplicate owner decision fields; do not merge"
+          exit 1
+          ;;
+      esac
+      if ! printf '%s' "$OWNER_FIELD" | grep -q '[^[:space:]]'; then
+        echo "[cto-review] verification failed: blank owner decision field; do not merge"
+        exit 1
+      fi
+    done
+  fi
+
   gh label create "waiting-on-owner" --repo $REPO --color "e99695" --description "Waiting for owner decision before merge" 2>/dev/null || true
   gh pr edit $PR --repo $REPO --add-label "waiting-on-owner"
-
-  DECISION_LINE=$(sed -n 's/^- owner_decision_line: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
-  ANSWERER=$(sed -n 's/^- owner_answerer: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
-  EVIDENCE=$(sed -n 's/^- owner_authority_evidence: //p' .procedure-output/cto-review/02-review/handoff.md | head -1)
 
   # Pure human trigger with no classifier match: the fields above are legitimately "none" —
   # every park still needs exactly one decision line and a named answerer (#3240 AC5/AC6).
@@ -122,7 +152,9 @@ if [ "$GATE_FIRED" = "true" ]; then
     ANSWERER=$(gh api repos/$REPO/issues/$PR/events --jq \
       '[.[] | select(.event=="labeled" and .label.name=="waiting-on-owner")] | last | .actor.login' \
       2>/dev/null)
-    ANSWERER="${ANSWERER:-the human who applied waiting-on-owner}"
+    if [ -z "$ANSWERER" ] || [ "$ANSWERER" = "null" ]; then
+      ANSWERER="the human who applied waiting-on-owner"
+    fi
   fi
   if [ -z "$EVIDENCE" ] || [ "$EVIDENCE" = "none" ]; then
     EVIDENCE="waiting-on-owner applied directly by a human reviewer (no owner-authority classifier match)"
@@ -151,11 +183,21 @@ PARK_EOF
   gh pr comment $PR --repo $REPO --body-file /tmp/cto-owner-gate.md
 
   echo "[cto-review] owner gate fired (human_label=$HUMAN_WAITING_ON_OWNER class=$OWNER_CLASS) — PR parked, NOT merged"
-  echo "[pylot] outcome=\"cto-review parked: PR #${PR} — owner decision required\" status=blocked"
+  echo "[cto-review] terminal: PR #${PR} — owner decision required"
   exit 0
 fi
 echo "[cto-review] owner gate: CLEAR — labels=$LIVE_LABELS class=$OWNER_CLASS"
 ```
+
+A nonzero verification exit means the fresh labels or classifier result could not be verified.
+Stop before further labels or merge; emit the stage-03 failure marker from the assistant and report
+the failed read. Do not apply `waiting-on-owner` for a verification failure. A missing result is
+not the classifier's explicit `none` verdict.
+
+If the owner-gate branch parks and exits successfully, emit the following resolved marker as your final full assistant
+line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #${PR} — owner decision required" status=blocked
 
 **Rules that are absolute:**
 - This check fires EVEN IF stage 02 gave LGTM verdict — verdict cannot override the gate.
@@ -320,16 +362,16 @@ report ends at the file write; operators surface it via the mission report.
 
 ### Step 7: Emit the outcome marker (orchestrator only)
 ```
-[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled|closed-superseded|held|post-merge-note}" status=success
 ```
-On the closed-no-merge short-circuit, emit the `status=blocked` marker shown above instead.
+On the closed-no-merge short-circuit, emit the `status=success` marker shown above instead.
 On the owner gate fire (Step 2), emit the parked marker and STOP:
 ```
-[pylot] outcome="cto-review parked: PR #{N} — owner decision required" status=blocked
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #{N} — owner decision required" status=blocked
 ```
 If a side effect failed hard (comment post errored), emit:
 ```
-[pylot] outcome="cto-review failed at stage 03: {reason}" status=failed
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage 03: {reason}" status=failed
 ```
 
 ## Output: handoff.md

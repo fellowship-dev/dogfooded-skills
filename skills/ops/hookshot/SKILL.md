@@ -1,7 +1,7 @@
 ---
 name: hookshot
-description: Use when generating Claude Code enforcement hooks from a repo's docs/ structure.
-argument-hint: "[--drift-warn] [--md-lint]"
+description: Use when generating agent enforcement hooks for a repo — doc-coverage reminders from docs/, skill-drift and markdown-lint warnings, and the session preflight and delivery-gate hooks that check a session against its outcome contract. Installs into Claude Code and Codex hook configuration.
+argument-hint: "[--drift-warn] [--md-lint] [--preflight] [--gate]"
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
@@ -10,7 +10,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 From docs to enforcement hooks. Reads what you've documented. Generates the hooks that make agents read it.
 
-**Philosophy:** Hookshot only issues warnings and guidance. It never amends files, never lints-and-fixes. All hooks it generates emit messages to stderr and exit 0 — the agent decides whether to act.
+**Philosophy:** Hookshot warns by default, blocks only for a gate the repo opted into. It never amends files, never lints-and-fixes. Every hook it generates emits guidance and exits 0; the one exception is the delivery gate, which a repo can flip from shadow (log only) to enforce (refuse the stop) after reading its own shadow log.
 
 ## Modes
 
@@ -21,8 +21,10 @@ Hookshot is composable — invoke with one or more flags. Default mode (no flags
 | *(no flag)* | **Doc coverage** — PreToolUse Edit/Write hook that nudges agents to read the relevant `docs/` section before editing a covered file. (Default behavior, documented below.) |
 | `--drift-warn` | **Skill drift warning** — PreToolUse Edit/Write hook that warns when an agent edits a file inside `.claude/skills/<name>/` for a skill that's tracked in `skills-lock.json`. Edits should go upstream. |
 | `--md-lint` | **Markdown lint** — PostToolUse Edit/Write hook that runs `npx markdownlint-cli2` on any changed `*.md` file and surfaces warnings. Never auto-fixes. |
+| `--preflight` | **Session preflight** — SessionStart hook (startup, resume, clear, compact) that tells the agent its session id, to run preflight for a task, and where to record its outcome-contract pointer. Ships `scripts/preflight.py`. |
+| `--gate` | **Delivery gate** — Stop hook that diffs what exists against the session's outcome contract. Shadow mode logs would-be refusals; enforce mode refuses the stop. Ships `scripts/gate.py`, `references/contract-format.md`, `references/shadow-log.md`. |
 
-Flags compose: `/hookshot --drift-warn --md-lint` installs both new hooks alongside the default doc-coverage hook. Re-running hookshot merges with existing hooks idempotently.
+Flags compose: `/hookshot --drift-warn --md-lint` installs both new hooks alongside the default doc-coverage hook. `--preflight --gate` are the only modes that ship scripts of their own and the only ones that install into Codex as well as Claude Code. Re-running hookshot merges with existing hooks idempotently.
 
 **Install via npx:**
 ```bash
@@ -506,6 +508,76 @@ bash .claude/check-md-lint.sh README.md
 
 # Should be silent — not a markdown file
 bash .claude/check-md-lint.sh package.json
+```
+
+---
+
+## Mode: Session preflight and delivery gate (`--preflight`, `--gate`)
+
+Two hooks, one owner. The scripts live in this skill (`scripts/preflight.py`, `scripts/gate.py`, Python 3 standard library) and the client configuration only points at them. A repo never carries its own copy of the logic; it carries wiring.
+
+- **Preflight** (SessionStart on startup, resume, clear, compact): injects the session id, a reminder to run preflight when the first prompt is a task, and the pointer path `<state>/contracts/<session_id>` where the agent records its contract's repo-relative path. Creates `<state>/contracts/`.
+- **Gate** (Stop): finds the contract through that pointer, checks it per `references/contract-format.md`, appends a line to the shadow log per `references/shadow-log.md`, and in enforce mode returns `{"decision": "block", "reason": …}` with the unmet items. It never blocks while `stop_hook_active` is true, and exits 0 on every internal error.
+
+Both clients pass `session_id`, `cwd`, `source` (SessionStart) and `stop_hook_active`, `last_assistant_message` (Stop) on stdin and accept the same `additionalContext` and `decision: block` shapes. Codex parses and skips `prompt`/`agent` handlers, so an LLM judge is native to Claude Code only; the gate records `judge: none` on Codex.
+
+### Environment
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOOKSHOT_STATE_DIR` | `<cwd>/.state` | pointers, shadow log, judge packets. Gitignore it. |
+| `HOOKSHOT_GATE_MODE` | `shadow` | `shadow` logs; `enforce` refuses. Flip only after reading the log. |
+| `HOOKSHOT_PREFLIGHT_DOC` | unset | repo-relative doc the preflight reminder tells the agent to read |
+| `HOOKSHOT_NO_NETWORK` | unset | skip URL and PR checks (they record `unverifiable`) |
+
+### Install into Claude Code (`.claude/settings.json`, project level)
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command",
+      "command": "HOOKSHOT_PREFLIGHT_DOC=docs/preflight.md python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/hookshot/scripts/preflight.py\" --client claude-code"}]}],
+    "Stop": [{"hooks": [{"type": "command", "timeout": 20,
+      "command": "HOOKSHOT_GATE_MODE=shadow python3 \"$CLAUDE_PROJECT_DIR/.agents/skills/hookshot/scripts/gate.py\" --client claude-code"}]}]
+  }
+}
+```
+
+Omit the SessionStart matcher so it fires on every source. Claude Code desktop and the VS Code extension read the same file. Merge, don't clobber, as with the other modes.
+
+### Install into Codex (`.codex/hooks.json`, project level)
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command",
+      "command": "HOOKSHOT_PREFLIGHT_DOC=docs/preflight.md python3 .agents/skills/hookshot/scripts/preflight.py --client codex"}]}],
+    "Stop": [{"hooks": [{"type": "command", "timeout": 20,
+      "command": "HOOKSHOT_GATE_MODE=shadow python3 .agents/skills/hookshot/scripts/gate.py --client codex"}]}]
+  }
+}
+```
+
+Codex runs hooks from the session cwd. Codex trusts each hook definition by hash: after installing or changing a hook, a person runs `/hooks` in an interactive Codex session on each machine and trusts it. Do not automate that with `--dangerously-bypass-hook-trust`. Codex Desktop and the IDE extension have open issues about hooks not firing and Stop blocks erroring; treat a wrap-up step as the gate there until a shadow log proves otherwise.
+
+### Non-interactive sessions
+
+Where a client does not fire hooks (for example a runner that starts `codex exec` with user config ignored), the runner calls the same script after the session ends:
+
+```bash
+python3 .agents/skills/hookshot/scripts/gate.py --client codex-exec \
+  --session-id "$RUN_ID" --last-message "$LAST_MESSAGE_FILE" --cwd "$REPO"
+```
+
+The contract pointer is still `<state>/contracts/<RUN_ID>`; pass `--contract PATH` when the runner already knows it.
+
+### Verification
+
+```bash
+python3 .agents/skills/hookshot/scripts/test_gate.py
+echo '{"session_id":"t","cwd":"'$PWD'","source":"startup"}' | python3 .agents/skills/hookshot/scripts/preflight.py --client claude-code
+echo '{"session_id":"t","cwd":"'$PWD'","stop_hook_active":false,"last_assistant_message":"DELIVERED"}' | python3 .agents/skills/hookshot/scripts/gate.py --client codex
+tail -1 .state/hookshot/gate-shadow.jsonl
 ```
 
 ---

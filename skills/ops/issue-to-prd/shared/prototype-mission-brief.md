@@ -265,5 +265,5 @@ Stop the worker (`POST /missions/$PYLOT_JOB_ID/workers/<id>/stop`) before emitti
 marker:
 
 ```text
-[pylot] outcome="3 prototype variants posted on {org/repo}#{number}" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="3 prototype variants posted on {org/repo}#{number}" status=success
 ```

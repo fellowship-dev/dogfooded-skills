@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
+import tempfile
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SKILL_ROOT.parents[2]
@@ -148,3 +152,76 @@ entrypoint = "./skills/ops/cto-review/tests/test_owner_gate_contract.py"
 check(entrypoint in workflow, "contract test must be registered in CI")
 
 print("Owner-authority gate contract passed.")
+
+# Execute the real documented Step 2 shell with a fake GitHub boundary. This is
+# deliberately independent of gate_fired() above, which cannot catch shell drift.
+step2 = synth.split("### Step 2: Owner Gate", 1)[1].split("### Step 3:", 1)[0]
+actual_shell = re.search(r"```bash\n(.*?)\n```", step2, re.S).group(1)
+with tempfile.TemporaryDirectory(prefix="owner-gate-contract-") as directory:
+    tmp = Path(directory)
+    bindir = tmp / "bin"
+    bindir.mkdir()
+    gh = bindir / "gh"
+    gh.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ["GH_LOG"], "a") as log:
+    log.write(json.dumps(args) + "\\n")
+if args[:2] == ["pr", "view"]:
+    if os.environ.get("FAIL_LABEL_READ") == "1": sys.exit(1)
+    print(os.environ["LABEL_PAYLOAD"])
+elif args and args[0] == "api":
+    print(os.environ.get("ACTOR", "null"))
+elif args[:2] in (["label", "create"], ["pr", "edit"], ["pr", "comment"]):
+    if args[:2] == ["pr", "comment"]:
+        pathlib.Path(os.environ["COMMENT_COPY"]).write_text(pathlib.Path(args[args.index("--body-file") + 1]).read_text())
+else:
+    sys.exit(64)
+''')
+    gh.chmod(0o755)
+    handoff = tmp / ".procedure-output/cto-review/02-review/handoff.md"
+    handoff.parent.mkdir(parents=True)
+    log = tmp / "gh.jsonl"
+    comment = tmp / "comment.md"
+    # Keep the production snippet exact except its temporary artifact destination.
+    shell = actual_shell.replace("/tmp/cto-owner-gate.md", str(tmp / "park.md"))
+    for fixture in fixtures.values():
+        labels = (["security"] if fixture["security_label_present"] else []) + (["waiting-on-owner"] if fixture["human_waiting_on_owner"] else [])
+        fields = {key: fixture[key] for key in ("owner_authority_class", "owner_decision_line", "owner_answerer", "owner_authority_evidence")}
+        cases = [(fixture["id"], fields, json.dumps(labels), False, "park" if fixture["expect_gate_fired"] else "clear")]
+        if fixture["id"] == "security-label-class-none":
+            cases += [
+                ("missing-class", {key: value for key, value in fields.items() if key != "owner_authority_class"}, "[]", False, "invalid"),
+                ("unknown-class", dict(fields, owner_authority_class="invented-class"), "[]", False, "invalid"),
+                ("empty-class", dict(fields, owner_authority_class=""), "[]", False, "invalid"),
+                ("duplicate-class", dict(fields, owner_authority_class="none\n- owner_authority_class: none"), "[]", False, "invalid"),
+                ("failed-live-read", fields, "[]", True, "invalid"),
+                ("malformed-live-read", fields, "not-json", False, "invalid"),
+                ("wrong-label-shape", fields, "{}", False, "invalid"),
+            ]
+        if fixture["id"] == "class-destructive-prod-data":
+            for field in ("owner_decision_line", "owner_answerer", "owner_authority_evidence"):
+                cases.append((f"missing-positive-{field}", {key: value for key, value in fields.items() if key != field}, "[]", False, "invalid"))
+                cases.append((f"duplicate-positive-{field}", dict(fields, **{field: fields[field] + f"\n- {field}: duplicate"}), "[]", False, "invalid"))
+        for name, values, payload, fail_read, expected in cases:
+            handoff.write_text("\n".join(f"- {key}: {value}" for key, value in values.items()) + "\n## Receipts\nfixture\n")
+            log.write_text("")
+            if comment.exists(): comment.unlink()
+            env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}", GH_LOG=str(log), COMMENT_COPY=str(comment), LABEL_PAYLOAD=payload,
+                FAIL_LABEL_READ="1" if fail_read else "0", ACTOR="null", PR="181", REPO="example/repository")
+            result = subprocess.run(["bash", "-c", shell + '\necho REACHED_MERGE_BAR\n'], cwd=tmp, env=env, text=True, capture_output=True)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            mutations = [args for args in calls if args[:2] in (["label", "create"], ["pr", "edit"], ["pr", "comment"])]
+            reached = "REACHED_MERGE_BAR" in result.stdout
+            if expected == "clear":
+                check(result.returncode == 0 and reached and not mutations, f"{name}: must reach merge bar without mutations: {result.stdout} {result.stderr}")
+            elif expected == "park":
+                check(result.returncode == 0 and not reached and comment.exists(), f"{name}: must park and stop: {result.stdout} {result.stderr}")
+                text = comment.read_text()
+                check(text.count("**Decision needed:**") == 1 and text.count("**Who can answer:**") == 1, f"{name}: missing decision/answerer")
+                check("**Who can answer:** null" not in text, f"{name}: null is not an answerer")
+                check(not any("needs-work" in args for args in mutations), f"{name}: parked PR must not get needs-work")
+            else:
+                check(result.returncode != 0 and not reached and not mutations, f"{name}: invalid input must fail closed without mutations: {result.stdout} {result.stderr}")
+            print(f"PASS actual owner gate {name}")
+print("Actual owner-gate shell contract passed.")

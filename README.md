@@ -50,7 +50,7 @@ Skills for CI, deployment, operations, and evidence workflows.
 
 | Skill | Description |
 |-------|-------------|
-| [`ops/label-and-act`](skills/ops/label-and-act/) | Experimental: extract reusable stored-evidence labeling, local action selection, budget controls and feedback from a working consumer |
+| [`ops/jev-label-and-act`](skills/ops/jev-label-and-act/) | Experimental: extract reusable stored-evidence labeling, local action selection, budget controls and feedback from a working consumer |
 | [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
 | [`ops/hookshot`](skills/ops/hookshot/) | Agent enforcement hooks for Claude Code and Codex — doc reminders before edits, skill-drift and markdown-lint warnings, session preflight and the delivery gate that checks a session against its outcome contract |
@@ -67,6 +67,29 @@ Skills for CI, deployment, operations, and evidence workflows.
 | [`ops/trash-truck`](skills/ops/trash-truck/) | Investigate product, code, and operational surfaces for evidence-backed retirement; nominate up to three material candidates and require bounded owner selection before action. Scheduled runs only maintain the review record. |
 
 > **Trash Truck migration:** the former `focus:<name>` invocation is no longer accepted. Use `mode:interactive` with optional `candidate:"<description>"`, or `mode:scheduled` with the optional `persist:github` grant.
+
+## Jev label-and-act migration
+
+`jev-label-and-act` is the current name of the former `label-and-act` skill.
+The procedure and action authority are unchanged. Existing pinned installs remain
+available at their old revision; new installations use the canonical name:
+
+```bash
+npx skills add fellowship-dev/dogfooded-skills --full-depth --skill jev-label-and-act -y
+```
+
+For an existing installation, record its source revision and local metadata,
+install the new name in a staging project first, then update active wrapper links
+and discovery entries to `jev-label-and-act`. Preserve host-owned metadata and
+invocation policy. Verify the new installation before retiring the old entry;
+keep one installed implementation. Installers do not automatically migrate
+renamed lock entries, home discovery links, or wrapper references.
+
+Retain historical receipts and observed usage names. Where a host aggregates
+usage, map `label-and-act` to `jev-label-and-act` at read time and retain the
+observed name as provenance. Do not rewrite past evidence. Rollback uses the
+recorded old revision, lock entry, metadata and discovery targets together.
+This rename establishes identity and distribution only, not capability quality.
 
 ## Namespace Convention
 

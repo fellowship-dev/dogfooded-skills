@@ -1,11 +1,11 @@
 ---
-name: label-and-act
+name: jev-label-and-act
 description: Use when building or extending recurring stored-evidence classification and action selection. Keep query-specific search and reranking in a separate pattern.
 user-invocable: false
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
-# Label and act
+# Jev label and act
 
 Build a reusable collection → stored judgment → local action workflow from an existing working consumer.
 

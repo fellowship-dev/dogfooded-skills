@@ -173,4 +173,4 @@ If no findings ≥ 80 confidence: "No issues found above confidence threshold."]
 
 ## Failure
 - Diff missing/empty in the handoff → emit a handoff noting the failure; the orchestrator emits
-  `[pylot] outcome="review-pr failed at stage 01: {reason}" status=failed`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage 01: {reason}" status=failed`

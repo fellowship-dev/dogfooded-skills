@@ -374,8 +374,8 @@ cron:
 Emit on completion:
 
 ```
-[pylot] outcome="N alerts triaged: X PRs, Y issues, Z dismissed" status=success
-[pylot] outcome="blocked: Dependabot API returned 403 — token missing security_events scope" status=blocked
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="N alerts triaged: X PRs, Y issues, Z dismissed" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="blocked: Dependabot API returned 403 — token missing security_events scope" status=blocked
 ```
 
 ---
@@ -385,4 +385,4 @@ Emit on completion:
 - `/security-check` — the classification framework this skill executes
 - `/deps-runner` — non-security dependency updates; same PR pattern
 - `/entropy-check` — can incorporate security scores into domain grades
-- `/maintenance` — checks whether Dependabot is configured at all
+- Check directly whether Dependabot is configured; the `maintenance` skill was retired 2026-09-14

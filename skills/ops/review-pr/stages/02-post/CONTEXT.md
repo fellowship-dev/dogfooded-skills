@@ -195,9 +195,10 @@ report. (There is no Quest step.)
 
 ### Step 5: Emit outcome marker (orchestrator, inline)
 
-```bash
-echo "[pylot] outcome=\"review-pr complete — reviewed label applied, lane:$LANE\" status=success"
-```
+Emit the following resolved marker as your final full assistant line (not from Bash and not inside
+a fence):
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr complete — reviewed label applied, lane:$LANE" status=success
 
 ## Output: handoff.md
 
@@ -218,7 +219,7 @@ Posted
 - Report written to {REPORT_FILE}
 
 ## Outcome
-[pylot] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success
 ```
 
 ## Success criteria
@@ -234,7 +235,7 @@ Posted
 
 ## Failure
 - Comment post fails → do NOT apply the label; emit
-  `[pylot] outcome="review-pr failed at stage 02: comment post failed" status=failed`
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage 02: comment post failed" status=failed`
 - Lane classification fails (classifier missing, crash, empty output) → this is NOT a stage
   failure. Apply `lane:staging` and continue; the PR takes the pre-#2996 pipeline, which is
   correct-but-slow. Record the reason in the handoff.

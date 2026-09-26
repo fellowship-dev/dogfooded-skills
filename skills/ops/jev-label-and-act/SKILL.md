@@ -118,3 +118,14 @@ account access/rate limits from request errors before changing prompts or retry
 volume; credit top-ups can resolve account-level throttling but are not a general
 429 fix. This procedure grants no new send,
 collection, schedule or data-sharing permission.
+
+## Executable evidence contract
+
+Install the non-invokable `jev-evidence` companion explicitly from the same
+immutable source revision. Both primary patterns share that one sibling; the
+installer does not resolve dependencies. See
+[the contract and installation instructions](references/evidence-contract.md).
+Run `python3 scripts/check_contract.py version` from this skill directory to
+verify the pinned dependency before exporting host evidence. `validate`,
+`portable` and numerical `replay` accept an explicit normalized bundle path and
+make no inference calls. Missing or mismatched companions fail closed.

@@ -1,0 +1,8 @@
+{
+  "files": {
+    "schemas/bundle-v1.json": "83cf35832bd7aae2225eac44e36fe8a9ae6ecdd4f69d8fca7d9beb56e5e70d49",
+    "scripts/cli.py": "f0bd576d4bd3e3f777fac928bc5036af535ff9c90f7db9a2680b3bb07d36e300",
+    "scripts/contracts.py": "73a087d15fcf6117f4dfc5dde8da3ee7e777b190bf97466101c5bb7c90f01c9b"
+  },
+  "version": "1.0.0"
+}

@@ -123,9 +123,9 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
 
 ## Exit paths
 
-- **Already complete**: stage 00 dedup gate finds a current-head receipt → `[pylot] outcome="already complete — reviewed receipt matches current HEAD {sha}" status=success` (orchestrator, inline)
-- **Success**: stage 02 emits `[pylot] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`
+- **Already complete**: stage 00 dedup gate finds a current-head receipt → `[pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — reviewed receipt matches current HEAD {sha}" status=success` (orchestrator, inline)
+- **Success**: stage 02 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success`
+- **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage NN: {reason}" status=failed`
 
 ## Hard Rules
 

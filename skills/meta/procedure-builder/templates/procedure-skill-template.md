@@ -61,11 +61,10 @@ Stage artifacts are written to:
    e. If checkpoint + `--review`: write output, exit with `status=review`
    f. Write artifacts to `.procedure-output/{{PROCEDURE_NAME}}/0N-<name>/`
 
-4. **Emit outcome marker:**
+4. **Emit the outcome marker as your final full assistant line** (do not put it in a code fence or
+   emit it from a shell command):
 
-   ```
-   [pylot] outcome="{{PROCEDURE_NAME}} complete: <summary>" status=success
-   ```
+   [pylot:$PYLOT_OUTCOME_NONCE] outcome="{{PROCEDURE_NAME}} complete: <summary>" status=success
 
 ## Resume
 

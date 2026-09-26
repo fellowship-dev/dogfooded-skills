@@ -94,7 +94,7 @@ if [ "$AUTH_SURFACE" = "new-auth-surface" ] || [ "$HAS_SEC" = "true" ]; then
 fi
 
 if [ "$APPLY_SECURITY" = "true" ]; then
-  gh label create "security" --repo $REPO --color "e11d48" --description "Security-sensitive — classification metadata, not a merge hold" 2>/dev/null || true
+  gh label create "security" --force --repo $REPO --color "e11d48" --description "Security-sensitive — classification metadata, not a merge hold" 2>/dev/null || true
   gh pr edit $PR --repo $REPO --add-label "security"
   echo "[review-pr] security label applied (auth_surface=$AUTH_SURFACE, has_security_findings=$HAS_SEC)"
 else

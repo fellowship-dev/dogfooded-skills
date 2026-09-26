@@ -119,6 +119,8 @@ check("The `security` label does NOT gate cto-review's merge decision" in post, 
 check("not a merge hold" in ctx0, "review-pr 00-context must call the label metadata, not a hold")
 check("classification metadata, never a merge hold" in review_pr_skill, "review-pr/SKILL.md must call the label metadata")
 
+check('gh label create "security" --force' in post, "existing security labels must receive the metadata-only description")
+
 # Regression guard: no edited file may reintroduce "security"-as-hold language via a stray
 # sentence the line-numbered task scoping missed (found in review — "owner-gated by default"
 # survived one line below the AC1 rewrite in review-pr's 02-post/CONTEXT.md).

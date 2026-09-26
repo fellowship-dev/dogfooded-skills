@@ -140,12 +140,14 @@ echo "[cto-review] lane (legacy, informational only): $LANE"
 ```
 
 5.5. **Staging evidence gate — RELEASE TRAINS ONLY (owner ruling 2026-09-06, pylot#3389).**
-Per-PR staging testing is retired: ordinary PRs (base = `develop` or any non-default branch)
-NEVER require staging evidence — test-in-staging deliberately does not run for them, and a
-missing-evidence short-circuit on such a PR is a bug, not a gate. The mandatory staging step
-lives on the **release train**: a PR whose base branch is the repo default branch (`main`/
-`master`, i.e. a promote/release PR) must carry fresh staging evidence at its exact head
-before merge. Only fires for open PRs; merged/closed PRs skip this gate entirely.
+Per-PR staging testing is retired: ordinary PRs NEVER require staging evidence — test-in-staging
+deliberately does not run for them, and a missing-evidence short-circuit on such a PR is a bug,
+not a gate. The mandatory staging step lives on the **release train**: a PR whose base branch is
+the repo's team-declared promote branch must carry fresh staging evidence at its exact head before
+merge. The promote branch is **never** inferred from repo metadata (`defaultBranchRef`) — that
+proxy inverts on any repo where the default branch isn't the promote target, and false-fires on
+every PR in a repo with no promote flow at all (pylot#164). Only fires for open PRs; merged/closed
+PRs skip this gate entirely.
 
 Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3):
 
@@ -155,16 +157,76 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
   # Collect changed filenames (stage-02 handoff still wants them)
   CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
 
-  # Staging evidence is required ONLY for release-train PRs: base = default branch.
+  # Staging evidence is required ONLY for release-train PRs: base = the team-declared promote
+  # branch (pylot#164). Resolved from Pylot's DB-authoritative team config, the same object
+  # resolve-merge-strategy.sh already reads .deploy.release_mode from (step 8 below) — never
+  # from repo default-branch metadata. Owner dispatch (2026-09-10): when a team matches the repo
+  # but declares no production_branch, fall back to the literal `main` — but a repo with NO team
+  # match at all stays unconfigured (fail-open), so genuinely undeclared repos with no promote
+  # flow at all are never misclassified as a release train (SC-003). Note: dogfooded-skills is
+  # declared under the pylot team (matched-team/field-absent case, NOT this no-match case) — see
+  # specs/164-fix-release-train-detection/spec.md FR-003 correction.
   BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "")
-  DEFAULT_BRANCH=$(gh repo view $REPO --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
-  NEEDS_EVIDENCE=false
-  if [ -n "$BASE_BRANCH" ] && [ "$BASE_BRANCH" = "$DEFAULT_BRANCH" ]; then
-    NEEDS_EVIDENCE=true
-    echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH is the default branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+  RELEASE_TRAIN_BASE=""
+  RELEASE_TRAIN_REASON=""
+  RELEASE_TRAIN_SOURCE=""
+  if TEAMS_JSON=$(pylot teams list 2>/dev/null); then
+    MATCH_JSON=$(printf '%s' "$TEAMS_JSON" | jq -c --arg repo "$REPO" '
+      [
+        .teams[]?
+        | select(any(.repos[]?; ascii_downcase == ($repo | ascii_downcase)))
+      ] as $matches
+      | if ($matches | length) == 0 then
+          {status: "no-match"}
+        elif ($matches | length) > 1 then
+          {status: "ambiguous"}
+        else
+          ($matches[0].deploy.production_branch // "") as $pb
+          | if $pb == "" then {status: "field-absent"} else {status: "declared", branch: $pb} end
+        end
+    ' 2>/dev/null || echo '{"status":"error"}')
+    MATCH_STATUS=$(printf '%s' "$MATCH_JSON" | jq -r '.status // "error"' 2>/dev/null || echo "error")
+    case "$MATCH_STATUS" in
+      declared)
+        RELEASE_TRAIN_BASE=$(printf '%s' "$MATCH_JSON" | jq -r '.branch')
+        RELEASE_TRAIN_SOURCE="declared"
+        ;;
+      field-absent)
+        RELEASE_TRAIN_BASE="main"
+        RELEASE_TRAIN_SOURCE="literal-fallback"
+        RELEASE_TRAIN_REASON="team matches $REPO but declares no deploy.production_branch; falling back to literal main per owner dispatch 2026-09-10"
+        ;;
+      no-match)
+        RELEASE_TRAIN_REASON="no team declares $REPO"
+        ;;
+      ambiguous)
+        RELEASE_TRAIN_REASON="multiple teams declare $REPO; ambiguous match"
+        ;;
+      *)
+        RELEASE_TRAIN_REASON="pylot teams list query failed"
+        ;;
+    esac
   else
-    echo "[cto-review] staging evidence gate: NOT REQUIRED — base=$BASE_BRANCH is not the default branch; per-PR staging retired by owner ruling 2026-09-06"
+    RELEASE_TRAIN_REASON="pylot teams list unreachable"
   fi
+
+  NEEDS_EVIDENCE=false
+  if [ -n "$BASE_BRANCH" ] && [ -n "$RELEASE_TRAIN_BASE" ] && [ "$BASE_BRANCH" = "$RELEASE_TRAIN_BASE" ]; then
+    NEEDS_EVIDENCE=true
+    if [ "$RELEASE_TRAIN_SOURCE" = "literal-fallback" ]; then
+      echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the owner-mandated literal main fallback; team declares no deploy.production_branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+    else
+      echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the team-declared promote branch); the train must carry fresh staging evidence at its head (pylot#3389)"
+    fi
+    RELEASE_TRAIN_HANDOFF="$RELEASE_TRAIN_BASE"
+  elif [ -n "$RELEASE_TRAIN_BASE" ]; then
+    echo "[cto-review] staging evidence gate: NOT REQUIRED — base=$BASE_BRANCH is not the team-declared promote branch ($RELEASE_TRAIN_BASE); per-PR staging retired by owner ruling 2026-09-06"
+    RELEASE_TRAIN_HANDOFF="not-required (promote branch is $RELEASE_TRAIN_BASE)"
+  else
+    echo "[cto-review] staging evidence gate: NOT REQUIRED — release-train base unconfigured ($RELEASE_TRAIN_REASON); failing open per pylot#164"
+    RELEASE_TRAIN_HANDOFF="unconfigured ($RELEASE_TRAIN_REASON)"
+  fi
+  # End release-train predicate (pylot#164)
 
   if [ "$NEEDS_EVIDENCE" = "true" ]; then
     # Fetch PR body to check for evidence section
@@ -189,6 +251,7 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
 ## Merge State
 - merge_state: open
 - short_circuit: missing-staging-evidence
+- release_train_base: ${RELEASE_TRAIN_HANDOFF}
 
 ## Changed Files
 ${CHANGED_FILES}
@@ -273,6 +336,7 @@ print('PASS:verified build for HEAD')
 ## Merge State
 - merge_state: open
 - short_circuit: missing-staging-evidence
+- release_train_base: ${RELEASE_TRAIN_HANDOFF}
 
 ## Changed Files
 ${CHANGED_FILES}
@@ -308,6 +372,7 @@ EOF
 ## Merge State
 - merge_state: open
 - short_circuit: missing-staging-evidence
+- release_train_base: ${RELEASE_TRAIN_HANDOFF}
 
 ## Changed Files
 ${CHANGED_FILES}
@@ -376,6 +441,7 @@ print('PASS:verified build for HEAD')
 ## Merge State
 - merge_state: open
 - short_circuit: missing-staging-evidence
+- release_train_base: ${RELEASE_TRAIN_HANDOFF}
 
 ## Changed Files
 ${CHANGED_FILES}
@@ -397,6 +463,7 @@ EOF
 ## Merge State
 - merge_state: open
 - short_circuit: missing-staging-evidence
+- release_train_base: ${RELEASE_TRAIN_HANDOFF}
 
 ## Changed Files
 ${CHANGED_FILES}
@@ -661,6 +728,7 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - ci_observed_checks: {check-run names/status/conclusion from the reviewed head}
 - ci_expected_checks: {required contexts/ruleset checks and PR workflow paths, or "none"}
 - merge_strategy: {auto | label-only}
+- release_train_base: {branch | not-required (promote branch is {branch}) | unconfigured (<reason>)} (pylot#164)
 
 ## Visual Evidence
 - trigger: {ext:<file> | glob:<file> | none}

@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: Use when performing a CTO-level PR review — includes a staging evidence gate for release-train PRs (base = default branch; per-PR staging retired 2026-09-06, pylot#3389) and a non-blocking visual evidence notice for UI PRs.
+description: Use when performing a CTO-level PR review — includes a staging evidence gate for release-train PRs (base = team-declared promote branch; per-PR staging retired 2026-09-06, pylot#3389) and a non-blocking visual evidence notice for UI PRs.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---
@@ -35,7 +35,7 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 |-------|------|-------------|
 | 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918), **resolve the pipeline lane** (#2996, step 5.3), and resolve merge authority from the DB-authoritative team `deploy.release_mode`. Only explicit `ship` permits automated merge; every other state is label-only. Short-circuit if CLOSED-not-merged or if an infra/backend PR lacks staging evidence. The staging gate is **waived on `lane:fast`** (#2996) — the lane classifier already proved the diff touches no deployable surface and test-in-staging deliberately never ran. Visual evidence (5.6) is evaluated the same way but is a **notice, not a short-circuit**. Both checks search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
 | 02-review | subagent | **Judgement layer first** (#2918): read all labels + all comments, identify and classify every blocker (resolved/unresolved). Then ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items + **receipts block**. Review depth is identical in both lanes. |
-| 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918) — read labels fresh from GitHub; if `security` or `waiting-on-owner` present: post park comment, apply `waiting-on-owner`, emit `status=blocked`, STOP. **Step 3.1: lane merge bar** (#2996) — from the same fresh read: `lane:fast` requires `reviewed` only; everything else requires `reviewed` + `double-checked`. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
+| 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918, #3240) — human `waiting-on-owner` present (fresh label read) OR stage 02's `owner_authority_class != none`: post park comment (one decision line + named answerer), apply `waiting-on-owner`, emit `status=blocked`, STOP. `security` is never a trigger. **Step 3.1: lane merge bar** (#2996) — from the same fresh read: `lane:fast` requires `reviewed` only; everything else requires `reviewed` + `double-checked`. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
 
 Stage 02 is the isolated critical-judgement step — it receives only the setup handoff and its own
 CONTEXT.md, never orchestrator history.
@@ -78,8 +78,9 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
 - If `short_circuit: closed-no-merge` → skip stage 02, go straight to stage 03 (which posts
   nothing and emits the blocked/closed outcome).
 - If `short_circuit: missing-staging-evidence` → **only possible on a RELEASE-TRAIN PR**
-  (base = default branch; owner ruling 2026-09-06, pylot#3389 — ordinary PRs never require
-  staging evidence and must never produce this short-circuit). **DO NOT run stage 02 or 03**.
+  (base = the repo's team-declared promote branch, `deploy.production_branch`; owner ruling
+  2026-09-06, pylot#3389 — ordinary PRs never require staging evidence and must never produce
+  this short-circuit). **DO NOT run stage 02 or 03**.
   Instead, run these steps inline:
   1. Apply `needs-work` label:
      ```bash
@@ -92,7 +93,7 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
      ```
   3. Emit outcome:
      ```
-     [pylot] outcome="cto-review blocked: release train missing staging evidence on PR #{PR}" status=blocked
+     [pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: release train missing staging evidence on PR #{PR}" status=blocked
      ```
   Then stop — no further stages.
 - Otherwise → continue to stage 02.
@@ -141,27 +142,27 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
    │   (labels+comments│    (judgement layer: labels/comments/blockers → receipts)
    │   +lane captured) │         │
    │                   ▼         ▼
-   │                        Step 3.0: Owner Gate (fresh label read) — LANE-INDEPENDENT
+   │                        Step 3.0: Owner Gate (human label fresh + stage-02 class) — LANE-INDEPENDENT
    │                              │
-   │                              ├── security OR waiting-on-owner ──► park + status=blocked
+   │                              ├── waiting-on-owner OR owner_authority_class≠none ──► park + status=blocked
    │                              └── clear ──► Step 3.1: lane merge bar
    │                                              ├── lane:fast ──► require `reviewed`
    │                                              └── else      ──► require `reviewed` + `double-checked`
    │
    ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
    └── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
-       (release-train PRs only — base = default branch; pylot#3389)
+       (release-train PRs only — base = team-declared promote branch; pylot#3389)
 
    (visual evidence: notice only — flows through 02/03 as an advisory line, never blocks)
 ```
 
 ## Exit paths
 
-- **Success**: stage 03 emits `[pylot] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="cto-review failed at stage NN: {reason}" status=failed`
-- **Blocked (closed)**: `[pylot] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- **Blocked (owner gate)**: `[pylot] outcome="cto-review parked: PR #{N} carries {label} — owner review required" status=blocked` (#2918 — fires when `security` OR `waiting-on-owner` is present at merge time; park comment + `waiting-on-owner` label applied)
-- **Blocked (staging evidence)**: `[pylot] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = default branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
+- **Success**: stage 03 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
+- **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage NN: {reason}" status=failed`
+- **Blocked (closed)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
+- **Blocked (owner gate)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #{N} — owner decision required" status=blocked` (#2918, #3240 — fires when a human has applied `waiting-on-owner` OR stage 02's owner-authority classifier matched one of five closed classes; `security` is never a trigger; park comment + `waiting-on-owner` label applied)
+- **Blocked (staging evidence)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = the team-declared promote branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
 
 ## Hard Rules
 
@@ -178,8 +179,9 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
    the normal review, lane, owner-gate, and merge-authority requirements.
 10. **No Quest** — reporting is the local report file only.
 11. **The staging gate fires first and is the only evidence short-circuit** (step 5.5). It
-    applies to release-train PRs only (base = default branch, pylot#3389); on any other PR it
-    must never fire. On the short-circuit, skip everything else and post its rejection inline.
+    applies to release-train PRs only (base = the repo's team-declared promote branch,
+    `deploy.production_branch`, pylot#3389); on any other PR it must never fire. On the
+    short-circuit, skip everything else and post its rejection inline.
     It cannot be bypassed by prose or by verdict.
     **Visual evidence (step 5.6) is a notice, never a blocker** — it is evaluated after staging,
     recorded in the handoff, and appended by stage 03 as an advisory line. It never short-circuits,
@@ -189,11 +191,14 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     the review trusts what the review-pr/double-check comments cover, spot-checks what they
     don't, and treats their still-open findings as verdict inputs. No earlier review found →
     assume nothing was covered and review at full depth.
-13. **Owner gate is unconditional (#2918)** — stage 03 step 3.0 reads labels fresh from GitHub
-    at merge time. If `security` OR `waiting-on-owner` is present, the gate fires regardless of
-    verdict, CI status, or any prose in the PR. LGTM verdict cannot override the gate. The labels
-    come off only by human action. Two consecutive live bypasses (#2912, #2935) are why this rule
-    exists; the model talked itself into merging both times, so the check is code, not prompt.
+13. **Owner gate is unconditional (#2918, #3240)** — stage 03 step 3.0 fires on either of two
+    independent triggers: a human-applied `waiting-on-owner` (fresh GitHub label read), or stage
+    02's `owner_authority_class != none` (a closed five-class taxonomy match, read verbatim, never
+    re-judged in stage 03). `security` is never a trigger by itself — it is classification
+    metadata only. Either trigger fires regardless of verdict, CI status, or any prose in the PR.
+    LGTM verdict cannot override the gate. `waiting-on-owner` comes off only by human action. Two
+    consecutive live bypasses (#2912, #2935) are why this rule exists; the model talked itself into
+    merging both times, so the check is code, not prompt.
 14. **Every verdict comment includes receipts (#2918)** — the `## Checked / Found` section (labels
     seen, comment count + last author, blockers → status) is mandatory in every comment stage 03
     posts. No silent LGTM without an enumeration of what was checked. On a fast-lane PR the
@@ -204,9 +209,15 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     default is `reviewed double-checked`; the historical fast-lane exception (a `lane:fast` PR
     where double-check was deliberately never dispatched) still merges on `reviewed` alone —
     never `needs-work` such a PR for a missing `double-checked`. No new lane labels are emitted.
-16. **Prod's gate moved to the release train (pylot#3389)** — ordinary PRs merge to develop with
-    no staging deploy, by design. Every promote develop→default-branch train must carry fresh
-    `/test-in-staging` evidence at its exact head (this skill's stage-01 gate enforces it), and
+16. **Prod's gate moved to the release train (pylot#3389)** — ordinary PRs merge with no staging
+    deploy, by design. Every promote to the repo's team-declared `deploy.production_branch` must
+    carry fresh `/test-in-staging` evidence at its exact head (this skill's stage-01 gate enforces
+    it, resolved from live team config — never from `defaultBranchRef`. Owner dispatch 2026-09-10:
+    a matched team with no declared `production_branch` falls back to the literal `main`; a repo
+    with no team match at all stays unconfigured/fail-open rather than defaulting to `main`, so
+    genuinely undeclared repos with no promote flow are never misclassified, pylot#164 — this repo
+    (dogfooded-skills) is itself declared under the `pylot` team, so it hits the matched-team
+    fallback and IS subject to the gate on `main`, same as pylot's own PRs), and
     `scripts/ci-release-gate.sh` still runs the unscoped full corpus before anything reaches
     production. The staging *step* is mandatory per release; the release *count* is not.
 17. **Merge authority is explicit and DB-authoritative** — stage 01 MUST use

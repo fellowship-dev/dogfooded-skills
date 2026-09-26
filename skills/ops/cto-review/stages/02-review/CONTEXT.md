@@ -61,10 +61,10 @@ comment and influences the verdict.
 |-------|---------|--------|
 | `needs-work` | Changes requested | Check if follow-up commits or comments show the issues were addressed; if yes → resolved; if no → unresolved blocker |
 | `waiting-on-owner` | Owner hold | Unresolved unless the owner has since commented with approval or label was removed; machine cannot clear this |
-| `security` | Auth/security hold | Unresolved unless owner has explicitly cleared it; machine cannot clear this |
+| `security` | Security-sensitivity classification (#3240) | `security` is never a trigger by itself — informational only. Whether this diff actually needs an owner decision is decided by Step 0b's owner-authority classifier below, not by this label's presence |
 | `chad-rejects` | FlowChad QA failure (LEGACY) | FlowChad per-PR runs were retired 2026-09-06 (pylot#3388); a stale `chad-rejects` from before then is context, not a blocker — weigh the underlying evidence comment on its merits |
 | `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
-| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. Staging evidence is required only on release-train PRs (base = default branch, pylot#3389); the setup stage gates that. |
+| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. Staging evidence is required only on release-train PRs (base = the team-declared promote branch, pylot#3389); the setup stage gates that. |
 
 **For each comment thread, identify blockers:**
 - Explicit hold comments (e.g. "do not merge", "waiting for owner") — resolved only if a subsequent comment or commit addresses them
@@ -80,7 +80,44 @@ code — it is a factual read of the process state.
 
 **NOT jumpy:** a `needs-work` label whose issues were clearly addressed → note it as resolved and
 proceed normally. Do not escalate resolved blockers. A label alone is never a permanent hold unless
-it is `security` or `waiting-on-owner` (those require human removal).
+it is `waiting-on-owner` (requires human removal) or the Step 0b classifier below matches one of
+the five owner-authority classes. `security` alone is never a hold.
+
+## Step 0b: Owner-Authority Classification (#3240)
+
+Run this after Step 0, still against the full diff. This is what actually decides whether a human
+decision is required — never which labels happen to be present.
+
+Classify the diff against this closed, five-class taxonomy (verbatim — never paraphrase, never add
+a sixth class or a catch-all):
+
+1. a destructive production-data change
+2. spend above the approved budget
+3. secrets/credential exposure or handling
+4. a message or action sent to an external party
+5. an organization-policy decision
+
+A match requires quotable runtime-effect evidence — what the diff's code does at execution time,
+never a bare file path or file name. A file named `credentials.env` is not evidence by itself; code
+in the diff that writes an unencrypted secret to disk or logs it is. If no class clearly matches
+with such evidence, classify `none` — uncertainty resolves to `none`, never to a park.
+
+Worked negatives: a schema migration on the normal review path is not `destructive-prod-data`
+merely for touching production data (fellowship-dev/pylot#3372); a `credentials`-named file with no
+secret exposure in the diff is not `secrets-handling` merely for the name (fellowship-dev/pylot#3408).
+
+Populate, for the handoff's `## Owner Authority (#3240)` block:
+
+- `owner_authority_class`: `none` | `destructive-prod-data` | `spend-above-budget` |
+  `secrets-handling` | `external-send` | `org-policy`
+- `owner_authority_evidence`: `file:line` + a one-line verbatim quote of the runtime effect, or
+  `none` when the class is `none`
+- `owner_decision_line`: exactly one closed yes/no or A-vs-B question the owner must answer, or
+  `none`
+- `owner_answerer`: the name or role of the human who can answer it, or `none`
+
+This classification never depends on `security` or any other label — it is decided from the diff
+alone, independent of what review-pr applied earlier.
 
 ## Dimensions to weigh (all against the same full diff)
 
@@ -134,6 +171,23 @@ Opt-in changes (env-var gated) are fine to merge. Changes requiring downstream c
 ### 4. Correctness & Security
 Read the whole diff for correctness regressions and security concerns: injected/leaked secrets,
 auth/permission changes, input handling, unsafe shell/SQL, supply-chain risk from new deps.
+
+### 4b. Second Mechanism & Smallest Version
+Owner ruling (Max, 2026-09-07, issue #169) encoding fellowship-dev/pylot `docs/principles.md`
+XI-XII: a diff can be correct and still be the wrong-sized fix.
+
+- **Second mechanism?** Does the diff add a new config flag, gate, pin, route, or check for a need
+  an existing mechanism in this repo already serves? Search for it (`git grep`, existing
+  config/gate names) before concluding yes. Found → **REWORK**, naming the existing mechanism to
+  retire in favor of the new one (or the new one to drop in favor of the existing one) — never
+  "keep both."
+- **Smallest version?** Does the diff introduce config with no caller that sets it to a non-default
+  value, or an abstraction (interface, factory, plugin point) with exactly one concrete caller and
+  no stated second caller on the way? Either → **REWORK**, naming the specific speculative element
+  to cut back to the smallest version that the diff's own use case requires.
+
+Both checks require a citation (the existing mechanism's `file:line`, or the unused-config/
+one-caller evidence) — an uncited suspicion is not a finding here.
 
 ### 5. Process Verification
 - **Was related code searched?** (the #1585 class of bug — reimplementing what already exists).
@@ -221,6 +275,16 @@ Wrong-but-plausible: {none | list of findings}
 ## Correctness & Security
 - {findings, or "none — no correctness/security concerns"}
 
+## Second Mechanism & Smallest Version
+- Second mechanism: {none | "adds <new thing> — existing mechanism at `file:line` already serves this need, retire <one>"}
+- Smallest version: {none | "unused config `X` — no caller sets a non-default value" | "one-caller abstraction `Y` at `file:line` — no second caller stated"}
+
+## Owner Authority (#3240)
+- owner_authority_class: {none | destructive-prod-data | spend-above-budget | secrets-handling | external-send | org-policy}
+- owner_authority_evidence: {file:line + one-line verbatim quote of the runtime effect, or "none"}
+- owner_decision_line: {one closed yes/no or A-vs-B question, or "none"}
+- owner_answerer: {name/role of the human who can answer it, or "none"}
+
 ## Earlier-Review Reconciliation
 - open findings from earlier reviews: {IDs/descriptions still open + how each affected the verdict, or "none open" / "no earlier reviews"}
 - executed-vs-read: {e.g. "tests executed by double-check; all else read-only" — or "nothing executed (read-only pipeline)"}
@@ -249,10 +313,15 @@ Blockers found:
 ## Success criteria
 - A single verdict reached across ALL dimensions from the one full diff.
 - Judgement layer (Step 0) ran: labels read, all comments processed, each blocker classified.
+- Owner-authority classification (Step 0b) ran and populated all four `## Owner Authority (#3240)`
+  fields, independent of the `security` label.
 - Receipts block populated — labels seen, comment count, blockers → status.
 - Checklist tables and action items populated with no unresolved TBD/TODO.
 - `ci_classification: block` forces a non-merge verdict; pass and N/A remain subject to every
   other review and merge requirement.
+- Second Mechanism & Smallest Version dimension checked and populated; a second-mechanism or
+  speculative-generality finding always carries a citation and always forces **REWORK**, never a
+  softer verdict.
 
 ## Failure
 - Setup handoff missing or unreadable → write handoff with `verdict: BLOCKED` and reason "setup

@@ -123,9 +123,9 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
 
 ## Exit paths
 
-- **Already complete**: stage 00 dedup gate finds a current-head receipt → `[pylot] outcome="already complete — reviewed receipt matches current HEAD {sha}" status=success` (orchestrator, inline)
-- **Success**: stage 02 emits `[pylot] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success`
-- **Failure**: failing stage emits `[pylot] outcome="review-pr failed at stage NN: {reason}" status=failed`
+- **Already complete**: stage 00 dedup gate finds a current-head receipt → `[pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — reviewed receipt matches current HEAD {sha}" status=success` (orchestrator, inline)
+- **Success**: stage 02 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr complete — reviewed label applied, lane:{fast|staging|n/a}" status=success`
+- **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage NN: {reason}" status=failed`
 
 ## Hard Rules
 
@@ -154,7 +154,9 @@ Post the comment, apply the `security` label if warranted (Step 2), apply the `l
     keep their `R{n}` IDs downstream; never renumber.
 14. **Security label is deterministic (#2918)** — stage 02 applies `security` if any finding is
     security-class OR if `auth_surface: new-auth-surface`. No judgement: if the condition is met,
-    the label is applied, period. The label is set in the same mission as the review.
+    the label is applied, period. The label is classification metadata, never a merge hold — it is
+    set in the same mission as the review; whether an owner decision is actually required is
+    decided independently by cto-review's own owner-authority classifier (#3240).
 15. **Lane label is a SCRIPT's answer, not yours (#2996)** — stage 02 runs
     `scripts/classify-pr-surface.mts --lane` and applies whatever it prints. Never reason about the
     lane, never override it, never talk yourself into `fast` because the diff "looks small". The

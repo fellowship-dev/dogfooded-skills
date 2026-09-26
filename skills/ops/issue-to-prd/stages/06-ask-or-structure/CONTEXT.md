@@ -1,7 +1,7 @@
 # Stage 06: Ask or Structure
 
 ## Inputs
-- All prior handoffs: 02, 03, 04, 05, 05b, 05c
+- All prior handoffs: 01b, 02, 03, 04, 05, 05b, 05c
 
 ## Task
 Decision point: synthesize all findings into either a question list (exit) or a PRD draft.

@@ -31,7 +31,7 @@ REVIEWED_SHA=$(printf '%s' "$PR_SNAPSHOT" | jq -r '.comments[].body' \
   | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 
 if [ "$HAS_REVIEWED" = "true" ] && [ -n "$REVIEWED_SHA" ] && [ "$REVIEWED_SHA" = "$HEAD_SHA" ]; then
-  echo "[pylot] outcome=\"already complete — reviewed receipt matches current HEAD $HEAD_SHA\" status=success"
+  echo "[review-pr] already complete — reviewed receipt matches current HEAD $HEAD_SHA"
   exit 0
 fi
 
@@ -41,6 +41,11 @@ if [ "$HAS_REVIEWED" = "true" ]; then
   echo "[review-pr] stale reviewed evidence: receipt=${REVIEWED_SHA:-missing} current=$HEAD_SHA — continuing"
 fi
 ```
+
+If the current-head receipt branch exits, emit the following resolved marker as your final full
+assistant line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="already complete — reviewed receipt matches current HEAD $HEAD_SHA" status=success
 
 If this exits, STOP the whole procedure. Do not spawn stage 01.
 
@@ -88,7 +93,9 @@ subagent needs all of it.
 ### Step 2.5: New Auth Surface Detection (#2918)
 
 Check whether this PR introduces a new auth surface. The rule is deterministic — no judgement.
-A new auth surface triggers the `security` label in stage 02 regardless of whether any finding is raised.
+A new auth surface triggers the `security` classification label in stage 02 regardless of whether
+any finding is raised. The label is metadata for triage, not a merge hold (#3240) — cto-review's
+own owner-authority classifier decides independently whether a park is warranted.
 
 ```bash
 CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
@@ -104,7 +111,7 @@ echo "[review-pr] auth surface: $AUTH_SURFACE"
 ```
 
 Record `auth_surface: {none|new-auth-surface}` in the handoff. A `new-auth-surface` value means
-stage 02 MUST apply the `security` label, even if stage 01 raises zero findings.
+stage 02 MUST apply the `security` classification label, even if stage 01 raises zero findings.
 
 ### Step 3: Compute the Risk Tier (mechanical — #2210)
 
@@ -141,22 +148,41 @@ Append to the handoff, after the PR metadata section:
   - {each rubric line that fired, or "no HIGH triggers; small template-following diff" for LOW}
 ```
 
-### Step 3: Closes vs Refs raw data (for the mandatory check in stage 01)
+### Step 4: Closes vs Refs raw data (for the mandatory check in stage 01)
+
+Set `REVIEW_SKILL_DIR` to the absolute directory containing this installed skill's
+`SKILL.md`, using the runtime-provided skill location. The target repository need not
+vendor this library; do not resolve the helper relative to its working directory.
 
 ```bash
-gh pr view $PR --repo $REPO --json body --jq '.body' | grep -oE '(Closes|Fixes|Resolves) #[0-9]+' | grep -oE '[0-9]+'
+: "${REVIEW_SKILL_DIR:?Set the absolute installed review-pr skill directory}"
+PR_BODY=$(gh pr view "$PR" --repo "$REPO" --json body --jq '.body')
+ISSUE_LINKS=$(printf '%s\n' "$PR_BODY" \
+  | bash "$REVIEW_SKILL_DIR/scripts/extract-issue-links.sh")
+printf '%s\n' "$ISSUE_LINKS"
 ```
 
-For each linked issue number found with a `Closes`/`Fixes`/`Resolves` keyword, capture the
-TEXT of its acceptance-criteria items — both `- [ ]` and `- [x]`; checkbox state is
-auto-generated and meaningless (pylot#2583) — so stage 01 can assess them against the diff
-without re-fetching:
+The extractor emits `keyword<TAB>issue_number<TAB>complete source line`. Preserve every row,
+including `Refs`, so stage 01 can identify a `Refs`-only driving issue while distinguishing a link
+whose source line explicitly calls it related context. Do not infer that every `Refs` row is the
+driving issue; the full PR body and source-line context are part of the reviewer handoff.
+
+For each distinct linked issue number, capture the TEXT of its acceptance-criteria items — both
+`- [ ]` and `- [x]`; checkbox state is auto-generated and meaningless (pylot#2583) — so stage 01
+can assess them against the diff without re-fetching:
 
 ```bash
-gh issue view ISSUE_N --repo $REPO --json body --jq '.body' | grep -E '^\s*- \[[ x]\]' || echo "NO_AC_ITEMS"
+printf '%s\n' "$ISSUE_LINKS" | cut -f2 | sort -u | while IFS= read -r ISSUE_N; do
+  [ -n "$ISSUE_N" ] || continue
+  printf 'ISSUE_%s\n' "$ISSUE_N"
+  gh issue view "$ISSUE_N" --repo "$REPO" --json body --jq '.body' \
+    | grep -E '^\s*- \[[ x]\]' || echo "NO_AC_ITEMS"
+done
 ```
 
-### Step 4: Write handoff
+If `ISSUE_LINKS` is empty, record `No Closes/Fixes/Resolves/Refs keywords found`.
+
+### Step 5: Write handoff
 
 ## Output: handoff.md
 
@@ -197,8 +223,10 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 ```
 
 ## Closes vs Refs — Raw Data
-{for each linked issue: ISSUE_N → its acceptance-criteria item lines verbatim, or NO_AC_ITEMS}
-{or "No Closes/Fixes/Resolves keywords found"}
+{each extractor row: keyword → ISSUE_N → complete PR-body source line}
+{then, for each distinct linked issue: ISSUE_N → its acceptance-criteria item lines verbatim,
+or NO_AC_ITEMS}
+{or "No Closes/Fixes/Resolves/Refs keywords found"}
 ```
 
 ## Success criteria
@@ -210,4 +238,4 @@ Path: `.procedure-output/review-pr/00-context/handoff.md`
 - handoff.md written before the stage 01 Task is spawned
 
 ## Failure
-- PR not found / `gh` auth failure → emit `[pylot] outcome="review-pr failed at stage 00: {reason}" status=failed` and stop
+- PR not found / `gh` auth failure → emit `[pylot:$PYLOT_OUTCOME_NONCE] outcome="review-pr failed at stage 00: {reason}" status=failed` and stop

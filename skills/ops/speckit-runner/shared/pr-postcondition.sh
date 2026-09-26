@@ -20,6 +20,6 @@ verify_pr_postcondition() {
   PR_HEAD=$(printf '%s' "$PR_VIEW" | jq -r '.headRefName // empty')
   [ -n "$PR_URL" ] && [ "$PR_HEAD" = "$BRANCH" ] || return 1
   printf '%s' "$PR_VIEW" | jq -e --argjson issue "$ISSUE_NUMBER" --arg repo "$REPO" \
-    'any(.closingIssuesReferences[]?; .number == $issue and .repository.nameWithOwner == $repo)' \
+    'any(.closingIssuesReferences[]?; .number == $issue and ((.repository.owner.login + "/" + .repository.name) == $repo))' \
     >/dev/null || return 1
 }

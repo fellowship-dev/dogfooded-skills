@@ -67,16 +67,29 @@ mechanism/need/smallest-version, and (for `delete-retire`) a pointer to the exis
 gh issue comment {number} --repo {repo} --body "..."
 ```
 
-Apply the label matching the verdict: `delete-retire` → `wontfix`; `close` → `wontfix`; `re-scope`
-→ `needs-rescope`. `wontfix` is a GitHub default label and always exists; `needs-rescope` is not,
-so create it first (idempotent, matches this repo's convention in e.g.
-`skills/ops/double-check/stages/04-post/CONTEXT.md:276`):
+Apply the label matching the verdict: `delete-retire` → `wontfix`; `close` → `wontfix`;
+`re-scope` → `needs-rescope`. Ensure the selected label exists first: even GitHub's default
+labels may have been removed from a repository.
 
 ```bash
-gh label create "needs-rescope" --repo {repo} --color "fbca04" \
-  --description "Ask is larger than its smallest version — see triage comment" 2>/dev/null || true
-gh issue edit {number} --repo {repo} --add-label "needs-rescope"
+case "$TRIAGE_VERDICT" in
+  delete-retire|close)
+    TRIAGE_LABEL="wontfix"
+    TRIAGE_DESCRIPTION="Triage recommends no new implementation — see cited comment"
+    ;;
+  re-scope)
+    TRIAGE_LABEL="needs-rescope"
+    TRIAGE_DESCRIPTION="Ask is larger than its smallest version — see triage comment"
+    ;;
+  *) echo "Unexpected non-PRD triage verdict" >&2; exit 1 ;;
+esac
+gh label create "$TRIAGE_LABEL" --repo {repo} --color "fbca04" \
+  --description "$TRIAGE_DESCRIPTION" 2>/dev/null || true
+gh issue edit {number} --repo {repo} --add-label "$TRIAGE_LABEL"
 ```
+
+Set `TRIAGE_VERDICT` from the recorded verdict. If posting the comment or applying the label
+fails, stop and report that failed action; do not emit success or continue to stage 02.
 
 Do not close the issue directly — that is the owner's call once they see the verdict; this stage
 only posts the recommendation and its evidence.

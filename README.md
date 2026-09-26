@@ -1,6 +1,6 @@
 # dogfooded-skills
 
-A cross-platform agent skill library compatible with 41+ agents via the [Vercel `npx skills`](https://skills.new) ecosystem. Built and battle-tested internally at [fellowship-dev](https://github.com/fellowship-dev) — every skill here has run hundreds of times in real production workflows before being published.
+A cross-platform agent skill library compatible with 41+ agents via the [Vercel `npx skills`](https://skills.new) ecosystem. Built and battle-tested internally at [fellowship-dev](https://github.com/fellowship-dev) — established skills come from real production workflows. New experimental entries are identified explicitly and do not inherit those usage claims.
 
 ## What Are Skills?
 
@@ -33,7 +33,6 @@ Skills about the skills system itself.
 | Skill | Description |
 |-------|-------------|
 | [`meta/skill-builder`](skills/meta/skill-builder/) | How to write a high-quality agent skill for this library |
-| [`meta/migrate-skill`](skills/meta/migrate-skill/) | Move a skill from toolkit/local into dogfooded-skills and import it back |
 
 ### product
 
@@ -42,7 +41,6 @@ Skills for product development workflows.
 | Skill | Description |
 |-------|-------------|
 | [`product/spec-plan`](skills/product/spec-plan/) | Relentless design interview — walk the decision tree one branch at a time until shared understanding |
-| [`product/build-prd`](skills/product/build-prd/) | Collaborative PRD creation from feature requests — 7-step workflow with GitHub integration |
 | [`product/create-compelling-prs`](skills/product/create-compelling-prs/) | Body templates, visual evidence, and the self-audit checklist for a PR that convinces in 2 minutes |
 | [`product/create-compelling-issues`](skills/product/create-compelling-issues/) | Search open/closed issues and merged PRs first, resolve filing policy from the repo playbook, file evidence-grounded issues |
 
@@ -52,23 +50,46 @@ Skills for CI, deployment, operations, and evidence workflows.
 
 | Skill | Description |
 |-------|-------------|
+| [`ops/jev-label-and-act`](skills/ops/jev-label-and-act/) | Experimental: extract reusable stored-evidence labeling, local action selection, budget controls and feedback from a working consumer |
 | [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
-| [`ops/hookshot`](skills/ops/hookshot/) | Generate Claude Code enforcement hooks from docs/ — pre-edit reminders before file changes |
-| [`ops/maintenance`](skills/ops/maintenance/) | Infra-only health audit — LaunchAgents, cron logs, system health, secrets scan |
+| [`ops/hookshot`](skills/ops/hookshot/) | Agent enforcement hooks for Claude Code and Codex — doc reminders before edits, skill-drift and markdown-lint warnings, session preflight and the delivery gate that checks a session against its outcome contract |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |
 | [`ops/docs-review`](skills/ops/docs-review/) | Detect drift between docs/ and source code — flags, states, config keys, and paths |
 | [`ops/setup-github`](skills/ops/setup-github/) | Set up GitHub Actions workflows, labels, and project board |
 | [`ops/daily-report`](skills/ops/daily-report/) | Standard format for daily/rollcall team reports |
 | [`ops/write-report`](skills/ops/write-report/) | Write a mission report to reports/ — resolves paths, generates timestamps, posts to Quest |
 | [`ops/weekly-plan`](skills/ops/weekly-plan/) | Interactive weekly planning session for ONE team (CC / pylot chat) — plan-vs-actual scorecard, full linked briefing (last week, in-flight, half-done epics, colleagues' work), then a spec-plan-style interview (one question per turn, recommendation-first), anti-ghost triage, agent-ready epic slices, goals with done-conditions + expiring focus block, budget + hourly auto-pylot tuning. Run once per team, sequentially |
-| [`ops/refactor-codebase`](skills/ops/refactor-codebase/) | Autonomously refactor a codebase across many behavior-preserving cycles — decompose fat files by domain, deepen shallow modules, pay down architectural debt — driven by a persistent masterplan and verification gates. Complements `improve-codebase-architecture` (which only finds and reports opportunities) by actually doing the refactor, safely, over many sessions |
 | [`ops/seo-ops`](skills/ops/seo-ops/) | Evidence-first pre-launch, production, incident, and recurring SEO audits with deterministic static checks, browser boundaries, multilingual controls, and a reusable casebook |
 | [`ops/vercel-ops`](skills/ops/vercel-ops/) | Safe project guards, environment-variable synchronization, explicit previews, deployment-protection checks, and custom-domain verification for existing Vercel projects |
 | [`ops/dx-metrics`](skills/ops/dx-metrics/) | Measure AI-agent adoption and its effect on delivery — DX Core 4 speed/quality/impact, `Co-Authored-By` adoption curves, cycle time, ownership risk — from git + the GitHub API into a self-contained HTML dashboard. Aggregate by default; per-person data is opt-in and never a throughput leaderboard |
+| [`ops/jev-search-and-rerank`](skills/ops/jev-search-and-rerank/) | Experimental query-specific retrieval, bounded reranking and conversational feedback; host integration required, production gains unmeasured |
 | [`ops/trash-truck`](skills/ops/trash-truck/) | Investigate product, code, and operational surfaces for evidence-backed retirement; nominate up to three material candidates and require bounded owner selection before action. Scheduled runs only maintain the review record. |
 
 > **Trash Truck migration:** the former `focus:<name>` invocation is no longer accepted. Use `mode:interactive` with optional `candidate:"<description>"`, or `mode:scheduled` with the optional `persist:github` grant.
+
+## Jev label-and-act migration
+
+`jev-label-and-act` is the current name of the former `label-and-act` skill.
+The procedure and action authority are unchanged. Existing pinned installs remain
+available at their old revision; new installations use the canonical name:
+
+```bash
+npx skills add fellowship-dev/dogfooded-skills --full-depth --skill jev-label-and-act -y
+```
+
+For an existing installation, record its source revision and local metadata,
+install the new name in a staging project first, then update active wrapper links
+and discovery entries to `jev-label-and-act`. Preserve host-owned metadata and
+invocation policy. Verify the new installation before retiring the old entry;
+keep one installed implementation. Installers do not automatically migrate
+renamed lock entries, home discovery links, or wrapper references.
+
+Retain historical receipts and observed usage names. Where a host aggregates
+usage, map `label-and-act` to `jev-label-and-act` at read time and retain the
+observed name as provenance. Do not rewrite past evidence. Rollback uses the
+recorded old revision, lock entry, metadata and discovery targets together.
+This rename establishes identity and distribution only, not capability quality.
 
 ## Namespace Convention
 

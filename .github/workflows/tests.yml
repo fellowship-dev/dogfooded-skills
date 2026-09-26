@@ -35,12 +35,16 @@ jobs:
             ./skills/ops/cto-review/stages/01-setup/test_collect_ci_evidence.py
             ./skills/ops/cto-review/stages/01-setup/test_evidence_gate.py
             ./skills/ops/cto-review/stages/01-setup/test_visual_gate.py
+            ./skills/ops/cto-review/tests/test_owner_gate_contract.py
             ./skills/ops/double-check/tests/exact-head-receipt.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-aggregate.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-dashboard.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-identity.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-trends.test.sh
             ./skills/ops/flowchad-runner/scripts/test_validate_contract.py
+            ./skills/ops/hookshot/scripts/test_gate.py
+            ./skills/ops/issue-to-prd/evals/test_triage_label_contract.py
+            ./skills/ops/review-pr/tests/driving-issue-contract.test.sh
             ./skills/ops/seo-ops/scripts/test_audit.py
             ./skills/ops/speckit-runner/tests/pr-postcondition.test.sh
             ./skills/ops/trash-truck/evals/test_retirement_contract.py

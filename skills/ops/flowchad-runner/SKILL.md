@@ -143,10 +143,15 @@ else
   WORKDIR="$REPO_DIR"
 fi
 [ -f "$WORKDIR/.flowchad/config.yml" ] || {
-  echo "[pylot] outcome=\"flowchad blocked: $REPO has no .flowchad/config.yml at the resolved ref\" status=blocked"
+  echo "[flowchad] blocked: $REPO has no .flowchad/config.yml at the resolved ref"
   exit 0
 }
 ```
+
+If the missing-config branch exits, emit the following resolved marker as your final full
+assistant line (not from Bash and not inside a fence), then stop:
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad blocked: $REPO has no .flowchad/config.yml at the resolved ref" status=blocked
 
 Every subsequent command (validator, stage handoffs, reports) runs with `cd "$WORKDIR"`.
 Because subagent Tasks do NOT inherit the orchestrator's `cd`, stage prompts must carry
@@ -230,14 +235,14 @@ backstop if stage 04 did not.
 
 ## Exit paths
 
-- **Success**: stage 05 emits `[pylot] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
-- **Failure**: stage 05 emits `[pylot] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
+- **Success**: stage 05 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad {flow} on {repo}: all flows passed" status=success`
+- **Failure**: stage 05 emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad {flow} on {repo}: {N} flow(s) failed" status=failed`
   (failure issues already created in stage 05)
 - **Blocked**: stage 01 (invalid contract / no URL / deploy failed / no browser) or stage 02
   (flow missing) emits
-  `[pylot] outcome="flowchad blocked: {reason}" status=blocked` and the chain stops.
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad blocked: {reason}" status=blocked` and the chain stops.
 - **N/A**: stage 01 detects an unaffected/docs-only/Dependabot PR and emits
-  `[pylot] outcome="flowchad N/A: no affected interactive flow" status=success` without a deploy.
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="flowchad N/A: no affected interactive flow" status=success` without a deploy.
 
 ## Hard Rules
 

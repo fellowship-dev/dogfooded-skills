@@ -9,18 +9,21 @@
   "thread": {
     "channel": "fellowship-dev/example-app#512",
     "channelType": "issue",
-    "participants": ["issue-author", "pylot"],
+    "participants": [
+      "issue-author",
+      "pylot"
+    ],
     "messages": [
       {
         "from": "issue-author",
-        "text": "Add a second env var, SKIP_NO_AUTOMATION_CHECK, so the pipeline can be told to ignore the no-automation label on a per-run basis."
+        "text": "Add a second pre-PRD check that stops processing issues carrying the no-automation label, before their body can be rewritten."
       }
     ]
   },
   "turns": [
     {
       "id": "existing-mechanism-cited",
-      "setup": "Stage 01b reads the stage 01 handoff and searches the repo. `stages/00-automation-guard/CONTEXT.md` already gates on the `no-automation` label for every run, and no comment or code shows that gate is insufficient for this issue's stated need.",
+      "setup": "Stage 01b reads the stage 01 handoff and searches the repo. `stages/00-automation-guard/CONTEXT.md` already stops every no-automation issue before its body is read or rewritten. The requested second check adds the same protection at a later point; no unmet case is stated.",
       "evalTurn": {
         "from": "system",
         "event": "stage_start",
@@ -45,6 +48,21 @@
         "type": "pipeline-control",
         "assertion": "non_prd_verdict_skips_02_through_07_single_comment",
         "description": "Stages 02-07 do not run. Exactly one comment is posted naming the verdict and the cited mechanism, the `wontfix` label is applied, and `status=success` is emitted. No PRD is drafted and the issue body is not rewritten.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "different-behavior-is-not-redundancy",
+      "setup": "Separate issue asks for a per-run override that bypasses the no-automation guard. The existing guard enforces the opposite behavior; there is no evidence that it already serves the requested override. No other cited close or re-scope reason is established.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stage_start",
+        "text": "stage=01b-triage-challenge"
+      },
+      "expectedBehavior": {
+        "type": "triage-verdict",
+        "assertion": "different_behavior_falls_through_to_prd",
+        "description": "Do not call the override redundant merely because both requests mention no-automation. Verdict prd for further requirements and authority review; this is not authorization to implement or execute an override. Post no triage-stop comment or label.",
         "tolerancePct": 0
       }
     }

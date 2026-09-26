@@ -35,6 +35,10 @@ def load_core():
     # Execute verified source bytes, never an unverified timestamp-based pyc.
     module = types.ModuleType('jev_evidence_contracts')
     module.__file__ = str(companion / 'scripts/contracts.py')
+    # Hand contracts.py the already-verified schema bytes so its SCHEMA load
+    # consumes exactly what was hashed above, closing the TOCTOU window a
+    # second, independent disk read of schemas/bundle-v1.json would reopen.
+    module._VERIFIED_SCHEMA_JSON = verified['schemas/bundle-v1.json']
     exec(compile(verified['scripts/contracts.py'], module.__file__, 'exec'), module.__dict__)
     module._verified_cli = verified['scripts/cli.py']
     return module

@@ -68,7 +68,25 @@ def _schema(value, spec, path='$'):
             elif isinstance(spec.get('additionalProperties'),dict): _schema(item,spec['additionalProperties'],f'{path}.{key}')
 
 
-SCHEMA = json.loads((Path(__file__).resolve().parents[1] / 'schemas' / 'bundle-v1.json').read_text())
+def _load_schema():
+    """Prefer bytes a byte-pinning loader already hash-verified.
+
+    A loader that has just verified `schemas/bundle-v1.json` against a pinned
+    manifest hash (e.g. `check_contract.py`) should inject those exact bytes as
+    `_VERIFIED_SCHEMA_JSON` on this module before/at exec time. Falling back to
+    an independent disk read here would silently reopen the TOCTOU window the
+    loader's verification was meant to close, and would defeat the point of
+    hashing this file at all. The disk-read fallback exists only for direct/
+    standalone use (running or importing this file without going through a
+    pinning loader), where there is nothing to have verified in the first place.
+    """
+    injected = globals().get('_VERIFIED_SCHEMA_JSON')
+    if injected is not None:
+        return json.loads(injected)
+    return json.loads((Path(__file__).resolve().parents[1] / 'schemas' / 'bundle-v1.json').read_text())
+
+
+SCHEMA = _load_schema()
 
 
 def _validate_identity(identity):

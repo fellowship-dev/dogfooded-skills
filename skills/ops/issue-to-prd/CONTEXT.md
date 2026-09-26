@@ -11,17 +11,20 @@ before an agent starts work — preventing wasted tokens and off-target PRs.
 - Manual `build-prd` skill (retired 2026-09-14; its gap checklist lives in stage 03 references)
 
 ## Architecture
-9 sequential stages. Each stage is atomic: defined inputs, defined outputs, explicit side effects.
-Stage 00 is a guard. Stages 01-05 are pure analysis (no side effects). Stage 05b may dispatch a
-mission but writes nothing to GitHub. Stages 06-07 write to GitHub.
+11 sequential stages. Each stage is atomic: defined inputs, defined outputs, explicit side effects.
+Stage 00 is a guard. Stage 01b triages after stage 01 and may recommend stopping via one comment
+and a label. Other stages 01-05 are pure analysis. Stage 05b may dispatch a mission but writes
+nothing to GitHub; stage 05c reads the outcomes baseline. Stages 06-07 write to GitHub.
 
 ## Key invariants
 - Stage 00: the ONLY place this skill decides it is not allowed to run. Aborts emit `status=success`.
-- Stages 01-05: read-only. No GH comments, no label changes.
+- Stage 01b: cited triage verdicts other than `prd` post one recommendation and label, then stop;
+  never close the issue. Doubt falls through to `prd`.
+- Stages 01-05, except 01b: read-only. No GH comments, no label changes.
 - Stage 05b: no GH writes at all. Its only side effect is `pylot dispatch`, and only on an explicit
   owner signal.
-- Stage 06: the ONLY decision point, and the ONLY place a comment is posted. Everything batched
-  into ONE comment — including anything stage 05b wants said.
+- Stage 06: after triage permits the PRD path, batch all questions into ONE comment — including
+  anything stage 05b wants said. It does not run after a non-`prd` stage 01b verdict.
 - Stage 07: runs ONLY when stage 06 produced a PRD (not a questions list).
 - Labels added, never removed. `prd-ready` signals "has a PRD" and enables deep-triage to
   greenlight; `ready-to-work` is withheld while prototype variants are pending.
@@ -45,12 +48,13 @@ runs org-wide, hundreds of times, unattended. Two consequences are load-bearing:
 SKILL.md           — invocation reference
 CONTEXT.md         — this file
 shared/            — prd-template.md, failure-modes.md, prototype-mission-brief.md
-stages/00,01-05,05b,06-07/  — CONTEXT.md + output/ per stage
+stages/00,01,01b,02-05,05b,05c,06-07/  — CONTEXT.md + output/ per stage
 stages/03/references/   — gap-checklist.md
 stages/05b/references/  — gate-checklist.md
 ```
 
 ## Emit on completion
 - Guard path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="skipped: <label|state> — issue-to-prd does not structure this issue" status=success`
+- Triage path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="triage: <verdict> — <reason>" status=success`
 - Questions path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="questions posted" status=success`
 - PRD path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="PRD published" status=success`

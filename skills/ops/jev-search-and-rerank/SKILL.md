@@ -55,3 +55,14 @@ privacy, feedback provenance and one-weekly-review boundaries.
 - **No independent evaluation data or no improvement:** retain the current policy. More use supplies opportunities to learn, not a guarantee every query improves.
 
 See [evaluation cases](evals/cases.md) for behavioral checks and the correction that motivated each boundary.
+
+## Executable evidence contract
+
+Install the non-invokable `jev-evidence` companion explicitly from the same
+immutable source revision. Both primary patterns share that one sibling; the
+installer does not resolve dependencies. See
+[the contract and installation instructions](references/evidence-contract.md).
+Run `python3 scripts/check_contract.py version` from this skill directory to
+verify the pinned dependency before exporting host evidence. `validate`,
+`portable` and numerical `replay` accept an explicit normalized bundle path and
+make no inference calls. Missing or mismatched companions fail closed.

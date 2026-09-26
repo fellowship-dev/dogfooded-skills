@@ -31,6 +31,9 @@ jobs:
       - name: Run all test entry points
         run: |
           tests='
+            ./skills/ops/jev-evidence/tests/test_contracts.py
+            ./skills/ops/jev-evidence/tests/test_identity.py
+            ./skills/ops/jev-evidence/tests/test_packaging.py
             ./skills/ops/cto-review/stages/01-setup/test_ci_gate.py
             ./skills/ops/cto-review/stages/01-setup/test_collect_ci_evidence.py
             ./skills/ops/cto-review/stages/01-setup/test_evidence_gate.py

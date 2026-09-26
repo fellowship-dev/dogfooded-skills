@@ -131,3 +131,12 @@ In short:
 3. Use only Vercel standard frontmatter: `name`, `description`, and optionally `allowed-tools`
 4. Run it at least five times against real workloads
 5. Open a PR — the benchmark results go in the PR body
+
+### Jev evidence companion
+
+`jev-label-and-act` and `jev-search-and-rerank` share the non-invokable
+[`jev-evidence`](skills/ops/jev-evidence/SKILL.md) companion. Install it explicitly
+alongside either pattern at the same immutable revision. The pattern entry points
+check a version and byte manifest before validation, portable export or zero-call
+numerical replay. This distribution provides offline L1 mechanics; host adapters
+and independently measured workflow quality remain the installing host's work.

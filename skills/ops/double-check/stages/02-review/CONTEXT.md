@@ -66,8 +66,15 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    - Risk tier does not exempt it. A LOW-tier docs-only diff under a body claiming N source files
      and M new tests is precisely the case this gate exists for — a small diff makes the
      mismatch *more* suspicious, not less.
-   - `Closes`/`Implements` refs count as claims: closing an issue on a diff that does not
-     implement it is unbacked.
+   - `Closes`/`Implements` refs count as claims. For a closing driving issue, assess each
+     criterion against the diff or a linked follow-up conforming to
+     [the follow-up issue contract](../../../../shared/follow-up-issue-template.md). Read the
+     follow-up: it must carry the deferred criteria verbatim. A conforming transfer backs the
+     closing reference; generate no finding merely because that remainder is absent from this
+     diff. Operational or post-merge acceptance remains owed by the follow-up, not claimed done.
+     If a criterion is neither implemented nor transferred, require completion or a conforming
+     linked follow-up while retaining the closing reference. Never recommend downgrading the
+     driving issue to `Refs`, including when curating a first-review finding that recommends it.
    - Staging evidence attesting to code absent from the diff is unbacked.
 
    Also note the inverse — substantive changes in the diff the body never mentions

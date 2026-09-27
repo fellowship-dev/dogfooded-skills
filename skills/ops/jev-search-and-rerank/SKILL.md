@@ -66,3 +66,22 @@ Run `python3 scripts/check_contract.py version` from this skill directory to
 verify the pinned dependency before exporting host evidence. `validate`,
 `portable` and numerical `replay` accept an explicit normalized bundle path and
 make no inference calls. Missing or mismatched companions fail closed.
+
+
+## Executable learning loop (U3)
+
+Use the companion's pure `transition` command for offline state-machine checks;
+its JSON output is not durable acceptance or promotion. A real host adapter must
+serialize and persist transitions in the existing store, verify correction
+sources, and consume acceptance before opening labels. Buddy exposes that adapter
+through `python3 -m scripts.jev_learning_loop --root /explicit/existing/search-root
+--help`; use its supported commands with an explicit existing root.
+
+Follow [the companion's experiment contract](../jev-evidence/SKILL.md#experiment-and-correction-loop-u3):
+separate development, validation and acceptance by independent global lineage
+across both patterns; import old exposures and reject unknown custody/history.
+Freeze the comparison and decision card, retain failed attempts, retrieve prior
+rejections before reconsidering, and retain the incumbent when cost, coverage or
+precision is insufficient. Activation and rollback require authority, durable
+prepare/finish receipts and comparison against the actual host pointer. Ordinary
+runs need no invented correction. Synthetic mechanics are not field-quality proof.

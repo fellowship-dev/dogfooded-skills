@@ -32,6 +32,7 @@ jobs:
         run: |
           tests='
             ./skills/ops/jev-evidence/tests/test_contracts.py
+            ./skills/ops/jev-evidence/tests/test_experiments.py
             ./skills/ops/jev-evidence/tests/test_identity.py
             ./skills/ops/jev-evidence/tests/test_packaging.py
             ./skills/ops/cto-review/stages/01-setup/test_ci_gate.py

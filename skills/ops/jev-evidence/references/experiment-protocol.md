@@ -12,9 +12,10 @@ This detects damaged histories, not an authorized host rewriting its entire log.
 The pure pattern CLI accepts `transition request.json`, where the request contains
 exactly `state`, `operation`, and `payload`. Its JSON output is a proposal, not a
 durable reservation or permission to switch a live policy. Existing hosts keep
-their sole writers. Buddy uses `python3 -m scripts.jev_learning_loop --root ROOT
---registry-id ID OPERATION --input REQUEST`; ROOT must be an explicitly selected
-existing SearchStore, never an inferred/default private corpus.
+their sole writers. A host adapter implementing `--root`-style semantics exposes
+this as its own CLI, e.g. `<host-cli> --root ROOT --registry-id ID OPERATION
+--input REQUEST`; ROOT must be an explicitly selected existing SearchStore, never
+an inferred/default private corpus.
 
 ## Operations and custody
 
@@ -69,10 +70,10 @@ can attest real source custody, grouping, evaluator behavior or action authority
 There is no access-control claim against direct filesystem inspection; any such
 inspection must be recorded. A registered callback is trusted local code.
 
-Buddy adoption is explicit and additive. It preserves and backs up old exposure
-files, imports saved/public histories into one registry, keeps correction rows in
-the existing feedback authority, and makes its old learner yield before labeled
-case access. Its `recover-attempt` closes killed evaluation as interrupted without
-reopening references. No live registry adoption or policy activation follows from
-installing this package. Revert the installed package set together; retain all
-registry, attempt, exposure and activation history during any rollback.
+Host adapter adoption is explicit and additive. It preserves and backs up old
+exposure files, imports saved/public histories into one registry, keeps correction
+rows in the existing feedback authority, and makes its old learner yield before
+labeled case access. Its `recover-attempt` closes killed evaluation as interrupted
+without reopening references. No live registry adoption or policy activation
+follows from installing this package. Revert the installed package set together;
+retain all registry, attempt, exposure and activation history during any rollback.

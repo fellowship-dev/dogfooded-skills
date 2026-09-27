@@ -86,9 +86,10 @@ payload}` and prints `{state, receipt}`. It neither persists the new state nor
 opens reference labels. Its output alone cannot reserve exposure or activate a
 policy. Interface version `1.0.0` and existing U2 commands remain compatible.
 
-A real host adapter is required for durable operation. In Buddy, use
-`python3 -m scripts.jev_learning_loop --root /explicit/existing/search-root --help`
-and its supported operations. The explicitly selected host store is the sole
+A real host adapter is required for durable operation. Use a host adapter that
+implements `--root`-style semantics with its own CLI (for example, an operation
+invoked as `<host-cli> --root /explicit/existing/search-root --help`) and its
+supported operations. The explicitly selected host store is the sole
 writer: it serializes transitions with its existing lock, atomically persists
 state and immutable history, verifies correction source spans, and commits
 acceptance consumption before opening labels or invoking an evaluator. It must

@@ -38,6 +38,8 @@ Label semantics are per-company POLICY; this skill does not know them. Read the 
 | Which label opts an issue **out** of automation? | Epics and discussion issues need it or a bot rewrites the body |
 | Epic conventions | Whether epics are dispatchable, and how children are linked |
 
+**Never file a go-ahead as `waiting-on-owner`.** That label needs a stated decision: a one-line question, its options and your recommendation. A specified, reversible production step is work. If it must be sequenced with a release, it ships as a migration or release-train step. If not, it runs under the existing rollback, audit and post-deploy safety nets. It does not wait for a "go" (fellowship-dev/pylot#3603).
+
 > **No filing section in the playbook?** Apply **no** workflow labels, file anyway, and say so in the issue: *"No filing policy found in the repo playbook — no workflow labels applied; triage owner should label."* Never invent a label, and never hand-apply one the playbook marks automation-owned.
 
 ## 3. Body vs Comment — Durability

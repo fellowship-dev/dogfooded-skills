@@ -36,6 +36,17 @@ into the PRD, and applies `ready-to-work` then.
 This withholds a label; it never removes one. If `ready-to-work` is already on the issue, leave it
 — label removal is not this skill's business.
 
+### Owner parks need a decision
+
+`waiting-on-owner` on the issue withholds `ready-to-work` only when the issue states an owner
+decision: a one-line question, its options and a recommendation, in an owner-authority class. The
+classes are irreversible or destructive production data, spend above budget, secrets/credentials,
+external sends, and org policy or product judgement. A production data or config change with a
+specified target, validation and rollback is a go-ahead, not a decision. Apply `ready-to-work` as
+usual, and do not write "owner sign-off" constraints into the PRD (see `shared/failure-modes.md` §
+Inventing an owner gate). Post one comment that names the park as decision-less, so whoever applied it
+can remove it. Never remove the label yourself.
+
 ## Output: handoff.md
 ```markdown
 # Stage 07: Publish
@@ -53,5 +64,6 @@ Published
 
 ## Success criteria
 - Issue body contains PRD structure (## Problem Statement visible)
-- `prd-ready` applied; `ready-to-work` applied **unless** variants are pending (see interlock)
+- `prd-ready` applied; `ready-to-work` applied **unless** variants are pending (see interlock) or
+  the issue states a real owner decision (see Owner parks need a decision)
 - `open-questions` label NOT present (guard: only run when stage 06 is PRD path)

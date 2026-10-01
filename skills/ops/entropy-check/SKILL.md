@@ -242,10 +242,47 @@ Preserve existing rows for domains not in scope (only update what was re-scanned
 | {domain} | {grade} | {TODAY} | {brief note on what's missing, or "All signals green"} |
 ```
 
-Write the updated file. Commit with message: `chore: entropy scan — PR #{N} {title} [skip ci]` — the `[skip ci]` tag is **mandatory** to prevent triggering production deploys. Then append to the History section:
+Write the updated file, then append to the History section:
 ```markdown
 | {TODAY} | {trigger: PR #{N} / weekly sweep / manual} | {N} domains scanned, {N} regressions, {N} improvements |
 ```
+
+#### 4a. Deliver the write-back as a PR — never push to the default branch
+
+Direct pushes to `main`/`master`/`develop` are **always rejected** in Pylot workers
+(`git-push-guard.sh`, deliberate, no bot exception). Do not retry a rejected push, do not
+look for a workaround, and do not wait for the PR to merge. Deliver like this:
+
+1. **Nothing changed → report only.** If no grade changed, no domain was added and no new
+   Tooling drift was found, the only edit would be a History row. Discard it
+   (`git -C "$REPO_ROOT" checkout -- QUALITY_SCORE.md`), open no branch and no PR, post the
+   step 8/9 report and finish.
+2. **Otherwise open a write-back PR** against the scanned repo's actual default branch,
+   resolved at run time (never hardcode `develop`):
+
+```bash
+BASE=$(GH_TOKEN=$GH_TOKEN gh repo view "$FULL_REPO" --json defaultBranchRef --jq .defaultBranchRef.name)
+BRANCH="entropy-scan/pr-{N}"          # weekly sweep: entropy-scan/weekly-$TODAY; manual: entropy-scan/manual-$TODAY
+TITLE="chore: entropy scan — PR #{N} {title} [skip ci]"   # weekly/manual: chore: entropy scan — weekly sweep $TODAY [skip ci]
+git -C "$REPO_ROOT" fetch origin "$BASE"
+git -C "$REPO_ROOT" switch -c "$BRANCH" "origin/$BASE"   # QUALITY_SCORE.md edits carry over
+git -C "$REPO_ROOT" add QUALITY_SCORE.md
+git -C "$REPO_ROOT" commit -m "$TITLE"
+git -C "$REPO_ROOT" push -u origin "$BRANCH"
+GH_TOKEN=$GH_TOKEN gh label create entropy-writeback --repo "$FULL_REPO" --color BFD4F2 \
+  --description "entropy-check QUALITY_SCORE write-back; post-merge entropy rules skip it" 2>/dev/null || true
+GH_TOKEN=$GH_TOKEN gh pr create --repo "$FULL_REPO" --base "$BASE" --head "$BRANCH" \
+  --title "$TITLE" --label entropy-writeback \
+  --body "Entropy write-back for {trigger}. Domains re-graded: {list}. No code changes."
+```
+
+- The commit message and PR title must both keep the literal `[skip ci]` tag — it prevents
+  production deploys, including from the squash-merge commit.
+- The diff is `QUALITY_SCORE.md` only.
+- The `entropy-writeback` label marks the PR as entropy's own write-back so post-merge
+  entropy rules can exclude it (`match.labels_exclude`) and not re-trigger a no-op scan.
+- The PR merges through the repo's standing review pipeline. Do not merge it yourself and
+  do not block the run waiting for it: the run is done once the PR is open.
 
 ### 5. Signal Applicability Section
 
@@ -328,15 +365,19 @@ Note: repos may have intentional customizations — flag for review, don't auto-
 **inbox-angel-worker exception**: speckit is installed locally and gitignored. Drift sync must be done locally on Spacestation.
 
 Include drift findings in QUALITY_SCORE.md under a `## Tooling` section if any drift is found.
+They ride in the same step 4a write-back PR; this check never commits or pushes anywhere else.
 
 ### 8. PR-Triggered Output
 
-When triggered by a PR merge event, output a comment-ready summary:
+When triggered by a PR merge event, output a comment-ready summary and post it on the merged PR
+once step 4a is done (write-back PR opened, or report-only). Do not wait for the write-back PR
+to merge:
 
 ```
 ## Entropy Scan — PR #{N} merged
 
 Domains affected: {list}
+Write-back: {entropy PR URL, or "none — no QUALITY_SCORE.md change"}
 
 | Domain | Grade | Change | Notes |
 |--------|-------|--------|-------|

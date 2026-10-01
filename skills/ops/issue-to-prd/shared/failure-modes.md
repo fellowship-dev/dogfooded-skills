@@ -37,3 +37,15 @@ Catalog of pitfall patterns for use in stage 04 analysis.
 - Agent implements the feature but skips tests because the area has no existing coverage
 - Agent writes tests that pass in isolation but fail against real infrastructure
 - Guardrail: test prerequisites explicit in PRD, visual evidence requirement stated
+
+## Inventing an owner gate
+
+- Agent writes "do NOT run the production step without owner sign-off" for a change whose target
+  value, validation and rollback are already specified. That gate has nothing to decide; it only delays.
+- Agent treats an existing `waiting-on-owner` label as proof that the issue needs an owner decision
+- Guardrail: an owner gate needs a stated decision: a question, options and a recommendation, in an
+  owner-authority class. Those classes are irreversible or destructive production data, spend above
+  budget, secrets/credentials, external sends, and org policy or product judgement. Otherwise the PRD
+  makes the step executable. If the step must be sequenced with a release, it ships as a migration or
+  release-train step. If not, it runs under the existing safety nets: a rollback copy, an audit, and
+  the post-deploy watch. Owner ruling, Max, 2026-10-01: owner gates are for decisions, not consequences.

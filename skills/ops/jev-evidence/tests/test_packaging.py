@@ -18,6 +18,85 @@ class PackagingTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(root / pattern / 'scripts/check_contract.py'), 'version'],
                               capture_output=True, text=True)
 
+    def load_wrapper(self, root, pattern):
+        path = root / pattern / 'scripts/check_contract.py'
+        spec = importlib.util.spec_from_file_location('checked_experiment_pattern', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_experiment_module_tamper_fails_closed_for_both_patterns(self):
+        for pattern in PATTERNS:
+            with self.subTest(pattern=pattern), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for name in (pattern, 'jev-evidence'):
+                    shutil.copytree(OPS / name, root / name)
+                source = root / 'jev-evidence/scripts/experiments.py'
+                source.write_bytes(source.read_bytes() + b'\nCOMPANION_BYPASS=True\n')
+                result = self.run_check(root, pattern)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('integrity', result.stderr)
+
+    def test_experiments_execute_verified_bytes_despite_disk_swap_and_pyc(self):
+        import unittest.mock as mock
+        for pattern in PATTERNS:
+            with self.subTest(pattern=pattern), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for name in (pattern, 'jev-evidence'):
+                    shutil.copytree(OPS / name, root / name)
+                source = root / 'jev-evidence/scripts/experiments.py'
+                original = source.read_bytes()
+                stamp = source.stat()
+                malicious = b'COMPANION_BYPASS=True\n'
+                source.write_bytes(malicious + b' ' * (len(original) - len(malicious)))
+                os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                py_compile.compile(str(source), doraise=True)
+                source.write_bytes(original)
+                os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+                wrapper = self.load_wrapper(root, pattern)
+                loaded = wrapper.load_core()
+                self.assertFalse(hasattr(loaded.experiments, 'COMPANION_BYPASS'))
+                self.assertTrue(callable(loaded.experiments.transition))
+                real_read_bytes = Path.read_bytes
+
+                def swap_after_read(path):
+                    payload = real_read_bytes(path)
+                    if path.resolve() == source.resolve():
+                        source.write_bytes(malicious)
+                    return payload
+
+                with mock.patch.object(Path, 'read_bytes', swap_after_read):
+                    loaded = wrapper.load_core()
+                self.assertEqual(source.read_bytes(), malicious)
+                self.assertFalse(hasattr(loaded.experiments, 'COMPANION_BYPASS'))
+                self.assertTrue(callable(loaded.experiments.transition))
+
+    def test_cli_synthetic_transition_is_pure_for_both_patterns(self):
+        for pattern in PATTERNS:
+            with self.subTest(pattern=pattern), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for name in (pattern, 'jev-evidence'):
+                    shutil.copytree(OPS / name, root / name)
+                core = self.load_wrapper(root, pattern).load_core()
+                state = core.experiments.new_state('synthetic-registry', 'synthetic-adapter')
+                request = {'state': state, 'operation': 'set-incumbent',
+                           'payload': {'mode': 'synthetic', 'revision': 'baseline', 'hash': 'a' * 64}}
+                path = root / 'transition.json'
+                original = json.dumps(request, sort_keys=True)
+                path.write_text(original)
+                before = set(root.rglob('*'))
+                result = subprocess.run([sys.executable, str(root / pattern / 'scripts/check_contract.py'),
+                                         'transition', str(path)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = json.loads(result.stdout)
+                self.assertEqual(set(output), {'state', 'receipt'})
+                self.assertEqual(output['state']['active']['synthetic']['revision'], 'baseline')
+                self.assertEqual(output['state']['active']['synthetic']['hash'], 'a' * 64)
+                self.assertEqual(state['active'], {})
+                self.assertEqual(path.read_text(), original)
+                self.assertEqual(set(root.rglob('*')), before)
+                self.assertTrue(output['receipt'])
+
     def test_isolated_combined_and_upgrade(self):
         for selected in ((PATTERNS[0],), (PATTERNS[1],), PATTERNS):
             with self.subTest(selected=selected), tempfile.TemporaryDirectory() as directory:

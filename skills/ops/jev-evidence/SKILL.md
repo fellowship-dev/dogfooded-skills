@@ -40,6 +40,7 @@ python3 .agents/skills/jev-label-and-act/scripts/check_contract.py version
 python3 .agents/skills/jev-label-and-act/scripts/check_contract.py validate /private/export.json
 python3 .agents/skills/jev-label-and-act/scripts/check_contract.py replay /private/export.json
 python3 .agents/skills/jev-label-and-act/scripts/check_contract.py portable /private/export.json
+python3 .agents/skills/jev-label-and-act/scripts/check_contract.py transition /private/transition.json
 ```
 
 `validate` checks the normalized bundle and returns limitations and eligibility.
@@ -75,11 +76,54 @@ No authoritative state is written by the companion. Existing adapters append
 idempotently under their host lock and retain genuine attempts independently of
 cache keys. An interrupted append is retried with the same attempt identity;
 a new inference is a new attempt. Malformed/truncated stores fail closed for host
-reconciliation. This L1 release does not implement exposure reservation,
-experiment execution, acceptance access control or policy promotion (U3).
+reconciliation.
+
+## Experiment and correction loop (U3)
+
+`scripts/experiments.py` provides pure `new_state`, `digest` and `transition`
+functions. The pinned `transition` command accepts exactly `{state, operation,
+payload}` and prints `{state, receipt}`. It neither persists the new state nor
+opens reference labels. Its output alone cannot reserve exposure or activate a
+policy. Interface version `1.0.0` and existing U2 commands remain compatible.
+
+A real host adapter is required for durable operation. Use a host adapter that
+implements `--root`-style semantics with its own CLI (for example, an operation
+invoked as `<host-cli> --root /explicit/existing/search-root --help`) and its
+supported operations. The explicitly selected host store is the sole
+writer: it serializes transitions with its existing lock, atomically persists
+state and immutable history, verifies correction source spans, and commits
+acceptance consumption before opening labels or invoking an evaluator. It must
+retain interruption/failure receipts and never reopen labels on retry. No
+competing authoritative store belongs in this companion.
+
+Register independent development, validation and acceptance units with global
+source-family lineage, custody and sampling evidence across both patterns.
+Unknown custody, missing exposure history and previously exposed acceptance
+lineage are ineligible. Import historical exposures before selecting acceptance;
+a new experiment ID or adapter cannot manufacture fresh evidence. Preserve
+ordinary runs without inventing corrections. Corrections retain exact source
+revision/span, attribution, interpretation, verification and supersession;
+ambiguous feedback cannot become gold.
+
+Freeze the hypothesis, baseline/candidate hashes, model, workload, environment,
+budget, thresholds and decision card before consuming acceptance. Retrieve prior
+failed/rejected/inconclusive experiments under identical conditions; reconsider
+only with a documented material change. Keep raw paired measurements and report
+sampling coverage, independent-unit count, uncertainty, cost and guardrails.
+Biased-only evidence, unknown cost, missing coverage or insufficient precision
+must retain the incumbent rather than imply improvement.
+
+Activation and rollback require explicit authority and host pointer verification.
+Use durable prepare/finish receipts with expected revision/hash comparisons;
+a crash requires explicit reconciliation against the actual pointer, never
+startup activation. Preserve the original rollback target and reject concurrent
+or third-state pointers. Synthetic acceptance proves these mechanics only;
+field quality and benefit require independently authorized host evidence.
 
 ## Source validation
 
 Run each `tests/test_*.py` directly with Python. Tests cover both consumer
 installation layouts, provenance, validation, identity and zero-call replay.
 Host adapter acceptance is separate from this source distribution's tests.
+
+See [experiment protocol](references/experiment-protocol.md) for transitions, host duties, recovery and current claim limits.

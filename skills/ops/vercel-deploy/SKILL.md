@@ -49,8 +49,8 @@ These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), no
 | 00 | author-fix | Fix commit author if DEPLOY_AUTHOR is set (optional, skipped otherwise) |
 | 01 | preflight | Verify secrets, tools, compute deploy context |
 | 02 | link | Ensure `.vercel/project.json` exists; verify project via API |
-| 03 | deploy | Run `vercel deploy --prod` non-interactively, explicitly alias `$PROD_DOMAIN` to it |
-| 04 | poll | Poll Vercel API until deployment reaches READY or ERROR; record its deployment id |
+| 03 | deploy | Run `vercel deploy --prod` non-interactively, capture the deployment URL |
+| 04 | poll | Poll Vercel API until deployment reaches READY or ERROR; once READY, record its deployment id and explicitly alias `$PROD_DOMAIN` to it |
 | 05 | verify | Confirm the domain is reachable AND aliased to the new deployment, emit outcome |
 
 ## Stage 00 — Author Fix (conditional)
@@ -157,6 +157,8 @@ echo "[vercel-deploy] Stage 02 complete — linked to project '$PROJECT_NAME' ($
 ## Stage 03 — Deploy
 
 Run `vercel deploy --prod` non-interactively. Must use `--token` and `--yes` — without them the CLI hangs.
+This stage only captures the deployment URL — it does **not** move the `$PROD_DOMAIN` alias. The
+alias is only moved by Stage 04, once the deployment is confirmed `READY` (see Stage 04 below).
 
 ```bash
 source /tmp/vercel-deploy-ctx.env
@@ -181,20 +183,19 @@ DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -E '^https://' | tail -1)
 
 echo "DEPLOY_URL=$DEPLOY_URL" >> /tmp/vercel-deploy-ctx.env
 
-# Explicitly point $PROD_DOMAIN at this deployment — never rely on implicit auto-aliasing (pylot#3690)
-npx vercel alias set "$DEPLOY_URL" "$PROD_DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID" --yes
-ALIAS_SET_EXIT=$?
-if [ $ALIAS_SET_EXIT -ne 0 ]; then
-  echo "[vercel-deploy] Stage 03 failed: vercel alias set exited $ALIAS_SET_EXIT"
-  exit 1
-fi
-
-echo "[vercel-deploy] Stage 03 complete — deployment URL: $DEPLOY_URL, alias set to $PROD_DOMAIN"
+# Do NOT alias $PROD_DOMAIN here. A deployment is only "READY", not "deployed", at this point —
+# it can still transition to ERROR/CANCELED. Stage 04 confirms READY and captures the deployment's
+# id first; only then does it move the alias, so a failing deployment can never end up aliased
+# (pylot#3690 fix, re-sequenced per review finding R1 to not create a new alias-before-ready race).
+echo "[vercel-deploy] Stage 03 complete — deployment URL: $DEPLOY_URL (alias not moved yet — Stage 04 confirms READY first)"
 ```
 
 ## Stage 04 — Poll
 
-Poll the Vercel API until the deployment reaches `READY` or `ERROR`. Timeout after 120 seconds.
+Poll the Vercel API until the deployment reaches `READY` or `ERROR`. Timeout after 120 seconds. Only
+once `READY` is confirmed does this stage explicitly point `$PROD_DOMAIN` at the new deployment —
+never rely on implicit auto-aliasing (pylot#3690) — so a deployment that later turns out to be
+`ERROR`/`CANCELED` can never get aliased.
 
 ```bash
 source /tmp/vercel-deploy-ctx.env
@@ -224,7 +225,19 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
         exit 1
       }
       echo "NEW_DEPLOYMENT_ID=$NEW_DEPLOYMENT_ID" >> /tmp/vercel-deploy-ctx.env
-      echo "[vercel-deploy] Stage 04 complete — deployment READY ($NEW_DEPLOYMENT_ID)"
+
+      # Only now that READY is confirmed: explicitly point $PROD_DOMAIN at this deployment —
+      # never rely on implicit auto-aliasing (pylot#3690). Deliberately not run in Stage 03,
+      # which runs before this confirmation and would alias a deployment that might still go
+      # ERROR/CANCELED (review finding R1).
+      npx vercel alias set "$DEPLOY_URL" "$PROD_DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID" --yes
+      ALIAS_SET_EXIT=$?
+      if [ $ALIAS_SET_EXIT -ne 0 ]; then
+        echo "[vercel-deploy] Stage 04 failed: vercel alias set exited $ALIAS_SET_EXIT"
+        exit 1
+      fi
+
+      echo "[vercel-deploy] Stage 04 complete — deployment READY ($NEW_DEPLOYMENT_ID), alias set to $PROD_DOMAIN"
       break
       ;;
     ERROR|CANCELED)
@@ -270,7 +283,7 @@ esac
 
 # Required: the custom-domain alias must point at the deployment just created. A healthy HTTP
 # status only proves *something* answers at $PROD_DOMAIN, not that it is this deployment.
-ALIAS_JSON=$(curl -sf \
+ALIAS_JSON=$(curl -sf --max-time 15 \
   -H "Authorization: Bearer $VERCEL_TOKEN" \
   "https://api.vercel.com/v4/aliases/$PROD_DOMAIN?teamId=$VERCEL_ORG_ID" 2>/dev/null)
 

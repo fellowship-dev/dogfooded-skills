@@ -63,9 +63,9 @@ Capture ALL existing review comments verbatim, and extract the head SHA the late
 (review-pr) was bound to — its comment carries a `**Head reviewed:** \`<40-hex>\`` line:
 
 ```bash
-{ gh pr view $PR --repo $REPO --json comments --jq '.comments[] | "### comment by \(.author.login) at \(.createdAt)\n\(.body)\n"'
+{ set -o pipefail; gh pr view $PR --repo $REPO --json comments --jq '.comments[] | "### comment by \(.author.login) at \(.createdAt)\n\(.body)\n"'
   gh pr view $PR --repo $REPO --json reviews --jq '.reviews[] | "### review by \(.author.login) (\(.state))\n\(.body)\n"'
-} > "$OUT/first-review.md"
+} > "$OUT/first-review.md" || echo "FIRST REVIEW FETCH FAILED — treat as unknown, not absent" >> "$OUT/first-review.md"
 REVIEW_HEAD_SHA=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
   | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 ```
@@ -78,7 +78,9 @@ pre-curated here). Read it yourself only as far as you need to fill the receipt 
 
 ```bash
 # Full diff, whole and untruncated, straight to a file.
-gh pr diff $PR --repo $REPO > "$OUT/diff.patch"
+# GitHub refuses very large diffs (HTTP 406): then DIFF_FALLBACK=1, and the checkout step
+# below regenerates diff.patch from git before the merge.
+gh pr diff $PR --repo $REPO > "$OUT/diff.patch" || DIFF_FALLBACK=1
 
 # Authoritative changed-file manifest with per-file line counts — stage 02 reconciles the
 # PR body's claims against THIS list, so it must be complete and unedited.
@@ -119,7 +121,12 @@ git pull origin $PR_BRANCH
 # final squash merge flattens the branch anyway. If already up to date, the merge
 # is a no-op and the head SHA (and any current receipt) is preserved.
 git fetch origin $BASE_BRANCH
-if ! git merge origin/$BASE_BRANCH --no-edit; then
+if [ -n "$DIFF_FALLBACK" ]; then
+  # Same range as `gh pr diff`: merge-base of base and the PR head, to the PR head (pre-merge).
+  git diff "$(git merge-base origin/$BASE_BRANCH "$INITIAL_HEAD_SHA")" "$INITIAL_HEAD_SHA" > "$OUT/diff.patch" \
+    || { echo "diff unavailable"; MERGE_FAILED=true; }
+fi
+if [ -z "$MERGE_FAILED" ] && ! git merge origin/$BASE_BRANCH --no-edit; then
   # Merge conflict — collect details, abort cleanly, report blocked
   CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
   git merge --abort 2>/dev/null || true

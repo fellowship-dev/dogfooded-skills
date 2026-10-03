@@ -65,8 +65,10 @@ Record: the exact command, pass/fail, number of tests, any regressions introduce
 and the commit SHA it ran on.
 
 If tests fail after your fixes: debug and re-fix until green, or explicitly note the failure as
-pre-existing. If the review's Tests Posture said "not applicable" (deps-only/lockfile-only, or a
-docs-only fix), skip the suite and note why.
+pre-existing. If the review's Tests Posture said "not applicable" (deps-only/lockfile-only), skip
+the suite and note why. Do not decide on your own that a fix is "docs only": in some repos the
+Markdown is the code under test. Let the repo's scoped gate decide (pylot's classifier already
+treats pure docs as a near-empty run).
 
 ### Waiting on a long command
 
@@ -76,7 +78,7 @@ exits. Each wait call returns the moment the command finishes (or after 9.5 minu
 the same wait again):
 
 ```bash
-LOG=/tmp/double-check-gate.log; rm -f "$LOG" "$LOG.rc"
+LOG=$(mktemp /tmp/double-check-gate.XXXXXX); rm -f "$LOG" "$LOG.rc"
 ( <command>; echo $? > "$LOG.rc" ) > "$LOG" 2>&1 &   # or the Bash tool's run_in_background
 
 # wait call (Bash timeout 600000), repeated until it prints exit=:
@@ -84,7 +86,7 @@ end=$((SECONDS+570)); until [ -f "$LOG.rc" ] || [ $SECONDS -ge $end ]; do sleep 
 if [ -f "$LOG.rc" ]; then echo "exit=$(cat "$LOG.rc")"; tail -60 "$LOG"; else echo "still running"; fi
 ```
 
-Never poll with a fixed sleep of a minute or more followed by `tail` or `ps`: measured
+Never poll with a fixed sleep of 30 seconds or more followed by `tail` or `ps`: measured
 runs slept up to ten minutes after the work had finished.
 
 ### Push fixes
@@ -94,16 +96,17 @@ If you made fix commits:
 The test run above is this push's test run. Push with `--no-verify`, so the repo's pre-push hook
 does not run a second, wider gate (the PR's whole scope) on the same code, only when either:
 
-- the scoped run above was green on the exact commit you are pushing (`git rev-parse HEAD`
-  equals the SHA you recorded), or
-- the fix delta (`git diff --name-only $PRE_FIX_HEAD_SHA HEAD`) changes only documentation
-  (Markdown or `docs/`), and the handoff says so.
-
-Otherwise push without `--no-verify` and let the hook be the test run, waited on as above.
+the scoped run above was green on the exact commit you are pushing. Otherwise push normally and
+let the hook be the test run, waited on as above.
 
 ```bash
 cd "$REPO_DIR"
-git push --no-verify origin $PR_BRANCH   # only under the two conditions above
+TESTED_SHA={40-hex SHA the green scoped run ran on, or empty if tests did not run green}
+if [ -n "$TESTED_SHA" ] && [ "$(git rev-parse HEAD)" = "$TESTED_SHA" ]; then
+  git push --no-verify origin $PR_BRANCH   # green scoped run on this exact commit
+else
+  git push origin $PR_BRANCH               # the hook is the test run; wait on it as above
+fi
 POST_FIX_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 if [ "$POST_FIX_HEAD_SHA" != "$PRE_FIX_HEAD_SHA" ]; then
   REVIEW_RECEIPT_INVALIDATED=true

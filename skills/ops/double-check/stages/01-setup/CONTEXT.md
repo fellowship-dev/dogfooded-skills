@@ -63,9 +63,10 @@ Capture ALL existing review comments verbatim, and extract the head SHA the late
 (review-pr) was bound to — its comment carries a `**Head reviewed:** \`<40-hex>\`` line:
 
 ```bash
-{ set -o pipefail; gh pr view $PR --repo $REPO --json comments --jq '.comments[] | "### comment by \(.author.login) at \(.createdAt)\n\(.body)\n"'
-  gh pr view $PR --repo $REPO --json reviews --jq '.reviews[] | "### review by \(.author.login) (\(.state))\n\(.body)\n"'
-} > "$OUT/first-review.md" || echo "FIRST REVIEW FETCH FAILED — treat as unknown, not absent" >> "$OUT/first-review.md"
+gh pr view $PR --repo $REPO --json comments --jq '.comments[] | "### comment by \(.author.login) at \(.createdAt)\n\(.body)\n"' > "$OUT/first-review.md" \
+  || echo "FIRST REVIEW FETCH FAILED (comments) — treat as unknown, not absent" >> "$OUT/first-review.md"
+gh pr view $PR --repo $REPO --json reviews --jq '.reviews[] | "### review by \(.author.login) (\(.state))\n\(.body)\n"' >> "$OUT/first-review.md" \
+  || echo "FIRST REVIEW FETCH FAILED (reviews) — treat as unknown, not absent" >> "$OUT/first-review.md"
 REVIEW_HEAD_SHA=$(gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' \
   | sed -n 's/^\*\*Head reviewed:\*\* `\([0-9a-f]\{40\}\)`.*/\1/p' | tail -1)
 ```
@@ -124,7 +125,7 @@ git fetch origin $BASE_BRANCH
 if [ -n "$DIFF_FALLBACK" ]; then
   # Same range as `gh pr diff`: merge-base of base and the PR head, to the PR head (pre-merge).
   git diff "$(git merge-base origin/$BASE_BRANCH "$INITIAL_HEAD_SHA")" "$INITIAL_HEAD_SHA" > "$OUT/diff.patch" \
-    || { echo "diff unavailable"; MERGE_FAILED=true; }
+    || { echo "diff unavailable — setup_ok: false (reason: diff, not merge)"; MERGE_FAILED=true; }
 fi
 if [ -z "$MERGE_FAILED" ] && ! git merge origin/$BASE_BRANCH --no-edit; then
   # Merge conflict — collect details, abort cleanly, report blocked

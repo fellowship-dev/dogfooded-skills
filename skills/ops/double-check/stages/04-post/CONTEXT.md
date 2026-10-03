@@ -4,7 +4,7 @@ Runs inline in the orchestrator — do NOT spawn a Task. The `[pylot] outcome=..
 emitted from here.
 
 ## Inputs
-- `.procedure-output/double-check/01-setup/handoff.md` — PR metadata, URL, branches, PR body, **labels**
+- `.procedure-output/double-check/01-setup/handoff.md` — PR metadata, URL, branches, **labels**, and the path of the verbatim `pr-body.md` artifact
 - `.procedure-output/double-check/02-review/handoff.md` — verdict, curated findings, new issues
 - `.procedure-output/double-check/03-fix/handoff.md` — fixes applied, tests, push (absent if stage 03 skipped)
 
@@ -65,8 +65,8 @@ Bash and not inside a fence), then stop:
 
 ### Claims-vs-diff gate against the LIVE PR (BLOCKING — run before posting)
 
-Stage 02 judged a handoff. This step confirms that judgement against GitHub itself: the handoff's
-diff may have been truncated, and the branch may have moved since setup. **Always run it** — it is
+Stage 02 judged a handoff. This step confirms that judgement against GitHub itself: stage 02 may have misread the
+diff file, and the branch may have moved since setup. **Always run it** — it is
 the skill's only orchestrator-level verification of its own subject matter.
 
 ```bash

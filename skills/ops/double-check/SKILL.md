@@ -179,8 +179,8 @@ name — keep this protocol in sync with it, don't let the two drift):
 2. **The review is ONE cohesive stage** — do NOT split stage 02 into per-file or per-dimension
    subagents. Correctness, edge cases, tests, docs, deps, and security are judged together in a
    single verdict.
-3. **Stage 02 gets a clean context** — only the setup handoff (PR + first review + diff). Never
-   pass orchestrator history into it.
+3. **Stage 02 gets a clean context** — only the setup handoff and its artifact files (PR body,
+   first review, changed files, diff). Never pass orchestrator history into it.
 4. **Stage 04 runs inline** — the `[pylot] outcome=...` marker MUST come from the orchestrator.
 5. **Never pass full orchestrator context** into subagent Task prompts — inputs only.
 6. **Each stage writes handoff.md before the next stage reads it.**
@@ -223,6 +223,16 @@ name — keep this protocol in sync with it, don't let the two drift):
     running stage 04: the mission terminalized `done` with no receipt and the completed work was
     invisible for ~6h. If you cannot run stage 04, the outcome is `status=failed` or
     `status=blocked` with the reason — a fabricated success is the worst possible exit.
+17. **Verbatim artifacts are written by shell, never retyped.** Stage 01 redirects the PR body,
+    first review, manifest and diff into files beside its handoff. Copying them through the Write
+    tool was the largest setup cost and can silently drift from the source.
+18. **Wait on processes, not clocks.** A long command (tests, a hooked `git push`) runs in the
+    foreground with the tool's longest timeout, or in the background with its PID recorded and a
+    blocking wait that returns the moment it exits (stage 03's "Waiting on a long command"). Never poll with a
+    fixed `sleep N` of 30 seconds or more: measured runs slept up to 10 minutes past completion.
+19. **The full suite is not this skill's job.** Stage 03 tests its own fix delta once, with the
+    repo's scoped gate; CI and the release gate stay the full-suite authority. Never run a test
+    suite twice for one push (an explicit run and then the same run again in a pre-push hook).
 
 ## Reference files
 

@@ -31,6 +31,7 @@ These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), no
 - `DEPLOY_BRANCH` — Git branch to deploy from. **Defaults to `main`** if not specified. Always checks out and pulls before deploying.
 - `DEPLOY_AUTHOR` — Git name of a verified Vercel team member (e.g., `maxfindel`). If provided along with `DEPLOY_EMAIL`, Stage 00 will fix the commit author before deploying. Only needed when Vercel enforces team membership on the commit author.
 - `DEPLOY_EMAIL` — Git email matching the author. Required if `DEPLOY_AUTHOR` is set.
+- `VERSION_CHECK_PATH` — Path on `$PROD_DOMAIN` that returns `{"buildId": "..."}` (e.g. `/api/version`). When set, Stage 05 asserts the served `buildId` is a prefix of `git rev-parse HEAD`. Not every project this skill deploys exposes a version endpoint — leave unset to skip this check.
 
 ## Forbidden Actions
 
@@ -48,9 +49,9 @@ These values come from the **repo playbook** (`GET /admin/playbooks/<repo>`), no
 | 00 | author-fix | Fix commit author if DEPLOY_AUTHOR is set (optional, skipped otherwise) |
 | 01 | preflight | Verify secrets, tools, compute deploy context |
 | 02 | link | Ensure `.vercel/project.json` exists; verify project via API |
-| 03 | deploy | Run `vercel deploy --prod` non-interactively |
-| 04 | poll | Poll Vercel API until deployment reaches READY or ERROR |
-| 05 | verify | Confirm production domain is reachable, emit outcome |
+| 03 | deploy | Run `vercel deploy --prod` non-interactively, capture the deployment URL |
+| 04 | poll | Poll Vercel API until deployment reaches READY or ERROR; once READY, record its deployment id and explicitly alias `$PROD_DOMAIN` to it |
+| 05 | verify | Confirm the domain is reachable AND aliased to the new deployment, emit outcome |
 
 ## Stage 00 — Author Fix (conditional)
 
@@ -156,6 +157,8 @@ echo "[vercel-deploy] Stage 02 complete — linked to project '$PROJECT_NAME' ($
 ## Stage 03 — Deploy
 
 Run `vercel deploy --prod` non-interactively. Must use `--token` and `--yes` — without them the CLI hangs.
+This stage only captures the deployment URL — it does **not** move the `$PROD_DOMAIN` alias. The
+alias is only moved by Stage 04, once the deployment is confirmed `READY` (see Stage 04 below).
 
 ```bash
 source /tmp/vercel-deploy-ctx.env
@@ -179,12 +182,20 @@ DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -E '^https://' | tail -1)
 }
 
 echo "DEPLOY_URL=$DEPLOY_URL" >> /tmp/vercel-deploy-ctx.env
-echo "[vercel-deploy] Stage 03 complete — deployment URL: $DEPLOY_URL"
+
+# Do NOT alias $PROD_DOMAIN here. A deployment is only "READY", not "deployed", at this point —
+# it can still transition to ERROR/CANCELED. Stage 04 confirms READY and captures the deployment's
+# id first; only then does it move the alias, so a failing deployment can never end up aliased
+# (pylot#3690 fix, re-sequenced per review finding R1 to not create a new alias-before-ready race).
+echo "[vercel-deploy] Stage 03 complete — deployment URL: $DEPLOY_URL (alias not moved yet — Stage 04 confirms READY first)"
 ```
 
 ## Stage 04 — Poll
 
-Poll the Vercel API until the deployment reaches `READY` or `ERROR`. Timeout after 120 seconds.
+Poll the Vercel API until the deployment reaches `READY` or `ERROR`. Timeout after 120 seconds. Only
+once `READY` is confirmed does this stage explicitly point `$PROD_DOMAIN` at the new deployment —
+never rely on implicit auto-aliasing (pylot#3690) — so a deployment that later turns out to be
+`ERROR`/`CANCELED` can never get aliased.
 
 ```bash
 source /tmp/vercel-deploy-ctx.env
@@ -194,18 +205,39 @@ ELAPSED=0
 DEPLOY_HOST=$(echo "$DEPLOY_URL" | sed 's|https://||')
 
 while [ $ELAPSED -lt $MAX_WAIT ]; do
-  DEPLOY_STATE=$(curl -sf \
+  POLL_RESPONSE=$(curl -sf \
     -H "Authorization: Bearer $VERCEL_TOKEN" \
-    "https://api.vercel.com/v13/deployments?url=${DEPLOY_HOST}&teamId=$VERCEL_ORG_ID&limit=1" \
-    | python3 -c \
-      "import sys,json; d=json.load(sys.stdin); deps=d.get('deployments',[]); print(deps[0].get('state','UNKNOWN') if deps else 'NOT_FOUND')" \
-      2>/dev/null || echo "API_ERROR")
+    "https://api.vercel.com/v13/deployments?url=${DEPLOY_HOST}&teamId=$VERCEL_ORG_ID&limit=1" 2>/dev/null)
+
+  DEPLOY_STATE=$(echo "$POLL_RESPONSE" | python3 -c \
+    "import sys,json; d=json.load(sys.stdin); deps=d.get('deployments',[]); print(deps[0].get('state','UNKNOWN') if deps else 'NOT_FOUND')" \
+    2>/dev/null || echo "API_ERROR")
 
   echo "[vercel-deploy] Deploy state: $DEPLOY_STATE (${ELAPSED}s elapsed)"
 
   case "$DEPLOY_STATE" in
     READY)
-      echo "[vercel-deploy] Stage 04 complete — deployment READY"
+      NEW_DEPLOYMENT_ID=$(echo "$POLL_RESPONSE" | python3 -c \
+        "import sys,json; d=json.load(sys.stdin); deps=d.get('deployments',[]); print((deps[0].get('uid') or deps[0].get('id') or '') if deps else '')" \
+        2>/dev/null || echo "")
+      [ -z "$NEW_DEPLOYMENT_ID" ] && {
+        echo "[vercel-deploy] Stage 04 failed: deployment READY but no id in API response"
+        exit 1
+      }
+      echo "NEW_DEPLOYMENT_ID=$NEW_DEPLOYMENT_ID" >> /tmp/vercel-deploy-ctx.env
+
+      # Only now that READY is confirmed: explicitly point $PROD_DOMAIN at this deployment —
+      # never rely on implicit auto-aliasing (pylot#3690). Deliberately not run in Stage 03,
+      # which runs before this confirmation and would alias a deployment that might still go
+      # ERROR/CANCELED (review finding R1).
+      npx vercel alias set "$DEPLOY_URL" "$PROD_DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID" --yes
+      ALIAS_SET_EXIT=$?
+      if [ $ALIAS_SET_EXIT -ne 0 ]; then
+        echo "[vercel-deploy] Stage 04 failed: vercel alias set exited $ALIAS_SET_EXIT"
+        exit 1
+      fi
+
+      echo "[vercel-deploy] Stage 04 complete — deployment READY ($NEW_DEPLOYMENT_ID), alias set to $PROD_DOMAIN"
       break
       ;;
     ERROR|CANCELED)
@@ -227,7 +259,9 @@ done
 
 ## Stage 05 — Verify
 
-Confirm the production domain is reachable (HTTP 200, 301, or 302), then emit outcome.
+Confirm the production domain is reachable (HTTP 200, 301, or 302), that its alias actually points
+at the deployment just created (a healthy HTTP status alone does not prove that — pylot#3690), and —
+when `VERSION_CHECK_PATH` is set — that the served build matches this commit. Then emit outcome.
 
 ```bash
 source /tmp/vercel-deploy-ctx.env
@@ -239,13 +273,63 @@ echo "[vercel-deploy] $VERIFY_URL → HTTP $HTTP_STATUS"
 
 case "$HTTP_STATUS" in
   200|301|302)
-    echo "[vercel-deploy] Stage 05 complete — production domain verified"
+    echo "[vercel-deploy] Stage 05 HTTP check passed"
     ;;
   *)
     echo "[vercel-deploy] Stage 05 failed: $VERIFY_URL returned HTTP $HTTP_STATUS"
     exit 1
     ;;
 esac
+
+# Required: the custom-domain alias must point at the deployment just created. A healthy HTTP
+# status only proves *something* answers at $PROD_DOMAIN, not that it is this deployment.
+ALIAS_JSON=$(curl -sf --max-time 15 \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  "https://api.vercel.com/v4/aliases/$PROD_DOMAIN?teamId=$VERCEL_ORG_ID" 2>/dev/null)
+
+ALIASED_DEPLOYMENT_ID=$(echo "$ALIAS_JSON" | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); print(d.get('deploymentId') or (d.get('deployment') or {}).get('id') or '')" \
+  2>/dev/null || echo "")
+
+[ -z "$ALIASED_DEPLOYMENT_ID" ] && {
+  echo "[vercel-deploy] Stage 05 failed: could not read aliased deployment id for $PROD_DOMAIN"
+  exit 1
+}
+
+if [ "$ALIASED_DEPLOYMENT_ID" != "$NEW_DEPLOYMENT_ID" ]; then
+  echo "[vercel-deploy] Stage 05 failed: $PROD_DOMAIN is aliased to $ALIASED_DEPLOYMENT_ID, expected $NEW_DEPLOYMENT_ID"
+  exit 1
+fi
+
+echo "[vercel-deploy] Stage 05 alias check passed — $PROD_DOMAIN -> $ALIASED_DEPLOYMENT_ID"
+
+# Optional: when VERSION_CHECK_PATH is set, confirm the served build matches this commit.
+if [ -n "$VERSION_CHECK_PATH" ]; then
+  VERSION_JSON=$(curl -sf --max-time 15 "https://$PROD_DOMAIN$VERSION_CHECK_PATH" 2>/dev/null)
+  BUILD_ID=$(echo "$VERSION_JSON" | python3 -c \
+    "import sys,json; d=json.load(sys.stdin); print(d.get('buildId',''))" \
+    2>/dev/null || echo "")
+  HEAD_SHA=$(git rev-parse HEAD)
+
+  [ -z "$BUILD_ID" ] && {
+    echo "[vercel-deploy] Stage 05 failed: no buildId in response from $VERSION_CHECK_PATH"
+    exit 1
+  }
+
+  case "$HEAD_SHA" in
+    "$BUILD_ID"*)
+      echo "[vercel-deploy] Stage 05 version check passed — buildId $BUILD_ID matches HEAD $HEAD_SHA"
+      ;;
+    *)
+      echo "[vercel-deploy] Stage 05 failed: buildId $BUILD_ID is not a prefix of HEAD $HEAD_SHA"
+      exit 1
+      ;;
+  esac
+else
+  echo "[vercel-deploy] Stage 05 version check skipped — VERSION_CHECK_PATH not set"
+fi
+
+echo "[vercel-deploy] Stage 05 complete — production domain verified"
 ```
 
 After the verification command, emit the matching resolved marker as your final full assistant

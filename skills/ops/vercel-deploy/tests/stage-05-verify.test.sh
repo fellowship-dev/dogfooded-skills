@@ -162,4 +162,28 @@ assert_eq 1 "$EXIT" http-500-still-fails
 assert_contains "$OUTPUT" "returned HTTP 500" http-500-message
 printf 'PASS http-status-check-still-gates\n'
 
+# Scenario 6: the alias-lookup curl itself fails (network/timeout) — must fail closed, naming the
+# lookup failure distinctly from a stale-alias id mismatch. Exercises the mock's ALIAS_API_FAIL
+# injection, which existed but was never set by any scenario before this one.
+HTTP_STATUS_MOCK=200
+ALIAS_API_FAIL=true
+OUTPUT=$(run_stage05) && EXIT=0 || EXIT=$?
+assert_eq 1 "$EXIT" alias-api-failure-fails
+assert_contains "$OUTPUT" "could not read aliased deployment id" alias-api-failure-message
+ALIAS_API_FAIL=false
+printf 'PASS alias-api-failure-fails-closed\n'
+
+# Scenario 7: the version-check curl itself fails when VERSION_CHECK_PATH is set — must fail
+# closed, naming the missing buildId distinctly from a buildId-prefix mismatch. Exercises the
+# mock's VERSION_API_FAIL injection, which existed but was never set by any scenario before this.
+printf '{"alias":"pylot.fellowship.dev","deploymentId":"%s"}' "$NEW_ID" > "$MOCK_DIR/alias_response.json"
+VERSION_CHECK_PATH=/api/version
+VERSION_API_FAIL=true
+OUTPUT=$(run_stage05) && EXIT=0 || EXIT=$?
+assert_eq 1 "$EXIT" version-api-failure-fails
+assert_contains "$OUTPUT" "no buildId in response" version-api-failure-message
+VERSION_API_FAIL=false
+unset VERSION_CHECK_PATH
+
+printf 'PASS version-api-failure-fails-closed\n'
 printf 'PASS stage-05-verify (pylot#3690)\n'

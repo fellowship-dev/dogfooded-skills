@@ -236,7 +236,7 @@ rather than an elaborate handoff narrative. Never override an actual access deni
 A worker is a Fargate devbox running the target repo. Ownership is by scope:
 `spawn` and `list` need **exactly one** of `--mission` / `--conversation`; the
 per-worker verbs take `--mission` or fall back to the unscoped `/workers/:wid`
-route. Verify flags with `--help` — image CLIs vary in age.
+route.
 
 ### 1. Preflight the repo
 
@@ -296,16 +296,9 @@ the worker's installed commands and skills and the repo's instructions — local
 skills are not installed remotely. An `Unknown command` result is a failed turn
 even when the harness reports exit code 0.
 
-Two boot failures, both fixable without archaeology:
-- Prompt queues forever, `view` shows `queued → idle`, `last_exit_code: -1`,
-  `session_id: null`, frozen `heartbeat_at`, and `/ecs/pylot-workers` has no
-  `[worker-prompt-daemon]` boot line → the worker image predates the prompt
-  daemon. `pylot deploy build-worker <org/repo>` and respawn.
+One boot failure, fixable without archaeology:
 - A turn fails `403 unknown job` / `unknown devbox worker` → proxy-principal
   regression; check the worker row's `job_id` and file it against the gateway.
-
-If `--wait` / `--follow` / `output` are absent from `pylot workers prompt --help`,
-this container's CLI predates them: poll `view` on a sleep loop, or use §7.
 
 In a chat/Lambda runtime there is no budget to block on `--wait` — never busy-poll.
 Prompt, then schedule a wake (see Async Wake Pattern) and re-check `view` next turn.
@@ -375,27 +368,6 @@ Nothing outside the operator JWT is capability-gated, but handler-level org fenc
 still apply to org-scoped tokens. **Inside a mission, always pass
 `--mission "$PYLOT_JOB_ID"`** — that one habit avoids every operator 403 above.
 
-### 7. Fallback when there is no usable CLI
-
-Only for containers whose image carries no `pylot` or one too old for the verb you
-need. `PYLOT_JOB_ID`, `PYLOT_API`/`PYLOT_GATEWAY_URL` and `PYLOT_DISPATCH_TOKEN` are
-set in both operator and mission-worker containers.
-
-```bash
-AUTH=(-H "Authorization: Bearer $PYLOT_DISPATCH_TOKEN" -H "Content-Type: application/json")
-BASE="${PYLOT_API:-$PYLOT_GATEWAY_URL}/missions/${PYLOT_JOB_ID}/workers"
-
-WID=$(curl -s --max-time 90 -X POST "${AUTH[@]}" -d "{\"repo\":\"$REPO\"}" "$BASE" \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("worker_id",""))')
-SEQ=$(curl -s --max-time 30 -X POST "${AUTH[@]}" -d "{\"prompt\":\"$PROMPT\"}" "$BASE/$WID/prompt" \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("turn_seq",""))')
-# poll GET "$BASE/$WID" until turn_state=idle AND turn_seq=$SEQ, then read last_output
-curl -s --max-time 30 -X POST "${AUTH[@]}" "$BASE/$WID/stop" >/dev/null 2>&1 || true
-```
-
-Same routes, same semantics as §2–4. Prefer the CLI wherever it exists — one
-transport, one source of truth.
-
 ## Supervise a run
 
 After starting a worker or prompt, make one immediate compact status check to
@@ -451,10 +423,6 @@ a logged-in `gh` identity or event-ledger routing. Secrets: never in prompts or
 payloads — `pylot secrets`, then reference env var names.
 
 ## Org Setup From a Conversation (admin-action)
-
-> **Requires [pylot#2978](https://github.com/fellowship-dev/pylot/issues/2978)** —
-> `pylot convo admin-action` must be present in the worker image before workers are
-> directed here. Verify: `pylot convo admin-action --help` must succeed in the container.
 
 Session JWTs carry scopes `[dispatch, missions:read, heartbeat]` — `/admin/*` routes
 always 403 by design. `/conversations/:id/admin-action` is a separate authorization
@@ -520,29 +488,6 @@ own conversation turn, not supplied by the worker.
 | `not_org_admin` | Linked GitHub account is not an admin of this org | Immediate ops need an org admin in the thread; confirm-tier: anyone can stage, an org admin must confirm |
 | `terminal_only` | Op would require a credential or secret value | Use the terminal CLI — credentials cannot transit the conversation |
 | `code_expired` | Confirm code is older than 10 minutes | Re-run the original op to get a fresh code |
-
-### Transition-window curl fallback (pre-#2978 images only)
-
-Use this only if the container image predates `pylot convo admin-action`.
-`$CONVERSATION_ID` is set in chat-worker containers. **Use `$PYLOT_API_TOKEN`
-(session JWT) — NOT `$PYLOT_DISPATCH_TOKEN`** (operator token 403s this endpoint
-by design; using it here is the exact mis-behavior pylot#2979 corrects).
-
-```bash
-# immediate op
-curl -s -X POST \
-  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"op\":\"$OP\"}" \
-  "${PYLOT_API:-$PYLOT_GATEWAY_URL}/conversations/$CONVERSATION_ID/admin-action"
-
-# confirm a staged op (after org admin replies with the code)
-curl -s -X POST \
-  -H "Authorization: Bearer $PYLOT_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"code\":\"$CODE\"}" \
-  "${PYLOT_API:-$PYLOT_GATEWAY_URL}/conversations/$CONVERSATION_ID/admin-action/confirm"
-```
 
 ## Automations
 

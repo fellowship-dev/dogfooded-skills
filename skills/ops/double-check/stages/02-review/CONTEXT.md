@@ -5,8 +5,13 @@ This is the ICM win. You run with a clean context containing ONLY the setup hand
 you have NO implementation history, which prevents confirmation bias.
 
 ## Inputs
-- `.procedure-output/double-check/01-setup/handoff.md` — PR metadata, first review (verbatim),
-  changed files, full diff, local checkout dir
+- `.procedure-output/double-check/01-setup/handoff.md` — PR metadata, receipt, local checkout
+  dir, and the paths of the four verbatim setup artifacts below
+- The setup artifacts it lists under `## Artifacts`: `pr-body.md` (the claims), `first-review.md`
+  (verbatim), `changed-files.txt` (authoritative manifest) and `diff.patch` (the full diff). They
+  are setup output, not orchestration history: reading them keeps the clean context. Read
+  `diff.patch` in full (page through it with offsets when it is long); never judge a claim
+  against a part you did not read.
 
 Do NOT request or expect orchestration history. This handoff is everything at the start of review;
 before writing your verdict you must independently refresh the PR comments as described below.
@@ -17,7 +22,7 @@ a single consolidated verdict. This is NOT split per-file or per-dimension. In t
 
 0. **Reconcile the PR's claims against the diff.** The title and body are claims; the diff is the
    only evidence. Claims with no code behind them are the defect. BLOCKING — see step 2 below.
-1. **Verify the first review's claims.** For each finding in the setup handoff's "First Review",
+1. **Verify the first review's claims.** For each finding in the setup's `first-review.md`,
    judge whether it is accurate against the actual diff.
 2. **Find missed edge cases.** Surface correctness/security/spec issues the first review did NOT
    catch — read the diff carefully and build a mental model of what changed and why.
@@ -41,11 +46,11 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    Extract every *concrete, checkable* claim from the PR title and body: named files/modules,
    endpoints or routes, functions, migrations, config keys, test files and test counts,
    `Closes`/`Implements`/`Fixes` issue refs, and any staging/deploy evidence (build ids,
-   `deployed_sha`, smoke results). Check each against the setup handoff's **Changed Files**
-   manifest and **Full Diff**. Also extract **diff-provenance / range claims** — assertions about
+   `deployed_sha`, smoke results). Check each against the setup's `changed-files.txt`
+   manifest and `diff.patch`. Also extract **diff-provenance / range claims** — assertions about
    a commit range other than this PR's own merge-base diff, e.g. what a base-branch merge brought
-   in, or "no source delta since `<sha>`". These have no evidence source in the manifest or Full
-   Diff; check them instead against a range diff terminating at the handoff's `Setup head SHA`
+   in, or "no source delta since `<sha>`". These have no evidence source in the manifest or
+   diff file; check them instead against a range diff terminating at the handoff's `Setup head SHA`
    (never local `HEAD`, which the setup stage may have advanced past that SHA by merging the base
    branch in): `git diff --stat <cited-sha>..<Setup head SHA>` in the `REPO_DIR` the handoff
    records under `## Local Checkout` — stage 01's success criteria guarantee this checkout exists
@@ -81,8 +86,9 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    (**undisclosed**). Record them; escalate to needs-work only when they are risky or outside the
    PR's stated scope.
 
-   If the setup handoff flags the diff as TRUNCATED, or the Changed Files manifest is missing, you
-   cannot reconcile: set `claims_reconciled: unknown` and say which claims you could not check.
+   If `diff.patch` or `changed-files.txt` is missing, empty while the manifest lists files, or
+   flagged incomplete by the setup handoff, you cannot reconcile: set `claims_reconciled: unknown`
+   and say which claims you could not check.
    Stage 04 re-checks those against the live PR.
 
    Be precise, not pedantic: only claims a reader could verify against the diff. Wording, tone,

@@ -20,7 +20,7 @@ Format:
 
 ## Source PR
 
-[PR body verbatim]
+[PR body verbatim — from the live `gh pr view` read in stage 04, or setup's `pr-body.md`]
 
 ## Claims vs Diff
 

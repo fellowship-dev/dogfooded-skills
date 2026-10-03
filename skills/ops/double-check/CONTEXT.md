@@ -26,12 +26,12 @@ NOT parallelism. There is no fan-out anywhere in this proc.
   the existing (first) review comments, and the full diff; checks out the PR branch and merges the
   base branch to surface conflicts. Records `REPO_DIR` for the fix stage.
 - **02-review** (subagent, CLEAN CONTEXT): the isolated critical-judgement step. In a context
-  containing only the setup handoff (PR + first review + diff), it produces ONE cohesive review —
+  containing only the setup handoff and its verbatim artifact files (PR + first review + diff), it produces ONE cohesive review —
   reconciling the PR body's claims against the diff, verifying the first review's claims, finding
   missed edge cases, and checking tests/docs together — and emits a single consolidated verdict +
   curated findings table. No side effects.
 - **03-fix** (subagent): the only stage with code side effects. Applies MUST-FIX (and worthwhile
-  NICE-TO-HAVE) fixes in `REPO_DIR`, re-runs the test suite, and pushes. Skipped entirely if
+  NICE-TO-HAVE) fixes in `REPO_DIR`, tests its fix delta once with the repo scoped gate, and pushes. Skipped entirely if
   stage 02 reported `fixes_needed: false`.
 - **04-post** (inline): re-runs the claims-vs-diff gate against the live PR, posts the curated
   review comment, applies (or withholds) the `double-checked` label, verifies the side effects

@@ -34,6 +34,8 @@ skills/
 
 Skill names are kebab-case, lowercase. Use the shortest name that's unambiguous: `deps-runner`, not `dependency-update-runner`.
 
+**`-runner` suffix = operator-side dispatcher.** A skill named `*-runner` runs outside a devbox and drives one: it spawns or targets a worker, prompts, polls, verifies and reports, and never executes its engine inline. Its engine carries no suffix and must work inside any checkout with no gateway access. The suffix is the `pylot skills list --kind runner` filter contract, so do not use it for anything else.
+
 ## Frontmatter
 
 Every `SKILL.md` must start with YAML frontmatter:
@@ -51,6 +53,8 @@ allowed-tools: Read, Write, Bash, Glob, Grep  # optional — restrict tool use
 **`name`** — matches the directory name. No spaces, no uppercase.
 
 **`description`** — one line, plain English. The agent reads this to decide whether to invoke the skill. Bad: "Manage environments." Good: "Claim, start, SSH into, and release Gitpod cloud environments for CI/agent workloads."
+
+**`requires_worker_skills`** — runners only: the engine skills the worker must have, as a flat inline list (`requires_worker_skills: [ce-debug]`; block-style YAML lists are not read). Pylot resolves each to its catalog origin and installs it at user scope when the mission worker boots, failing the boot when it cannot. Every listed engine must be in the org's skills catalog with an `owner/repo` origin.
 
 **`allowed-tools`** — whitelist of tools this skill may use. Omit to allow all tools. Set when the skill should be restricted (e.g., a read-only audit skill).
 

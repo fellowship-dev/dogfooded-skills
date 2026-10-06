@@ -44,7 +44,7 @@ case "$SEVERITY" in ''|P0|P1|P2|P3) ;; *) die "--severity must be P0|P1|P2|P3" ;
 CAP="${FINDING_CAP:-3}"
 CYCLE="${FINDING_CYCLE:-${PYLOT_JOB_ID:-$(date -u +%Y%m%dT%H)}}"
 STATE_DIR="${FINDING_STATE_DIR:-${TMPDIR:-/tmp}/file-finding}"
-COUNT_FILE="$STATE_DIR/$(printf '%s' "$REPO|$CYCLE" | tr -c 'A-Za-z0-9._-' '_').count"
+COUNT_FILE="$STATE_DIR/$(printf '%s' "$CYCLE" | tr -c 'A-Za-z0-9._-' '_').count"
 p() { if [ "$DRY" = 1 ]; then echo "would-$*"; else echo "$*"; fi; }
 
 # 1. Same root cause already open → comment there.
@@ -70,6 +70,15 @@ digest() { # reason
     num=$(gh issue create --repo "$REPO" --title "$dtitle" --label digest,no-automation \
       --body "Non-blocking automation findings for $week, one comment each. Promote a finding to its own issue only when it becomes P0/P1 or blocks a PR/release." \
       | sed -E 's#.*/issues/([0-9]+).*#\1#')
+    # One open digest per repo: retire earlier weeks.
+    for old in $(gh issue list --repo "$REPO" --state open --label digest --limit 20 \
+        --json number,title --jq ".[] | select(.title != \"$dtitle\") | .number"); do
+      gh issue close "$old" --repo "$REPO" --comment "Superseded by #$num." >/dev/null || true
+    done
+  fi
+  # Same finding already in this week's digest → nothing to add.
+  if gh issue view "$num" --repo "$REPO" --json comments --jq '.comments[].body' | grep -Fqx "### $TITLE"; then
+    p "digest $num duplicate"; return
   fi
   gh issue comment "$num" --repo "$REPO" --body "$(printf '### %s\n\n_severity: %s · routed: %s · cycle: %s_\n\n%s' \
     "$TITLE" "${SEVERITY:-none}" "$1" "$CYCLE" "$BODY")" >/dev/null

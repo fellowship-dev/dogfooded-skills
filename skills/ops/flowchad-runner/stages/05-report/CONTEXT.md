@@ -150,7 +150,7 @@ carrying the fingerprint gets a comment (new date, target SHA, failing steps, ev
 otherwise a new issue, capped at 3 per run with the overflow going to the weekly digest:
 ```bash
 FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
-"$FF" --repo "$REPO" --blocking --search "flowchad:${FINGERPRINT}" \
+bash "$FF" --repo "$REPO" --blocking --search "flowchad:${FINGERPRINT}" \
   --title "FlowChad failure: ${FLOW_NAME} — ${REPORT_DATE}" \
   --label "ready-to-work" \
   --body "Flow ${FLOW_NAME} failed during automated walk on ${REPORT_DATE}.

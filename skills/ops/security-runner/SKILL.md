@@ -167,7 +167,7 @@ process_p0_p1_alert() {
 
   if [ "$patched" = "none" ]; then
     # No patch available — create issue with upgrade path
-    "$FF" --repo "$REPO" --severity "$priority" --search "\"security:\" \"$pkg\"" \
+    bash "$FF" --repo "$REPO" --severity "$priority" --search "\"$pkg\" label:security" \
       --title "security: no patch for $pkg ($priority)" \
       --label security --label "$priority" \
       --body "## Vulnerability\n\nPackage: \`$pkg\`\nPriority: $priority\nDependabot alert: $alert_url\n\nNo patched version available. Options:\n- [ ] Pin to last non-vulnerable version\n- [ ] Find alternative package\n- [ ] Remove dependency if unused\n\ncc: @maxfindel" 2>/dev/null
@@ -175,7 +175,7 @@ process_p0_p1_alert() {
     # No public GitHub API endpoint exists to trigger Dependabot PR creation directly.
     # Create a tracking issue and direct the team to bump manually or await Dependabot's schedule.
     echo "  → Patch available ($patched) — creating tracking issue for $pkg"
-    "$FF" --repo "$REPO" --severity "$priority" --search "\"security:\" \"$pkg\"" \
+    bash "$FF" --repo "$REPO" --severity "$priority" --search "\"$pkg\" label:security" \
       --title "security: bump $pkg to $patched ($priority)" \
       --label security --label "$priority" \
       --body "## Action Required\n\nPackage: \`$pkg\`\nFixed in: \`$patched\`\nPriority: $priority\nDependabot alert: $alert_url\n\nDependabot has not auto-created a PR. Options:\n- [ ] Wait for Dependabot's next scheduled run (Mon 05:00)\n- [ ] Manually bump \`$pkg\` to \`$patched\` and open a PR\n\nMonitor: https://github.com/$REPO/security/dependabot" 2>/dev/null && \
@@ -195,7 +195,7 @@ process_p2_backlog_alert() {
   local priority="$5"
 
   # Non-blocking: the helper comments on an open issue for $pkg or appends to the weekly digest.
-  "$FF" --repo "$REPO" --search "\"security:\" \"$pkg\"" \
+  bash "$FF" --repo "$REPO" --search "\"$pkg\" label:security" \
     --title "security: upgrade $pkg ($severity — $priority)" \
     --body "## Vulnerability\n\nPackage: \`$pkg\`\nSeverity: $severity\nSummary: $summary\nDependabot alert: $alert_url\n\nBatch in next monthly dependency cycle. Verify no breaking changes before upgrading." 2>/dev/null
 }

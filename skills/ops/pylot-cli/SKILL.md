@@ -445,7 +445,7 @@ every operator:
 
 ```bash
 FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
-"$FF" --repo <org/repo> --title "<title>" --search "<root-cause terms>" \
+bash "$FF" --repo <org/repo> --title "<title>" --search "<root-cause terms>" \
   --body-file <evidence.md> [--severity P0|P1|P2|P3] [--incident] [--blocking] [--label <l>]...
 ```
 
@@ -455,9 +455,11 @@ It enforces the owner rule (2026-10-06, cut issue inflow):
    text or fingerprint) gets a comment instead of a new issue.
 2. A finding that is not P0/P1, not an incident and not blocking a PR or
    release goes to the repo's one rolling `Weekly findings digest — YYYY-Www`
-   issue (label `digest`) as a comment.
-3. At most 3 new issues per filer run (`FINDING_CYCLE`, default the mission
-   id). P0 and `--incident` are exempt; over-cap findings go to the digest.
+   issue (label `digest`) as a comment, once per title. A new week's digest
+   closes the previous one.
+3. At most 3 new issues per filer run across all repos (`FINDING_CYCLE`,
+   default the mission id). P0 and `--incident` are exempt; over-cap findings
+   go to the digest.
 
 It prints `commented N`, `digest N <reason>` or `created N`; cite that number.
 `--dry-run` writes nothing. Without the helper, follow the same three rules by

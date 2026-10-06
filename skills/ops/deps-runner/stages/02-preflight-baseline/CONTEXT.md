@@ -79,7 +79,7 @@ if [ "$HAS_BOOSTER" = "1" ]; then
     pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
       "Run: git merge --abort. Report the exit code."
     # Shared filing helper (pylot-cli): an open conflict issue gets a comment instead.
-    "${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh" --repo "$REPO" \
+    bash "${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh" --repo "$REPO" \
       --blocking --search "\"booster/main merge conflict\"" \
       --title "deps-runner: booster/main merge conflict on $(date +%Y-%m-%d)" \
       --body "The deps-runner detected a merge conflict when syncing \`booster/main\` into \`main\` on \`$REPO\`.

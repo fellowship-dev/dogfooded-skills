@@ -412,7 +412,7 @@ For D/F domains, record the finding through the shared filing helper (`pylot-cli
 issue for the same domain or appends to the weekly `digest` issue — it never opens a new one:
 ```bash
 FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
-GH_TOKEN=$GH_TOKEN "$FF" --repo "$FULL_REPO" \
+GH_TOKEN=$GH_TOKEN bash "$FF" --repo "$FULL_REPO" \
   --title "Entropy: {domain} docs critically stale (grade {grade})" \
   --search "\"{domain} docs critically stale\"" \
   --body "Domain **{domain}** scored **{grade}** in the weekly entropy scan.

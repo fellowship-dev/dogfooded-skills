@@ -25,7 +25,7 @@ Stage 05 (report) runs inline in the orchestrator so it can emit the outcome mar
 - Stage 01: validates the environment contract, resolves run context (TARGET_URL via trigger,
   selective on-demand preview, deploy-wait, browser/Navvi/persona, FLOWS_TO_RUN). First gate —
   invalid identity/target, no browser for interactive work, no URL, or failed deploy → blocked.
-- Stage 02: pure read/validate. Flow file missing → blocked (issue created). Also resolves the
+- Stage 02: pure read/validate. Flow file missing → blocked (finding filed via `file-finding.sh`). Also resolves the
   evidence backend, which defaults to `assets` (most checked-in contracts declare none).
 - Stage 03: the only stage that drives a browser — and it does so on a **worker devbox it
   spawns**, because the operator image has no browser libraries. **Sequential per-flow loop** —

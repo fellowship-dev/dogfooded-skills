@@ -404,15 +404,17 @@ Include the Signal Applicability table (see step 5) at the end of the comment.
 {Signal applicability table}
 
 ### Action Items
-{Domains graded D or F → create a GitHub issue if one doesn't already exist}
+{Domains graded D or F → recorded via file-finding.sh (existing issue or weekly digest)}
 ```
 
-For D/F domains, create a GitHub issue in the repo:
+For D/F domains, record the finding through the shared filing helper (`pylot-cli` →
+`scripts/file-finding.sh`). Stale docs are non-blocking, so the helper comments on an open
+issue for the same domain or appends to the weekly `digest` issue — it never opens a new one:
 ```bash
-GH_TOKEN=$GH_TOKEN gh issue create \
-  --repo $FULL_REPO \
+FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
+GH_TOKEN=$GH_TOKEN "$FF" --repo "$FULL_REPO" \
   --title "Entropy: {domain} docs critically stale (grade {grade})" \
-  --label "documentation" \
+  --search "\"{domain} docs critically stale\"" \
   --body "Domain **{domain}** scored **{grade}** in the weekly entropy scan.
 
 **Missing signals:**
@@ -423,5 +425,3 @@ GH_TOKEN=$GH_TOKEN gh issue create \
 
 Fix: update \`docs/code-structure.md\` and run \`/hookshot\` to regenerate hooks."
 ```
-
-Check for existing open issues before creating (dedup by title prefix).

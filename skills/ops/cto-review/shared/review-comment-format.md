@@ -79,4 +79,4 @@ COMMENT_EOF
 | LGTM | ✅ | `approved` | Yes |
 | REWORK | 🔄 | `needs-work` | No |
 | BLOCKED | ⏸️ | `needs-work` | No |
-| NEW_ISSUE | 📋 | — | Approve PR on its own merits, create separate issue |
+| NEW_ISSUE | 📋 | — | Approve PR on its own merits, record the separate work via `file-finding.sh` |

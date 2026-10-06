@@ -78,7 +78,9 @@ if [ "$HAS_BOOSTER" = "1" ]; then
     echo "==> booster/main merge CONFLICT — aborting"
     pylot workers prompt "$WID" --mission "$PYLOT_JOB_ID" --wait --timeout 60 \
       "Run: git merge --abort. Report the exit code."
-    gh issue create --repo "$REPO" \
+    # Shared filing helper (pylot-cli): an open conflict issue gets a comment instead.
+    "${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh" --repo "$REPO" \
+      --blocking --search "\"booster/main merge conflict\"" \
       --title "deps-runner: booster/main merge conflict on $(date +%Y-%m-%d)" \
       --body "The deps-runner detected a merge conflict when syncing \`booster/main\` into \`main\` on \`$REPO\`.
 
@@ -89,7 +91,7 @@ $MERGE_RESULT
 \`\`\`
 
 Deps run aborted." \
-      --label "conflict,deps"
+      --label conflict --label deps
     echo "==> Issue filed. Skipping deps run for this repo."
     BOOSTER_SYNC_STATUS="conflict-aborted — issue filed"
     # STOP — do not process any PRs (record this in handoff; orchestrator routes to report)

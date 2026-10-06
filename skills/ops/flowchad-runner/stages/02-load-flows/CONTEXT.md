@@ -31,7 +31,9 @@ cat .flowchad/flows/${FLOW}.yml
 If a flow file does not exist:
 1. Post a comment to the PR (if `pr_number` set):
    "flowchad-runner: flow `${FLOW}` not found in .flowchad/flows/"
-2. Create a GitHub issue with label `ready-to-work`: "Missing FlowChad flow: ${FLOW}"
+2. Record it through the shared filing helper (`pylot-cli` → `scripts/file-finding.sh`, non-blocking,
+   so it lands on an open issue or the weekly digest): `--title "Missing FlowChad flow: ${FLOW}"
+   --search "\"Missing FlowChad flow: ${FLOW}\""`
 3. Mark the flow as `missing` in the handoff. If ALL requested flows are missing, set
    `blocked: true` so the orchestrator stops; otherwise drop the missing flow from the
    validated list and continue with the rest.

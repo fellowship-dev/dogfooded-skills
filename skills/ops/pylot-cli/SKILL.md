@@ -437,6 +437,33 @@ The coordinator owns the remaining delivery tail after worker completion.
 Explicit PR-only tasks can finish at a verified PR. When verification exposes a
 reusable defect, correct the owning skill rather than working around it here.
 
+## Filing findings — never a raw `gh issue create`
+
+Every automated finding (a bug, gap or follow-up noticed during any mission,
+stage or review) goes through this helper, which ships with this skill on
+every operator:
+
+```bash
+FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
+"$FF" --repo <org/repo> --title "<title>" --search "<root-cause terms>" \
+  --body-file <evidence.md> [--severity P0|P1|P2|P3] [--incident] [--blocking] [--label <l>]...
+```
+
+It enforces the owner rule (2026-10-06, cut issue inflow):
+
+1. An open issue matching `--search` (the root cause: symbol, file, error
+   text or fingerprint) gets a comment instead of a new issue.
+2. A finding that is not P0/P1, not an incident and not blocking a PR or
+   release goes to the repo's one rolling `Weekly findings digest — YYYY-Www`
+   issue (label `digest`) as a comment.
+3. At most 3 new issues per filer run (`FINDING_CYCLE`, default the mission
+   id). P0 and `--incident` are exempt; over-cap findings go to the digest.
+
+It prints `commented N`, `digest N <reason>` or `created N`; cite that number.
+`--dry-run` writes nothing. Without the helper, follow the same three rules by
+hand. Exempt: tracking issues a stage maintains by a fixed label (one per
+label), and closed-issue reopens.
+
 ## GitHub Auth Through the CLI
 
 `pylot auth login` stores per-org credentials in `~/.pylot/credentials`;

@@ -48,6 +48,7 @@ jobs:
             ./skills/ops/flowchad-runner/scripts/test_validate_contract.py
             ./skills/ops/hookshot/scripts/test_gate.py
             ./skills/ops/issue-to-prd/evals/test_triage_label_contract.py
+            ./skills/ops/pylot-cli/tests/file-finding.test.sh
             ./skills/ops/review-pr/tests/driving-issue-contract.test.sh
             ./skills/ops/seo-ops/scripts/test_audit.py
             ./skills/ops/speckit-runner/tests/invariant-matrix.test.sh

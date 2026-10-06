@@ -2,7 +2,7 @@
 # Speed contract for double-check (perf: double-check mission time).
 # Pins the three measured fixes so a later edit cannot silently bring the cost back:
 #   1. stage 01 writes the verbatim artifacts by shell redirection, not through the handoff;
-#   2. the stage 01 base-merge push skips the pre-push test gate (it authors no code);
+#   2. stage 01 never pushes (its base merge is a local check; see base-merge-no-push.test.sh);
 #   3. stage 03 tests its fix delta once, waits on the process, and never sleep-polls.
 set -euo pipefail
 
@@ -31,9 +31,8 @@ need "$S02" 'changed-files.txt' review-reads-manifest-file
 need "$S02" 'first-review.md' review-reads-first-review-file
 need "$S02" 'pr-body.md' review-reads-body-file
 
-# 2. Base-merge push skips the hook; every plain push in stage 01 is --no-verify.
-need "$S01" 'git push --no-verify origin $PR_BRANCH' setup-merge-push-no-verify
-forbid_re "$S01" '^[[:space:]]*git push origin' setup-has-no-hooked-push
+# 2. Stage 01 pushes nothing: no hooked push, and no base-merge push either (pylot#3738).
+forbid_re "$S01" '^[[:space:]]*git push' setup-never-pushes
 
 # 3. Fix delta, once; process-bound waits; no fixed long sleeps anywhere in the skill.
 need "$S03" 'PYLOT_GATE_BASE_SHA=$PRE_FIX_HEAD_SHA' fix-scoped-to-own-commits

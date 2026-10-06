@@ -43,7 +43,7 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 ### Patch-id carry and delta review (pylot#3738)
 
 Every verdict receipt records the head **and** the PR's patch-id
-(`git diff base...head | git patch-id --stable`). A head change alone never costs a review:
+(`git diff base...head | git patch-id --verbatim`). A head change alone never costs a review:
 
 - **Same patch-id** (rebase, merge-from-base): the verdict and `double-checked` carry to the new
   head with a one-line "verdict carried: patch-id unchanged" note. Setup reports

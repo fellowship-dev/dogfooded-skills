@@ -33,7 +33,7 @@ printf '%s\n' 1 resolved 3 4 5 > "$R/a.txt"; g add a.txt; g commit -qm resolve -
 H_CONFLICT=$(g rev-parse HEAD)
 diff_of() { git -C "$R" diff "main...$1"; }
 for h in "$H1" "$H_REBASE" "$H_REWORK" "$H_CONFLICT"; do diff_of "$h" > "$TMP/$h.diff"; done
-P1=$(git patch-id --stable < "$TMP/$H1.diff" | awk '{print $1}')
+P1=$(git patch-id --verbatim < "$TMP/$H1.diff" | awk '{print $1}')
 
 # Fake gh: the live head is $LIVE; `gh pr diff` serves that head's three-dot diff.
 mkdir -p "$TMP/bin"

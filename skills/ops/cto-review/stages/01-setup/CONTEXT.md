@@ -61,7 +61,7 @@ gh pr view $PR --repo $REPO --json number,title,body,headRefName,headRefOid,base
 CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName')
 
-# Patch-id of the PR's own diff (`gh pr diff | git patch-id --stable`, pylot#3738). Shared with
+# Patch-id of the PR's own diff (`gh pr diff | git patch-id --verbatim`, pylot#3738). Shared with
 # double-check, whose verdict receipts carry it. Empty when unreadable: only the exact head binds.
 for d in "$HOME/.claude/skills/double-check/shared" skills/double-check/shared skills/ops/double-check/shared; do
   [ -f "$d/exact-head-receipt.sh" ] && source "$d/exact-head-receipt.sh" && break

@@ -172,7 +172,7 @@ handoff with `setup_ok: false` and the reason — the orchestrator will treat th
 ### Patch-id and review scope (pylot#3738)
 
 A verdict is bound to the PR's own diff as well as its head. The patch-id is
-`git diff base...head | git patch-id --stable`; `gh pr diff` is the same three-dot diff. A
+`git diff base...head | git patch-id --verbatim`; `gh pr diff` is the same three-dot diff. A
 rebase or a clean merge-from-base (including the one above) keeps it, so it never costs a review.
 Compare it with the last verdict receipt to pick one of three scopes:
 
@@ -212,12 +212,15 @@ else
     fi
   fi
 fi
-if [ "$REVIEW_SCOPE" = delta ]; then
+if [ "$REVIEW_SCOPE" = delta ] && [ "$DELTA_COUNT" -gt 0 ]; then
   # The PR's current hunks for the delta files, and what changed in them since the last verdict.
   tr '\n' '\0' < "$OUT/delta-files.txt" | xargs -0 git -C "$REPO_DIR" diff "origin/$BASE_BRANCH...$CURRENT_HEAD_SHA" -- > "$OUT/delta.patch"
   tr '\n' '\0' < "$OUT/delta-files.txt" | xargs -0 git -C "$REPO_DIR" diff "$DELTA_FROM" "$CURRENT_HEAD_SHA" -- > "$OUT/delta-range.patch"
   # On a restart, the orchestrator saved the previous cycle's stage-02 handoff: its findings are
   # what the new commits are meant to fix.
+fi
+if [ "$REVIEW_SCOPE" = delta ]; then
+  [ "$DELTA_COUNT" -gt 0 ] || : > "$OUT/delta.patch"   # no hunk changed: only the findings re-check
   [ -f "$(dirname "$OUT")/prior-review.md" ] && cp "$(dirname "$OUT")/prior-review.md" "$OUT/prior-review.md"
 fi
 echo "[setup] patch-id=${SETUP_PATCH_ID:-unknown} prior=${PRIOR_HEAD:-none}/${PRIOR_PATCH_ID:--}/${PRIOR_VERDICT:--} scope=$REVIEW_SCOPE"

@@ -49,15 +49,18 @@ dc_live_promotion_decision() {
 }
 
 # ---- Patch-id receipts -------------------------------------------------------------------------
-# A PR's patch-id is `git diff <base>...<head> | git patch-id --stable`: the PR's own diff from its
-# merge-base, with line numbers and whitespace ignored. `gh pr diff` is the same three-dot diff, so
-# both sources give the same id. A rebase or clean merge-from-base keeps it; any change to the PR's
-# own diff, including a conflict resolution that alters a hunk, changes it.
+# A PR's patch-id is `git diff <base>...<head> | git patch-id --verbatim`: the PR's own diff from its
+# merge-base, with line numbers ignored. `--verbatim`, not `--stable`: `--stable` ignores
+# whitespace, so an indentation-only rework (a Python block move) would carry unreviewed. Needs git
+# 2.39+; an older git prints nothing, which never carries. `gh pr diff` is the same three-dot diff,
+# so both sources give the same id. A rebase or clean merge-from-base keeps it; any change to the
+# PR's own diff, including a conflict resolution that alters a hunk, changes it. `gh pr diff`
+# refuses very large PRs (HTTP 406): those never carry and are reviewed as before.
 
 # stdin: a unified diff. Prints its 40-hex patch-id, or nothing (empty or unreadable diff).
 dc_patch_id_of_diff() {
   local pid
-  pid=$(git patch-id --stable 2>/dev/null | awk 'NR==1{print $1}')
+  pid=$(git patch-id --verbatim 2>/dev/null | awk 'NR==1{print $1}')
   if dc_is_full_sha "$pid"; then printf '%s\n' "$pid"; fi
   return 0
 }
@@ -77,10 +80,15 @@ dc_live_patch_receipt() {
 
 # Latest double-check verdict receipt on the PR, from its `pylot:exact-head-promoted` marker:
 # prints "<head> <patch-id|-> <verdict|->". Legacy markers carry only the head. Prints nothing when
-# no receipt exists or the comments cannot be read.
+# no receipt exists or the comments cannot be read. Only markers posted by the pipeline's own
+# account count (DC_RECEIPT_AUTHORS, space-separated logins, default `pylot-app`): anyone can type a
+# marker into a comment, and a forged `verdict=ready` would carry an unreviewed diff.
 dc_latest_verdict_receipt() {
   local pr=$1 repo=$2
-  gh pr view "$pr" --repo "$repo" --json comments --jq '.comments[].body' 2>/dev/null \
+  gh pr view "$pr" --repo "$repo" --json comments 2>/dev/null \
+    | jq -r --arg authors "${DC_RECEIPT_AUTHORS:-pylot-app}" \
+        '.comments[] | select(.author.login as $a | ($authors | split(" ") | index($a))) | .body' \
+        2>/dev/null \
     | grep -F 'pylot:exact-head-promoted' \
     | awk '{
         head = "-"; pid = "-"; verdict = "-"

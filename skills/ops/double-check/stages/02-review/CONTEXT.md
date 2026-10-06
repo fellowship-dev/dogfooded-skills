@@ -30,6 +30,8 @@ review it again. In delta mode:
   its file sits.
 - Steps 0 (claims vs diff) and 6 (live refresh) run as usual. The claims check stays against the
   full manifest: the body may have changed with the rework.
+- With zero delta files (a re-run after a body-only edit), only the findings re-check and the
+  claims check apply.
 - Record `review_scope: delta` and the delta file count in your handoff.
 
 `review_scope: full` (or absent) is the full review below. `carry` never reaches this stage.

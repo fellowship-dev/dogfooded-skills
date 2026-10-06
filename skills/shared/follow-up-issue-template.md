@@ -4,6 +4,12 @@ Use this contract when a pull request closes its driving issue but deliberately 
 named acceptance criteria. Both the pull request author and reviewer must link the created follow-up
 from the closing pull request.
 
+## Search first
+
+Before creating, search open issues for `"Follow-up of #N"`. If one exists, append the newly
+deferred criteria to it as a comment (verbatim, same headings) and link that issue from the
+closing pull request. One driving issue never has two open follow-ups.
+
 ## Required format
 
 - The title begins exactly `Follow-up of #N`, where `N` is the driving issue number.

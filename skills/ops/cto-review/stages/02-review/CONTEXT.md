@@ -209,7 +209,7 @@ Decide the verdict using this table:
 | LGTM | All checks pass, no blocking issues | `approved` label; merge (or label per merge_strategy) |
 | REWORK | Code needs specific changes | `needs-work` label; post required fixes |
 | BLOCKED | External dependency or missing info | `needs-work` label; post what is needed, do NOT dispatch |
-| NEW_ISSUE | Review reveals separate work needed | Approve PR on its own merits; flag a separate issue |
+| NEW_ISSUE | Review reveals separate work needed | Approve PR on its own merits; file the separate work through `file-finding.sh` (pylot-cli) — non-blocking, so it lands on an existing issue or the weekly digest |
 
 **Never recommend merge if `ci_classification: block`** — force the verdict to BLOCKED/hold and
 note the classifier reason, regardless of how clean the diff is. `pass` and

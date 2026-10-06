@@ -53,8 +53,8 @@ low                 | backlog           | dismiss  | dismiss
 |---|---|---|
 | P0 | Open fix PR immediately; block deploys if no patch exists | `security` `P0` |
 | P1 | Open fix PR this week | `security` `P1` |
-| P2 | Create issue with upgrade path; batch in monthly cycle | `security` `P2` |
-| Backlog | Create issue, no urgency | `security` |
+| P2 | Weekly findings digest entry (via `file-finding.sh`) with upgrade path; batch in monthly cycle | — |
+| Backlog | Weekly findings digest entry, no urgency | — |
 | Dismiss | Dismiss via API with documented reason | — |
 
 ---

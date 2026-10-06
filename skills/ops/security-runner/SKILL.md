@@ -44,6 +44,9 @@ If alerts endpoint returns 403, the token lacks `security_events` scope or Depen
 REPO="${1:-$PYLOT_REPO}"
 TODAY=$(date +%Y-%m-%d)
 REPORT_PATH="/tmp/security-runner-${REPO//\//-}-${TODAY}.md"
+# Every issue goes through the shared filing helper (pylot-cli): dedupe → comment,
+# non-P0/P1 → weekly digest, max 3 new issues per run (P0 exempt).
+FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
 
 # Check merge strategy — read from Pylot control plane, not target repo
 # (crew.yml lives in $PYLOT_DIR, not in the repos being scanned)
@@ -164,24 +167,24 @@ process_p0_p1_alert() {
 
   if [ "$patched" = "none" ]; then
     # No patch available — create issue with upgrade path
-    gh issue create --repo "$REPO" \
+    bash "$FF" --repo "$REPO" --severity "$priority" --search "\"$pkg\" label:security" \
       --title "security: no patch for $pkg ($priority)" \
-      --label "security,$priority" \
+      --label security --label "$priority" \
       --body "## Vulnerability\n\nPackage: \`$pkg\`\nPriority: $priority\nDependabot alert: $alert_url\n\nNo patched version available. Options:\n- [ ] Pin to last non-vulnerable version\n- [ ] Find alternative package\n- [ ] Remove dependency if unused\n\ncc: @maxfindel" 2>/dev/null
   else
     # No public GitHub API endpoint exists to trigger Dependabot PR creation directly.
     # Create a tracking issue and direct the team to bump manually or await Dependabot's schedule.
     echo "  → Patch available ($patched) — creating tracking issue for $pkg"
-    gh issue create --repo "$REPO" \
+    bash "$FF" --repo "$REPO" --severity "$priority" --search "\"$pkg\" label:security" \
       --title "security: bump $pkg to $patched ($priority)" \
-      --label "security,$priority" \
+      --label security --label "$priority" \
       --body "## Action Required\n\nPackage: \`$pkg\`\nFixed in: \`$patched\`\nPriority: $priority\nDependabot alert: $alert_url\n\nDependabot has not auto-created a PR. Options:\n- [ ] Wait for Dependabot's next scheduled run (Mon 05:00)\n- [ ] Manually bump \`$pkg\` to \`$patched\` and open a PR\n\nMonitor: https://github.com/$REPO/security/dependabot" 2>/dev/null && \
-      echo "  → Tracking issue created for $pkg → $patched"
+      echo "  → Tracking finding recorded for $pkg → $patched"
   fi
 }
 ```
 
-### P2 / Backlog — Create issue
+### P2 / Backlog — Weekly digest entry
 
 ```bash
 process_p2_backlog_alert() {
@@ -191,18 +194,9 @@ process_p2_backlog_alert() {
   local alert_url="$4"
   local priority="$5"
 
-  # Check for existing issue before creating
-  EXISTING=$(gh issue list --repo "$REPO" --state open --label security \
-    --json number,title --jq ".[] | select(.title | test(\"$pkg\"; \"i\")) | .number" 2>/dev/null | head -1)
-
-  if [ -n "$EXISTING" ]; then
-    echo "  → Existing issue #$EXISTING for $pkg — skipping duplicate"
-    return
-  fi
-
-  gh issue create --repo "$REPO" \
+  # Non-blocking: the helper comments on an open issue for $pkg or appends to the weekly digest.
+  bash "$FF" --repo "$REPO" --search "\"$pkg\" label:security" \
     --title "security: upgrade $pkg ($severity — $priority)" \
-    --label "security,$priority" \
     --body "## Vulnerability\n\nPackage: \`$pkg\`\nSeverity: $severity\nSummary: $summary\nDependabot alert: $alert_url\n\nBatch in next monthly dependency cycle. Verify no breaking changes before upgrading." 2>/dev/null
 }
 ```

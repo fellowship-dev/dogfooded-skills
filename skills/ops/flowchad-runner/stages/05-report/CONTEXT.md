@@ -143,14 +143,14 @@ open issues before creating one, especially in cron mode:
 ```bash
 FINGERPRINT=$(printf '%s|%s|%s|%s' "$REPO" "$TARGET_KIND" "$FLOW_NAME" "$FAILED_EXPECTATION" \
   | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])')
-EXISTING_ISSUE=$(gh issue list --repo "$REPO" --state open \
-  --search "flowchad:${FINGERPRINT} in:body" --json number --jq '.[0].number // empty')
 ```
 
-When found, comment with the new date, target SHA, failing steps, and browser evidence URLs.
-Otherwise create the issue and include `<!-- flowchad:${FINGERPRINT} -->` in its body:
+File through the shared filing helper (`pylot-cli` → `scripts/file-finding.sh`): an open issue
+carrying the fingerprint gets a comment (new date, target SHA, failing steps, evidence URLs);
+otherwise a new issue, capped at 3 per run with the overflow going to the weekly digest:
 ```bash
-gh issue create --repo $REPO \
+FF="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/pylot-cli/scripts/file-finding.sh"
+bash "$FF" --repo "$REPO" --blocking --search "flowchad:${FINGERPRINT}" \
   --title "FlowChad failure: ${FLOW_NAME} — ${REPORT_DATE}" \
   --label "ready-to-work" \
   --body "Flow ${FLOW_NAME} failed during automated walk on ${REPORT_DATE}.
@@ -222,7 +222,7 @@ Failures: {file → reason, or "none"}
   evidence-status line reflects the stage 04 `upload_ok`/counts verbatim.
 - If stage 04 recorded a `conversation_id`, exactly one `slack-post` made with the verdict and one
   bare conversation URL; if it recorded `none`, no post attempted.
-- On any flow failure, a `ready-to-work` issue created and `status=failed` emitted.
+- On any flow failure, the failure is filed through `file-finding.sh` (existing issue, new `ready-to-work` issue, or digest when over cap) and `status=failed` emitted.
 - Cron failures update a matching open issue instead of creating duplicates.
 - `BLOCKED` and `N/A` are reported explicitly and cannot be converted to `PASSED`.
 - No capture worker is left running.

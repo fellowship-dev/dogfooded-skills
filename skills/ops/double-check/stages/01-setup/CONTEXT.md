@@ -10,8 +10,8 @@ No upstream handoffs — this is the first stage.
 ## Task
 Gather everything the review stage needs and prepare a clean local working tree:
 PR metadata, CI status, the existing (first) review comments, the full diff, and a checked-out
-base branch merged into the PR branch (resolving conflicts automatically where possible and
-pushing so the PR stays current — merge, never rebase; see dogfooded-skills#161).
+PR branch checked out at its head, with a local, never-pushed check that the base branch merges
+cleanly (merge, never rebase; see dogfooded-skills#161). Stage 01 never pushes.
 
 ## Steps
 
@@ -95,7 +95,7 @@ The review stage works only from this handoff and these four files. A failed or 
 `diff.patch` while `changed-files.txt` lists files is a setup failure (`setup_ok: false`), never a
 silent gap: stage 02 treats what it is given as ground truth.
 
-### Checkout PR branch + merge base into it
+### Checkout PR branch + check the base merge locally (never pushed)
 
 ```bash
 REPO_NAME=$(echo $REPO | cut -d/ -f2)
@@ -111,41 +111,44 @@ git fetch origin $PR_BRANCH
 git checkout $PR_BRANCH
 git pull origin $PR_BRANCH
 
-# MERGE the base branch into the PR branch — never rebase (dogfooded-skills#161).
-# A merge answers the only question that matters: does this branch integrate cleanly
-# with base? Its conflict semantics match the squash merge the factory actually
-# performs. Rebase replays old commits one-by-one, which (a) false-conflicts on
-# branches that carry an earlier base-merge whose resolution rebase discards —
-# exactly what blocked pylot#3177 on 2026-09-05 while a plain merge was clean —
-# and (b) rewrites history, forcing a force-push that invalidates head-bound
-# receipts even when nothing conflicted. "Linear history" buys nothing here: the
-# final squash merge flattens the branch anyway. If already up to date, the merge
-# is a no-op and the head SHA (and any current receipt) is preserved.
+# Check that base merges cleanly into the PR, LOCALLY ONLY — never push the merge
+# (Max, 2026-10-06, pylot#3738). Every head change restarts this PR's double-check and
+# invalidates head-bound receipts, and GitHub does not require a branch to be up to
+# date to merge, so a PR that is merely behind is reviewed (and later merged) as it is.
+# Nothing downstream runs tests on the merged tree: stage 02 reviews the PR's own diff and
+# stage 03 tests its fix delta on top of the PR head. So the check is a --no-commit merge
+# that is always undone, leaving REPO_DIR on the PR head; a stage 03 fix push then carries
+# only fix commits. Merge, never rebase (dogfooded-skills#161): its conflict semantics
+# match the squash merge the factory performs. A real conflict (GitHub: mergeable_state
+# "dirty") is not fixed here: it blocks, and auto-pylot stage 03 owns the conflict fix.
+dc_check_base_merge() { # <base ref>; prints the conflicted files on conflict; never pushes
+  local head rc files; head=$(git rev-parse HEAD) || return 2
+  if git merge --no-commit --no-ff "$1" >/dev/null 2>&1; then
+    git merge --abort 2>/dev/null || true   # no MERGE_HEAD when already up to date
+    rc=0
+  else
+    files=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
+    git merge --abort 2>/dev/null || git reset -q --hard "$head"
+    if [ -n "$files" ]; then printf '%s' "$files"; rc=1; else rc=2; fi  # no files: not a conflict
+  fi
+  [ "$(git rev-parse HEAD)" = "$head" ] || { git reset -q --hard "$head"; return 2; }
+  return $rc
+}
+
 git fetch origin $BASE_BRANCH
 if [ -n "$DIFF_FALLBACK" ]; then
   # Same range as `gh pr diff`: merge-base of base and the PR head, to the PR head (pre-merge).
   git diff "$(git merge-base origin/$BASE_BRANCH "$INITIAL_HEAD_SHA")" "$INITIAL_HEAD_SHA" > "$OUT/diff.patch" \
     || { echo "diff unavailable — setup_ok: false (reason: diff, not merge)"; MERGE_FAILED=true; }
 fi
-if [ -z "$MERGE_FAILED" ] && ! git merge origin/$BASE_BRANCH --no-edit; then
-  # Merge conflict — collect details, abort cleanly, report blocked
-  CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
-  git merge --abort 2>/dev/null || true
-  echo "Merge conflict in: ${CONFLICT_FILES:-unknown files} — cannot auto-resolve, human intervention needed"
-  # Fall through to write handoff with setup_ok: false
-  MERGE_FAILED=true
-fi
-
 if [ -z "$MERGE_FAILED" ]; then
-  # Plain push (no force needed — merge never rewrites existing commits).
-  # If the merge was a no-op this pushes nothing and the head is unchanged.
-  # --no-verify: this push carries only a clean, automatic base merge, no authored change
-  # (a conflict already stopped above as blocked). Letting the repo's pre-push hook run its
-  # test gate here cost 3.4 slot-hours over 40 pylot missions, one wide PR at a time, for code
-  # that its author's push, CI and the release gate already test. Fix commits (stage 03)
-  # are still tested.
-  git push --no-verify origin $PR_BRANCH
-  echo "Merged origin/$BASE_BRANCH into $PR_BRANCH and pushed — PR conflict cleared (or already current)"
+  CONFLICT_FILES=$(dc_check_base_merge "origin/$BASE_BRANCH"); MERGE_RC=$?
+  case $MERGE_RC in
+    0) echo "origin/$BASE_BRANCH merges cleanly into $PR_BRANCH (checked locally, not pushed)" ;;
+    1) echo "Merge conflict in: ${CONFLICT_FILES:-unknown files} — blocked; auto-pylot stage 03 fixes conflicts"
+       MERGE_FAILED=true ;;
+    *) echo "local base-merge check failed — setup_ok: false"; MERGE_FAILED=true ;;
+  esac
 fi
 
 CURRENT_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
@@ -159,7 +162,7 @@ else
 fi
 ```
 
-If the merge cannot be auto-resolved (or the PR can't be fetched/checked out), write the
+If the base merge conflicts or the local check fails (or the PR can't be fetched/checked out), write the
 handoff with `setup_ok: false` and the reason — the orchestrator will treat this as a blocked exit.
 
 ## Output: handoff.md
@@ -180,13 +183,13 @@ setup_ok: {true|false}
 - Size: +{additions} / -{deletions}, {N} files, {N} commits
 - Labels: {labels or none}
 - Initial HEAD SHA: {INITIAL_HEAD_SHA}
-- Current HEAD SHA: {CURRENT_HEAD_SHA after any base merge}
+- Current HEAD SHA: {CURRENT_HEAD_SHA, live; stage 01 never moves it}
 - Setup head SHA: {CURRENT_HEAD_SHA, exactly 40 lowercase hex characters}
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
-- Checked out: `{PR_BRANCH}` with `{BASE_BRANCH}` merged in
-- Base merge: {succeeded and pushed | no-op (already current) | failed: details}
+- Checked out: `{PR_BRANCH}` at the PR head (base merge checked locally, not applied)
+- Base merge: {clean (local check, not pushed) | conflict: files | failed: details}
 
 ## CI Status
 {gh pr checks output, or "not accessible via token"}
@@ -217,9 +220,10 @@ comments, manifest or diff into it.
   written to their artifact files by shell redirection (never retyped)
 - Full remote setup head recorded; a failed live read is blocked
 - Changed-file manifest carries per-file line counts; the diff file is complete
-- PR branch checked out in REPO_DIR, base merged in, and pushed; REPO_DIR recorded for downstream stages
+- PR branch checked out in REPO_DIR at the PR head, base merge checked locally and never pushed;
+  REPO_DIR recorded for downstream stages
 
 ## Failure
 - PR not found / `gh` error → write handoff with `setup_ok: false` + reason (orchestrator emits a blocked outcome)
-- Rebase conflict that cannot be auto-resolved → write handoff with `setup_ok: false` + conflict file list
-  (orchestrator emits a blocked outcome; a human must resolve and re-dispatch)
+- Base merge conflicts → write handoff with `setup_ok: false` + conflict file list
+  (orchestrator emits a blocked outcome; auto-pylot stage 03 owns the conflict fix)

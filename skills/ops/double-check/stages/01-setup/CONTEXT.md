@@ -18,6 +18,13 @@ pushing so the PR stays current — merge, never rebase; see dogfooded-skills#16
 ```bash
 export PR={pr}      # PR number
 export REPO={repo}  # org/repo
+# Set by the orchestrator only on a stage-04 restart: the head the previous cycle reviewed.
+DELTA_BASE_HEAD={delta_base_head or empty}
+# Patch-id helpers. Resolved now, because later steps cd into REPO_DIR.
+for d in "$HOME/.claude/skills/double-check/shared" skills/double-check/shared skills/ops/double-check/shared; do
+  [ -f "$d/exact-head-receipt.sh" ] && DC_SHARED="$(cd "$d" && pwd)" && break
+done
+source "$DC_SHARED/exact-head-receipt.sh"
 ```
 
 ### Fetch PR metadata
@@ -162,6 +169,60 @@ fi
 If the merge cannot be auto-resolved (or the PR can't be fetched/checked out), write the
 handoff with `setup_ok: false` and the reason — the orchestrator will treat this as a blocked exit.
 
+### Patch-id and review scope (pylot#3738)
+
+A verdict is bound to the PR's own diff as well as its head. The patch-id is
+`git diff base...head | git patch-id --stable`; `gh pr diff` is the same three-dot diff. A
+rebase or a clean merge-from-base (including the one above) keeps it, so it never costs a review.
+Compare it with the last verdict receipt to pick one of three scopes:
+
+- `carry` — the last verdict is `ready`, `double-checked` is on and `needs-work` is off, and its
+  patch-id equals the current one. Nothing in the PR's own diff is unreviewed: stages 02 and 03
+  are skipped and stage 04 carries the verdict to the current head.
+- `delta` — the diff changed since the last verdict (rework, fix commits), and the files whose
+  hunks changed are at most 30% of the PR's files. Stage 02 reviews only those files plus the
+  findings the change is meant to fix.
+- `full` — no usable prior verdict, an unreachable prior head, or a wider change.
+
+```bash
+read -r LIVE_PID_HEAD SETUP_PATCH_ID <<<"$(dc_live_patch_receipt $PR $REPO)"
+if [ "$LIVE_PID_HEAD" != "$CURRENT_HEAD_SHA" ]; then SETUP_PATCH_ID=""; fi
+# Too large for `gh pr diff`: the local three-dot diff gives the same id.
+if [ -z "$SETUP_PATCH_ID" ] && [ -n "$DIFF_FALLBACK" ]; then
+  SETUP_PATCH_ID=$(git -C "$REPO_DIR" diff "origin/$BASE_BRANCH...$CURRENT_HEAD_SHA" | dc_patch_id_of_diff)
+fi
+
+read -r PRIOR_HEAD PRIOR_PATCH_ID PRIOR_VERDICT <<<"$(dc_latest_verdict_receipt $PR $REPO)"
+LIVE_LABELS=$(gh pr view $PR --repo $REPO --json labels --jq '[.labels[].name] | join(",")')
+REVIEW_SCOPE=full
+if [ -z "$DELTA_BASE_HEAD" ] && [ "$PRIOR_VERDICT" = ready ] \
+  && dc_is_full_sha "$SETUP_PATCH_ID" && [ "$PRIOR_PATCH_ID" = "$SETUP_PATCH_ID" ] \
+  && printf ',%s,' "$LIVE_LABELS" | grep -q ',double-checked,' \
+  && ! printf ',%s,' "$LIVE_LABELS" | grep -q ',needs-work,'; then
+  REVIEW_SCOPE=carry
+else
+  # A restart compares against the head its previous cycle reviewed; otherwise the last verdict.
+  DELTA_FROM=${DELTA_BASE_HEAD:-$PRIOR_HEAD}
+  if dc_is_full_sha "$DELTA_FROM" && [ "$DELTA_FROM" != "$CURRENT_HEAD_SHA" ]; then
+    git -C "$REPO_DIR" fetch -q origin "$DELTA_FROM" 2>/dev/null || true
+    if dc_delta_files "$REPO_DIR" "origin/$BASE_BRANCH" "$DELTA_FROM" "$CURRENT_HEAD_SHA" > "$OUT/delta-files.txt"; then
+      DELTA_COUNT=$(grep -c . "$OUT/delta-files.txt" || true)
+      TOTAL_COUNT=$(git -C "$REPO_DIR" diff --name-only "origin/$BASE_BRANCH...$CURRENT_HEAD_SHA" | grep -c . || true)
+      REVIEW_SCOPE=$(dc_review_scope "$DELTA_COUNT" "$TOTAL_COUNT")
+    fi
+  fi
+fi
+if [ "$REVIEW_SCOPE" = delta ]; then
+  # The PR's current hunks for the delta files, and what changed in them since the last verdict.
+  tr '\n' '\0' < "$OUT/delta-files.txt" | xargs -0 git -C "$REPO_DIR" diff "origin/$BASE_BRANCH...$CURRENT_HEAD_SHA" -- > "$OUT/delta.patch"
+  tr '\n' '\0' < "$OUT/delta-files.txt" | xargs -0 git -C "$REPO_DIR" diff "$DELTA_FROM" "$CURRENT_HEAD_SHA" -- > "$OUT/delta-range.patch"
+  # On a restart, the orchestrator saved the previous cycle's stage-02 handoff: its findings are
+  # what the new commits are meant to fix.
+  [ -f "$(dirname "$OUT")/prior-review.md" ] && cp "$(dirname "$OUT")/prior-review.md" "$OUT/prior-review.md"
+fi
+echo "[setup] patch-id=${SETUP_PATCH_ID:-unknown} prior=${PRIOR_HEAD:-none}/${PRIOR_PATCH_ID:--}/${PRIOR_VERDICT:--} scope=$REVIEW_SCOPE"
+```
+
 ## Output: handoff.md
 
 Path: `.procedure-output/double-check/01-setup/handoff.md`
@@ -182,6 +243,14 @@ setup_ok: {true|false}
 - Initial HEAD SHA: {INITIAL_HEAD_SHA}
 - Current HEAD SHA: {CURRENT_HEAD_SHA after any base merge}
 - Setup head SHA: {CURRENT_HEAD_SHA, exactly 40 lowercase hex characters}
+- Setup patch-id: {SETUP_PATCH_ID, 40 hex, or "unknown"}
+
+## Review Scope
+review_scope: {full | delta | carry}
+- Last verdict receipt: {PRIOR_HEAD} patch-id {PRIOR_PATCH_ID} verdict {PRIOR_VERDICT} (or "none")
+- Delta from: {DELTA_FROM or "n/a"}; delta files: {DELTA_COUNT} of {TOTAL_COUNT}
+- Delta artifacts (delta only): `{OUT}/delta-files.txt`, `{OUT}/delta.patch`,
+  `{OUT}/delta-range.patch`, `{OUT}/prior-review.md` (restart only)
 
 ## Local Checkout
 - REPO_DIR: {REPO_DIR}
@@ -216,6 +285,8 @@ comments, manifest or diff into it.
 - PR metadata and CI status in the handoff; PR body, first review, changed files and full diff
   written to their artifact files by shell redirection (never retyped)
 - Full remote setup head recorded; a failed live read is blocked
+- Setup patch-id and `review_scope` recorded; `carry` only for a `ready` verdict on the same
+  patch-id, never on a missing or unknown one
 - Changed-file manifest carries per-file line counts; the diff file is complete
 - PR branch checked out in REPO_DIR, base merged in, and pushed; REPO_DIR recorded for downstream stages
 

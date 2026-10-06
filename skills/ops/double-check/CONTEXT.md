@@ -45,7 +45,9 @@ NOT parallelism. There is no fan-out anywhere in this proc.
 - The PR body is a claim; the diff is the evidence. Unbacked claims ⇒ `needs-work` and
   `double-checked` is withheld. Never waived by intent, tier, or a clean findings table.
 - A first check may apply `double-checked` only for an explicit `ready` verdict whose reviewed
-  head equals the live 40-hex head. Any negative or conflicting signal removes/withholds
+  head equals the live 40-hex head, or whose reviewed patch-id equals the live one (a rebase or
+  merge-from-base carries the verdict; any change to the PR's own diff is re-reviewed, delta-only
+  when it touches at most 30% of the files). Any negative or conflicting signal removes/withholds
   `double-checked`, adds or retains `needs-work`, and creates no positive follow-on.
 - Stage 03 is the only stage that mutates code; it is conditional on `fixes_needed: true`.
 - The `double-checked` label is applied only after the comment posts (stage 04).

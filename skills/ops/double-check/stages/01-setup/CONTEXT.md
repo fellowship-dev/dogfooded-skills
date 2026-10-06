@@ -122,14 +122,14 @@ git pull origin $PR_BRANCH
 # match the squash merge the factory performs. A real conflict (GitHub: mergeable_state
 # "dirty") is not fixed here: it blocks, and auto-pylot stage 03 owns the conflict fix.
 dc_check_base_merge() { # <base ref>; prints the conflicted files on conflict; never pushes
-  local head rc; head=$(git rev-parse HEAD) || return 2
+  local head rc files; head=$(git rev-parse HEAD) || return 2
   if git merge --no-commit --no-ff "$1" >/dev/null 2>&1; then
     git merge --abort 2>/dev/null || true   # no MERGE_HEAD when already up to date
     rc=0
   else
-    git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' '
+    files=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')
     git merge --abort 2>/dev/null || git reset -q --hard "$head"
-    rc=1
+    if [ -n "$files" ]; then printf '%s' "$files"; rc=1; else rc=2; fi  # no files: not a conflict
   fi
   [ "$(git rev-parse HEAD)" = "$head" ] || { git reset -q --hard "$head"; return 2; }
   return $rc
@@ -162,7 +162,7 @@ else
 fi
 ```
 
-If the merge cannot be auto-resolved (or the PR can't be fetched/checked out), write the
+If the base merge conflicts or the local check fails (or the PR can't be fetched/checked out), write the
 handoff with `setup_ok: false` and the reason — the orchestrator will treat this as a blocked exit.
 
 ## Output: handoff.md

@@ -16,6 +16,26 @@ you have NO implementation history, which prevents confirmation bias.
 Do NOT request or expect orchestration history. This handoff is everything at the start of review;
 before writing your verdict you must independently refresh the PR comments as described below.
 
+## Delta mode (`review_scope: delta` in the setup handoff)
+
+Everything outside the delta was already judged by the last verdict at the same hunks, so do not
+review it again. In delta mode:
+
+- Review `delta.patch` (the PR's current hunks for the files in `delta-files.txt`) in full, with
+  `delta-range.patch` showing what changed in them since the last verdict. Read `diff.patch` only
+  for context a delta hunk depends on.
+- Re-check the findings the change is meant to fix: the open MUST-FIX and needs-work items in the
+  latest double-check or CTO comment in `first-review.md`, and in `prior-review.md` when present.
+  Each one is fixed, still open, or moot; an open one keeps the verdict at `needs-work`, wherever
+  its file sits.
+- Steps 0 (claims vs diff) and 6 (live refresh) run as usual. The claims check stays against the
+  full manifest: the body may have changed with the rework.
+- With zero delta files (a re-run after a body-only edit), only the findings re-check and the
+  claims check apply.
+- Record `review_scope: delta` and the delta file count in your handoff.
+
+`review_scope: full` (or absent) is the full review below. `carry` never reaches this stage.
+
 ## Task
 Review the PR **in cohesion** — the whole diff together, all dimensions in ONE pass — and produce
 a single consolidated verdict. This is NOT split per-file or per-dimension. In this one review you:
@@ -153,6 +173,7 @@ verdict: {ready | needs-work}
 fixes_needed: {true | false}
 claims_reconciled: {pass | fail | unknown}
 reviewed_head_sha: {40-character Setup head SHA}
+review_scope: {full | delta}
 
 ## Claims vs Diff
 | Claim (from PR title/body) | Status | Evidence |

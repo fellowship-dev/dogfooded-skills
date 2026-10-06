@@ -38,7 +38,20 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 | 01-setup | subagent | Fetch PR metadata including current HEAD, classify the incoming first-review receipt (its `Head reviewed` line) as current/stale/absent, capture comments + full diff, and checkout PR branch + merge base |
 | 02-review | subagent | ONE cohesive critical review in clean context: reconcile the PR's claims against the diff, verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
-| 04-post | inline | Re-fetch the live head, promote only when it equals the exact 40-hex head stage 02 reviewed, or perform one clean restart; then post curated review comment and apply labels only for the matching head |
+| 04-post | inline | Re-fetch the live head, promote when it equals the exact 40-hex head stage 02 reviewed or carries the same patch-id, otherwise perform one restart; then post curated review comment and apply labels only for the matching head |
+
+### Patch-id carry and delta review (pylot#3738)
+
+Every verdict receipt records the head **and** the PR's patch-id
+(`git diff base...head | git patch-id --verbatim`). A head change alone never costs a review:
+
+- **Same patch-id** (rebase, merge-from-base): the verdict and `double-checked` carry to the new
+  head with a one-line "verdict carried: patch-id unchanged" note. Setup reports
+  `review_scope: carry`, stages 02 and 03 are skipped, and stage 04 runs its carry branch.
+- **New commits** (rework, stage-03 fixes): stage 02 reviews only the files whose hunks changed
+  since the last verdict, plus the findings they are meant to fix (`review_scope: delta`). Over
+  30% of the PR's files changed, or no reachable prior verdict: full review.
+- **A changed diff on a conflict resolution** has a new patch-id, so it is always re-reviewed.
 
 ## Handoff locations
 
@@ -57,10 +70,14 @@ never the full orchestrator context.
 
 Run one Task per stage, one after another. Do NOT launch any stages in parallel. Do not start the
 next stage until the current one completes. Start with `restart_count=0`. If stage 04 sees a
-different full remote SHA, it stops without posting a verdict or touching labels, and the
-orchestrator runs a complete conditional 01 → 02 → 03 → 04 cycle at the observed SHA with
-`restart_count=1`. Stage 02 still receives only its new setup handoff: never orchestration
-history. A second transition, or any unreadable live head, stops blocked.
+different full remote SHA with a different patch-id, it stops without posting a verdict or
+touching labels, and the orchestrator runs a complete conditional 01 → 02 → 03 → 04 cycle at the
+observed SHA with `restart_count=1`, passing `delta_base_head` (the head the previous cycle
+reviewed) to stage 01 and first moving the previous stage-02 handoff to
+`.procedure-output/double-check/prior-review.md`, so the new cycle reviews only the delta and the
+findings it fixes. Stage 02 still receives only its new setup handoff and artifacts: never
+orchestration history. A second transition, or any unreadable live head, stops blocked. A moved
+head with the same patch-id is not a transition: stage 04 carries the verdict.
 
 Each Task prompt must be self-contained:
 - Include only the stage's input handoff paths
@@ -89,6 +106,8 @@ Execute all steps in CONTEXT.md. Write handoff.md before exiting.
 Stage gating:
 - Stage 02 is the isolated critical-judgement step. Its prompt MUST carry only the setup handoff
   (PR + first review + diff) — nothing else. This is the clean-context window the whole proc exists for.
+- After stage 01, read its handoff. If `review_scope: carry`, SKIP stages 02 and 03 and run
+  stage 04's carry branch (the PR's own diff is unchanged since a `ready` verdict).
 - After stage 02, read its handoff. If `fixes_needed: false`, SKIP stage 03 (no fixes to apply)
   and go straight to stage 04. Otherwise run stage 03.
 
@@ -129,6 +148,9 @@ Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not ru
 - **First-check success**: only an explicit `ready` verdict at the exact live 40-hex head may
   apply `double-checked`; it emits:
   `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked {repo}#{pr} — verdict ready, {N} findings curated, {N} fixes pushed" status=success`
+- **Verdict carried** (`review_scope: carry`): stage 04 posts the one-line carry note, leaves the
+  labels, and emits:
+  `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict carried: patch-id unchanged, no re-review" status=success`
 - **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check failed at stage NN: {reason}" status=failed`
 - **Blocked**: setup cannot fetch/checkout the PR (e.g. merge conflict, missing PR), the live
   head cannot be read, or a second head transition occurs →
@@ -168,7 +190,9 @@ name — keep this protocol in sync with it, don't let the two drift):
    and what would unblock it, then STOP.
 3. Only after the items are actually addressed: `gh pr edit <number> --repo
    <repo> --remove-label "double-checked,needs-work"`, then run the stages
-   above fresh so the label chain re-fires.
+   above so the label chain re-fires. Setup compares the reworked diff with the
+   last verdict's patch-id, so the review covers only the rework delta plus the
+   findings it addresses (full review when the delta exceeds 30% of the files).
 
 > **No rework-dispatch section in the playbook?** This mode does not apply —
 > run the stages above as a normal review/fix/post pass.
@@ -207,16 +231,17 @@ name — keep this protocol in sync with it, don't let the two drift):
     whole pipeline merely because the incoming receipt is stale.
 14. **Promotion binds to the final full SHA** — immediately before every verdict comment or label
     mutation, fetch `headRefOid`. The 40-character live SHA must equal the Stage 02
-    `reviewed_head_sha`, fail closed. On the first mismatch restart cleanly; on a second mismatch
-    or failed retrieval stop blocked. A delta inspection, file list, short SHA, or local HEAD
-    never substitutes for equality. A stale or blocked run never mutates `double-checked` or
+    `reviewed_head_sha`, or carry the same full patch-id as the reviewed diff (then the live head
+    becomes the promoted head), fail closed. On the first patch-id change restart into a delta
+    review; on a second or a failed retrieval stop blocked. A file list, diff stat, short SHA, or
+    local HEAD never substitutes for SHA or patch-id equality. A stale or blocked run never mutates `double-checked` or
     triggers downstream automation.
 15. **First-check promotion is explicitly positive only** — apply `double-checked` only when the
     reviewer verdict is exactly `ready` and bound to the exact live head. Any negative, missing,
     malformed, stale, or conflicting signal fails closed: remove/withhold `double-checked`, add or
     retain `needs-work`, and do not create CTO, FlowChad, staging, or merge follow-ons.
-16. **Success markers come from stage 04's templates ONLY (pylot#3392).** The four documented
-    `status=success` markers in stage 04's "Emit outcome marker" section are the complete set.
+16. **Success markers come from stage 04's templates ONLY (pylot#3392).** The five documented
+    `status=success` markers (four verdict branches plus the carry branch) in stage 04's "Emit outcome marker" section are the complete set.
     Never synthesize a free-form success marker from the orchestrator, and never emit ANY
     `status=success` unless stage 04 ran to completion — receipt comment posted and post-action
     verification passed. On 2026-09-05 an orchestrator emitted "queued-worker result ok" without

@@ -10,6 +10,8 @@ gh pr comment $PR --repo $REPO --body "$(cat <<'REVIEW_EOF'
 **Reviewer:** Automated double-check
 **Branch:** `$PR_BRANCH` → `$BASE_BRANCH`
 **Head reviewed:** `$LIVE_HEAD_SHA` (exact 40-character SHA)
+**Patch-id:** `$LIVE_PATCH_ID` (`git diff base...head | git patch-id --verbatim`; the stage-04 marker
+records it as `patch_id=` so a rebase carries the verdict)
 
 ---
 

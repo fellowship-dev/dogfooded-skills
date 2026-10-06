@@ -27,6 +27,52 @@ BASE_BRANCH={from setup handoff}
 PR_URL={from setup handoff}
 ```
 
+### Carry branch (`review_scope: carry` — stages 02 and 03 did not run)
+
+Setup found a `ready` verdict on the same patch-id: the head moved (rebase or merge-from-base) but
+the PR's own diff did not. Re-verify that against the live PR, post one line, keep the labels, and
+stop. No review runs and no label is touched.
+
+```bash
+SETUP_HANDOFF=".procedure-output/double-check/01-setup/handoff.md"
+for d in "$HOME/.claude/skills/double-check/shared" skills/double-check/shared skills/ops/double-check/shared; do
+  [ -f "$d/exact-head-receipt.sh" ] && source "$d/exact-head-receipt.sh" && break
+done
+REVIEW_SCOPE=$(awk '/^review_scope:/{print $2; exit}' "$SETUP_HANDOFF")
+RESTART_COUNT=${RESTART_COUNT:-0}
+if [ "$REVIEW_SCOPE" = carry ]; then
+  read -r PRIOR_HEAD PRIOR_PATCH_ID PRIOR_VERDICT <<<"$(dc_latest_verdict_receipt $PR $REPO)"
+  read -r LIVE_HEAD_SHA LIVE_PATCH_ID <<<"$(dc_live_patch_receipt $PR $REPO)"
+  DECISION=$(dc_exact_head_decision "$PRIOR_HEAD" "$LIVE_HEAD_SHA" "$RESTART_COUNT" "$PRIOR_PATCH_ID" "$LIVE_PATCH_ID")
+  [ "$PRIOR_VERDICT" = ready ] || DECISION=blocked
+  if ! gh pr view $PR --repo $REPO --json labels --jq '.labels[].name' | grep -qx double-checked; then
+    if [ "$RESTART_COUNT" = 0 ]; then DECISION=restart; else DECISION=blocked; fi
+  fi
+  if [ "$DECISION" = carry ]; then
+    CARRY_MARKER="pylot:exact-head-promoted pr=$PR head=$LIVE_HEAD_SHA"
+    if ! gh pr view $PR --repo $REPO --json comments --jq '.comments[].body' | grep -qF "$CARRY_MARKER"; then
+      gh pr comment $PR --repo $REPO --body "<!-- $CARRY_MARKER patch_id=$LIVE_PATCH_ID verdict=ready carried_from=$PRIOR_HEAD -->
+Double-check verdict carried: patch-id unchanged (\`${PRIOR_HEAD:0:7}\` → \`${LIVE_HEAD_SHA:0:7}\`, patch-id \`${LIVE_PATCH_ID:0:12}\`)."
+    fi
+  elif [ "$DECISION" = promote ]; then
+    echo "[stage-04] verdict already names the live head — nothing to carry"
+  elif [ "$DECISION" = restart ]; then
+    echo "[stage-04] restart: the PR's diff changed after setup"; exit 3
+  else
+    echo "[stage-04] blocked: carry receipt unreadable or superseded"; exit 2
+  fi
+fi
+```
+
+On `carry` or `promote`, verify the comment landed (`gh pr view --json comments`) and that
+`double-checked` is still present, write the report file with verdict `carried`, and emit
+(final full assistant line, not from Bash and not inside a fence):
+
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict carried: patch-id unchanged, no re-review" status=success
+
+Exit `3` returns to the orchestrator for one full cycle (stage 01 then picks the delta scope);
+exit `2` emits the blocked marker below. Skip every step after this section on the carry branch.
+
 ### Detect re-check context
 
 Read the `## PR / Labels` field from `.procedure-output/double-check/01-setup/handoff.md`.
@@ -77,10 +123,27 @@ if ! gh pr view $PR --repo $REPO --json title,body,additions,deletions,files,hea
 then
   LIVE_READ_FAILED=true
 fi
-source skills/ops/double-check/shared/exact-head-receipt.sh
+# exact-head-receipt.sh was sourced at the top of this stage (carry branch section).
 LIVE_HEAD_SHA=$(jq -r '.headRefOid // empty' /tmp/dc-pr-$PR.json 2>/dev/null || true)
-DECISION=$(dc_exact_head_decision "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RESTART_COUNT")
+# The reviewed diff's patch-id comes from setup (stage 02 reviewed exactly the setup head).
+SETUP_PATCH_ID=$(sed -n 's/^- Setup patch-id: //p' "$SETUP_HANDOFF" | head -1)
+LIVE_PATCH_ID=$SETUP_PATCH_ID
+if [ "$LIVE_HEAD_SHA" != "$REVIEWED_HEAD_SHA" ]; then
+  read -r PID_HEAD LIVE_PATCH_ID <<<"$(dc_live_patch_receipt $PR $REPO)"
+  [ "$PID_HEAD" = "$LIVE_HEAD_SHA" ] || LIVE_PATCH_ID=""
+fi
+DECISION=$(dc_exact_head_decision "$REVIEWED_HEAD_SHA" "$LIVE_HEAD_SHA" "$RESTART_COUNT" \
+  "$SETUP_PATCH_ID" "$LIVE_PATCH_ID")
 if [ "${LIVE_READ_FAILED:-false}" = true ]; then DECISION=blocked; fi
+CARRIED_FROM=""
+if [ "$DECISION" = carry ]; then
+  # Head moved (rebase/merge-from-base) but the PR's own diff is the one reviewed: promote at the
+  # live head. Every later mutation guard pins to this head.
+  echo "[stage-04] verdict carried: patch-id unchanged ($REVIEWED_HEAD_SHA -> $LIVE_HEAD_SHA)"
+  CARRIED_FROM=$REVIEWED_HEAD_SHA
+  REVIEWED_HEAD_SHA=$LIVE_HEAD_SHA
+  DECISION=promote
+fi
 
 if [ "$DECISION" = restart ]; then
   echo "[stage-04] restart: PR HEAD moved after review ($REVIEWED_HEAD_SHA -> $LIVE_HEAD_SHA)"
@@ -158,18 +221,21 @@ and stage-03 (tests, fixes) handoffs, then post:
 
 ```bash
 PROMOTION_MARKER="pylot:exact-head-promoted pr=$PR head=$LIVE_HEAD_SHA"
+# The receipt binds the verdict to the head AND the PR's patch-id; consumers carry it across a
+# head change only while the patch-id is unchanged. `-` when unknown (then only the head binds).
 PROMOTION_ALREADY_POSTED=$(gh pr view $PR --repo $REPO --json comments \
   --jq '.comments[].body' | grep -F "$PROMOTION_MARKER" || true)
 if [ -z "$PROMOTION_ALREADY_POSTED" ]; then
 # A promotion race is never repaired by posting the stale comment.
 dc_require_promotable_head
 gh pr comment $PR --repo $REPO --body "$(cat <<REVIEW_EOF
-<!-- $PROMOTION_MARKER -->
+<!-- $PROMOTION_MARKER patch_id=${LIVE_PATCH_ID:--} verdict=$VERDICT${CARRIED_FROM:+ carried_from=$CARRIED_FROM} -->
 ## Double-Check Review: PR #$PR — $PR_TITLE
 
 **Reviewer:** Automated double-check
 **Branch:** \`$PR_BRANCH\` → \`$BASE_BRANCH\`
 **Head reviewed:** \`$LIVE_HEAD_SHA\`
+**Patch-id:** \`${LIVE_PATCH_ID:-unknown}\`${CARRIED_FROM:+ (verdict carried: patch-id unchanged since \`$CARRIED_FROM\`)}
 
 ---
 
@@ -446,6 +512,11 @@ Emit from the orchestrator (never a subagent). Branch on re-check context:
 **First-check fail closed** (Branch D):
 ```
 [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict {VERDICT}, double-checked withheld, needs-work retained" status=success
+```
+
+**Verdict carried** (carry branch, `review_scope: carry`):
+```
+[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict carried: patch-id unchanged, no re-review" status=success
 ```
 
 **First-check PASS** (IS_RECHECK=false, VERDICT=ready):

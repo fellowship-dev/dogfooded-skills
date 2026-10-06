@@ -288,12 +288,36 @@ Only proceed to a merge if ALL hold:
 # The stage-01 receipt establishes what was reviewed; it cannot authorize a changed head or a
 # configuration added while review ran. Re-read the head and collect the same structured evidence
 # immediately before merge. Any API, tree, parse, or classifier failure is a hold.
-REVIEWED_HEAD_SHA=$(sed -n 's/^- Current HEAD SHA: //p' .procedure-output/cto-review/01-setup/handoff.md | head -1)
-CURRENT_MERGE_HEAD_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null) || {
-  echo "[cto-review] CI merge prerequisite: BLOCKED (PR head lookup failed)"; exit 0;
+# A head that moved with the SAME patch-id (rebase, merge-from-base) carries the review: the PR's
+# own diff is exactly what was reviewed (pylot#3738). Any change to that diff holds. Either way the
+# merge is pinned to the exact head checked here (--match-head-commit below).
+SETUP_HANDOFF=.procedure-output/cto-review/01-setup/handoff.md
+REVIEWED_HEAD_SHA=$(sed -n 's/^- Current HEAD SHA: //p' "$SETUP_HANDOFF" | head -1)
+REVIEWED_PATCH_ID=$(sed -n 's/^- Current patch-id: //p' "$SETUP_HANDOFF" | head -1)
+for d in "$HOME/.claude/skills/double-check/shared" skills/double-check/shared skills/ops/double-check/shared; do
+  [ -f "$d/exact-head-receipt.sh" ] && source "$d/exact-head-receipt.sh" && break
+done
+if ! type dc_exact_head_decision >/dev/null 2>&1; then  # helper not installed: exact head only
+  echo "[cto-review] double-check patch-id helper not found — merge requires the exact reviewed head"
+  dc_exact_head_decision() { if [ "$1" = "$2" ]; then echo promote; else echo blocked; fi; }
+  dc_live_patch_receipt() { :; }
+fi
+cto_merge_pin() {  # prints the head to merge at, or nothing to hold
+  local live live_pid=""
+  live=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null) || return 0
+  if [ "$live" != "$REVIEWED_HEAD_SHA" ]; then
+    read -r pid_head live_pid <<<"$(dc_live_patch_receipt "$PR" "$REPO")"
+    [ "$pid_head" = "$live" ] || live_pid=""
+  fi
+  case "$(dc_exact_head_decision "$REVIEWED_HEAD_SHA" "$live" 1 "$REVIEWED_PATCH_ID" "$live_pid")" in
+    promote) printf '%s\n' "$live" ;;
+    carry) echo "[cto-review] review carried: patch-id unchanged ($REVIEWED_HEAD_SHA -> $live)" >&2
+           printf '%s\n' "$live" ;;
+  esac
 }
-if [ -z "$REVIEWED_HEAD_SHA" ] || [ "$CURRENT_MERGE_HEAD_SHA" != "$REVIEWED_HEAD_SHA" ]; then
-  echo "[cto-review] CI merge prerequisite: BLOCKED (head changed since review)"; exit 0
+CURRENT_MERGE_HEAD_SHA=$(cto_merge_pin)
+if [ -z "$CURRENT_MERGE_HEAD_SHA" ]; then
+  echo "[cto-review] CI merge prerequisite: BLOCKED (PR's diff changed since review, or head unreadable)"; exit 0
 fi
 BASE_BRANCH=$(gh pr view "$PR" --repo "$REPO" --json baseRefName --jq '.baseRefName' 2>/dev/null) || {
   echo "[cto-review] CI merge prerequisite: BLOCKED (base branch lookup failed)"; exit 0;
@@ -327,8 +351,11 @@ conflict is NOT a hold reason — finish it now, in this order:
    origin $BASE && git rebase origin/$BASE` — read both sides of each conflict,
    write the resolution that preserves both intents, verify zero leftover conflict
    markers AND the repo's test gate passes, then `git push --force-with-lease`.
-   Your LGTM verdict already covers the content; the rebase only replays it onto
-   current base. Then merge below.
+   Then re-pin: `CURRENT_MERGE_HEAD_SHA=$(cto_merge_pin)`. A rebase that only replays
+   the reviewed diff keeps the patch-id, so the verdict carries and you merge below,
+   pinned to the new head. A resolution that changed the PR's own diff has a new
+   patch-id: the pin comes back empty, and the PR is held for re-review (the
+   double-check reviews only that delta). Never merge an unreviewed resolution.
 3. If the two sides genuinely contradict and the issue doesn't say which behavior
    wins: comment the specific one-sentence decision needed, apply `blocked`. This
    is the only legitimate non-merge outcome for a conflict, and it must name a
@@ -338,7 +365,7 @@ Use the `merge_strategy` resolved in stage 01:
 ```bash
 if [ "$MERGE_STRATEGY" = "auto" ]; then
   # Exactly one live team explicitly selected deploy.release_mode=ship.
-  gh pr merge $PR --repo $REPO --merge
+  gh pr merge $PR --repo $REPO --merge --match-head-commit "$CURRENT_MERGE_HEAD_SHA"
 else
   # Every missing, malformed, ambiguous, or propose state requires human merge.
   gh label create "ready-to-merge" --repo $REPO --color "0e8a16" --description "Agent-verified, Max merges" 2>/dev/null || true

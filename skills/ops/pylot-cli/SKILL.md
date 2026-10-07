@@ -291,6 +291,11 @@ A devbox that dies mid-turn is reaped with `last_exit_code: -1`, so the loop
 cannot hang forever. Between phases, read the output before sending the next
 prompt — a failed phase should not be built on. If `last_result` is absent,
 retain the original `last_output` as evidence; do not invent a successful result.
+Inspect `last_exit_code` and any native continuity failure reason even when
+`prompt --wait` returns shell status 0 and the worker is `idle`: those states
+can accompany a failed provider turn. A nonzero provider exit or explicit
+continuity failure remains a failed phase; preserve its output and resolve the
+failure before prompting onward or claiming success.
 
 Continue the same bounded task by sending the next prompt to the **same worker
 id** after its prior turn completes. Retain the scope, worker id, `session_id`,

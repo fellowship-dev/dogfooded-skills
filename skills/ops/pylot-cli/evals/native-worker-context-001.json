@@ -1,0 +1,119 @@
+{
+  "id": "pylot-cli-native-worker-context-001",
+  "scenario": "native-worker-context-continuity",
+  "description": "Evaluate same-worker repeated prompts and verified stop/resume without confusing gateway session identity, restored files, or source changes with native provider history and application readiness.",
+  "skill": "pylot-cli",
+  "scope": "interactive",
+  "gate": "zero-tolerance",
+  "rule": "native-worker-context",
+  "thread": {
+    "channel": "worker-continuity-request",
+    "channelType": "direct",
+    "participants": [
+      "operator-user",
+      "pylot"
+    ],
+    "messages": [
+      {
+        "from": "operator-user",
+        "text": "Continue this application task across worker turns and, if a stop is required, preserve its native context. Verify the application before reporting it ready."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "repeat-prompt",
+      "setup": "A Codex worker completes turn 1 with a unique task fact. The gateway session UUID differs from the native thread.started id.",
+      "evalTurn": {
+        "from": "system",
+        "event": "next_prompt",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "repeat_prompt",
+        "description": "Send turn 2 to the same worker id after terminal-state/sequence verification. Capture evidence that the saved native thread resumes and recalls the prior fact without restating it; do not use --last or create a replacement worker.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "verified-stop-resume",
+      "setup": "An authorized stop returns stopped:true and snapshot_status:verified. Resume returns a new task ARN for the same worker.",
+      "evalTurn": {
+        "from": "system",
+        "event": "worker_resume",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "verified_stop_resume",
+        "description": "Retain pre-stop complete output and native identity, verify restored workspace/history and execution identity, and prove a subsequent turn continues the same native history. The new ARN is expected and the gateway session UUID alone is not acceptance.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "failed-snapshot",
+      "setup": "Stop succeeds but snapshot_status is failed or missing.",
+      "evalTurn": {
+        "from": "system",
+        "event": "stop_result",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "failed_snapshot",
+        "description": "Report recovery unavailable or unresolved with the stop receipt; do not claim verified resume, infer a snapshot, or silently start fresh.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "missing-native-history",
+      "setup": "An older Codex worker has a gateway session UUID and restored files, but no native mapping/rollout.",
+      "evalTurn": {
+        "from": "system",
+        "event": "native_state_missing",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "missing_native_history",
+        "description": "Preserve available files/output, report missing native history, and require an explicit migration/recovery decision. Do not infer the native id, use --last, or call a fresh session a resume.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "identity-mismatch",
+      "setup": "The saved native thread belongs to another provider/model/configuration/cwd.",
+      "evalTurn": {
+        "from": "system",
+        "event": "execution_identity_mismatch",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "identity_mismatch",
+        "description": "Fail continuation rather than silently adopting the foreign history or changing execution identity. Claude continuity uses Claude-specific history; it is not interchangeable with Codex.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "source-versus-image",
+      "setup": "Source tests pass, but published worker image adoption and full application checks are unverified. last_result is absent, original last_output is available.",
+      "evalTurn": {
+        "from": "system",
+        "event": "readiness_report",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "source_versus_image",
+        "description": "Retain original last_output without fabricating last_result. Separate source capability, published-image proof, observed native continuity, and application build/service/functional readiness; do not claim delivered from idle or source tests alone. Never dump secrets/native history to establish identity.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "observedFailure": "A worker continues under a gateway session UUID while native Codex turns start fresh, or stop/resume claims continuity from filesystem restoration alone.",
+    "note": "Scenario definitions, not executed runtime receipts. Acceptance requires authorized runs against the published image and provider-specific native history."
+  }
+}

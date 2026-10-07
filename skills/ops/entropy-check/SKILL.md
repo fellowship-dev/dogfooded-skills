@@ -180,8 +180,7 @@ Distinguish two cases:
   Score: ❌ "Hookshot not configured — recommend setup"
 
 - **Hookshot stale** — file has existed (git history found) but docs were updated more recently:
-  Compute delta days between COVERAGE_DATE and DOCS_DATE.
-  Score: ⚠️ "Hookshot stale by {N} days"
+  Score: ⚠️ "Hookshot stale (coverage {COVERAGE_DAY} < docs {DOCS_DAY})" — commit dates, not a day count
 
 - **Hookshot current** — coverage was updated after or same day as docs:
   Score: ✅ "Hookshot current"
@@ -199,7 +198,7 @@ elif [ -n "$DOCS_DATE" ] && [ -n "$COVERAGE_DATE" ]; then
   STALE_DAYS=$(( (DOCS_EPOCH - COV_EPOCH) / 86400 ))
   if [ "$STALE_DAYS" -gt 0 ]; then
     S6_SCORE="⚠️"
-    S6_NOTE="Hookshot stale by ${STALE_DAYS} days"
+    S6_NOTE="Hookshot stale (coverage ${COVERAGE_DATE%% *} < docs ${DOCS_DATE%% *})"
   else
     S6_SCORE="✅"
     S6_NOTE="Hookshot current"
@@ -247,42 +246,49 @@ Write the updated file, then append to the History section:
 | {TODAY} | {trigger: PR #{N} / weekly sweep / manual} | {N} domains scanned, {N} regressions, {N} improvements |
 ```
 
-#### 4a. Deliver the write-back as a PR — never push to the default branch
+#### 4a. Commit the write-back directly to the integration branch — no branch, no PR
 
-Direct pushes to `main`/`master`/`develop` are **always rejected** in Pylot workers
-(`git-push-guard.sh`, deliberate, no bot exception). Do not retry a rejected push, do not
-look for a workaround, and do not wait for the PR to merge. Deliver like this:
+Owner decision (2026-10-07): the write-back is committed straight to the scanned repo's
+integration branch with `[skip ci]`; it never opens a branch or a PR. Sibling write-back PRs all
+edited `QUALITY_SCORE.md`, conflicted on every merge and looped the full review chain.
+
+- **Branch:** the repo's default branch, resolved at run time (`develop` for
+  `fellowship-dev/pylot`, whose releases promote `develop` → `main`). Never hardcode it.
+- **Mechanism:** the GitHub Contents API through `scripts/contents-writeback.sh`, not
+  `git push`. Pylot workers' `git-push-guard.sh` denies pushes to `main`/`master`/`develop`
+  (a path-scoped allow is fellowship-dev/pylot#3555, not shipped); do not retry a rejected push or
+  look for another workaround.
+- **Scope:** `QUALITY_SCORE.md` only. The helper refuses any other path and any message without
+  `[skip ci]` (exit 2) — fail the run loudly; never write another file this way.
 
 1. **Nothing changed → report only.** If no grade changed, no domain was added and no new
-   Tooling drift was found, the only edit would be a History row. Discard it
-   (`git -C "$REPO_ROOT" checkout -- QUALITY_SCORE.md`), open no branch and no PR, post the
-   step 8/9 report and finish.
-2. **Otherwise open a write-back PR** against the scanned repo's actual default branch,
-   resolved at run time (never hardcode `develop`):
+   Tooling drift was found, the only edit would be a History row. Discard it, commit nothing,
+   post the step 8/9 report and finish.
+2. **Otherwise commit.** Fetch the branch's current file, apply this run's edits to it, put it:
 
 ```bash
+WB="${PYLOT_WORKSPACE:-$HOME/.claude}/skills/entropy-check/scripts/contents-writeback.sh"
 BASE=$(GH_TOKEN=$GH_TOKEN gh repo view "$FULL_REPO" --json defaultBranchRef --jq .defaultBranchRef.name)
-BRANCH="entropy-scan/pr-{N}"          # weekly sweep: entropy-scan/weekly-$TODAY; manual: entropy-scan/manual-$TODAY
-TITLE="chore: entropy scan — PR #{N} {title} [skip ci]"   # weekly/manual: chore: entropy scan — weekly sweep $TODAY [skip ci]
-git -C "$REPO_ROOT" fetch origin "$BASE"
-git -C "$REPO_ROOT" switch -c "$BRANCH" "origin/$BASE"   # QUALITY_SCORE.md edits carry over
-git -C "$REPO_ROOT" add QUALITY_SCORE.md
-git -C "$REPO_ROOT" commit -m "$TITLE"
-git -C "$REPO_ROOT" push -u origin "$BRANCH"
-GH_TOKEN=$GH_TOKEN gh label create entropy-writeback --repo "$FULL_REPO" --color BFD4F2 \
-  --description "entropy-check QUALITY_SCORE write-back; post-merge entropy rules skip it" 2>/dev/null || true
-GH_TOKEN=$GH_TOKEN gh pr create --repo "$FULL_REPO" --base "$BASE" --head "$BRANCH" \
-  --title "$TITLE" --label entropy-writeback \
-  --body "Entropy write-back for {trigger}. Domains re-graded: {list}. No code changes."
+MSG="chore: entropy scan — PR #{N} {title} [skip ci]"   # weekly/manual: chore: entropy scan — weekly sweep $TODAY [skip ci]
+FRESH=$(mktemp)
+SHA=$(GH_TOKEN=$GH_TOKEN bash "$WB" fetch "$FULL_REPO" "$BASE" "$FRESH")
 ```
 
-- The commit message and PR title must both keep the literal `[skip ci]` tag — it prevents
-  production deploys, including from the squash-merge commit.
-- The diff is `QUALITY_SCORE.md` only.
-- The `entropy-writeback` label marks the PR as entropy's own write-back so post-merge
-  entropy rules can exclude it (`match.labels_exclude`) and not re-trigger a no-op scan.
-- The PR merges through the repo's standing review pipeline. Do not merge it yourself and
-  do not block the run waiting for it: the run is done once the PR is open.
+   Re-apply this run's row updates, new domains, Tooling section and History row to `$FRESH`
+   (the branch's current content), keeping every other line exactly as it is there. Then:
+
+```bash
+GH_TOKEN=$GH_TOKEN bash "$WB" put "$FULL_REPO" "$BASE" QUALITY_SCORE.md "$FRESH" "$SHA" "$MSG"; echo "rc=$?"
+```
+
+   `rc=0` prints the commit sha. `rc=3` means the sha went stale (HTTP 409/422 — another
+   write-back landed first): fetch again and re-apply, at most 3 attempts in total. Any other
+   code, or a third `rc=3`, fails the run loudly.
+
+- Always edit the freshly fetched content; never upload a stale local copy over it.
+- The commit message keeps the literal `[skip ci]` tag so the commit triggers no CI or deploy.
+- A direct commit opens no PR, so it cannot re-trigger the post-merge entropy rule.
+- The run is done once the commit lands; record its commit URL for step 8.
 
 ### 5. Signal Applicability Section
 
@@ -320,7 +326,6 @@ For any domain graded C, D, or F — or where grade regressed from previous — 
   Missing: {list of failing signals}
   Last doc update: {date}
   Last code commit: {date}
-  Delta: {N} days
 
 ### Stable issues (same low grade)
 - {Domain}: {grade} (unchanged since {date})
@@ -365,19 +370,18 @@ Note: repos may have intentional customizations — flag for review, don't auto-
 **inbox-angel-worker exception**: speckit is installed locally and gitignored. Drift sync must be done locally on Spacestation.
 
 Include drift findings in QUALITY_SCORE.md under a `## Tooling` section if any drift is found.
-They ride in the same step 4a write-back PR; this check never commits or pushes anywhere else.
+They ride in the same step 4a write-back commit; this check never commits or pushes anywhere else.
 
 ### 8. PR-Triggered Output
 
 When triggered by a PR merge event, output a comment-ready summary and post it on the merged PR
-once step 4a is done (write-back PR opened, or report-only). Do not wait for the write-back PR
-to merge:
+once step 4a is done (write-back committed, or report-only):
 
 ```
 ## Entropy Scan — PR #{N} merged
 
 Domains affected: {list}
-Write-back: {entropy PR URL, or "none — no QUALITY_SCORE.md change"}
+Write-back: {commit URL on the default branch, or "none — no QUALITY_SCORE.md change"}
 
 | Domain | Grade | Change | Notes |
 |--------|-------|--------|-------|

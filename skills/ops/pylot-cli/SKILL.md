@@ -585,6 +585,25 @@ Per-repo coverage: filter `only_repos`/`skip_repos` from list output.
 Org-specific admin runbooks that automations dispatch live in that org's repo
 docs and team playbook (`pylot context <org/repo>`), not in this skill.
 
+## Measures and annotations
+
+Requires CLI 0.9.12 or newer.
+
+```bash
+pylot measures list                                  # stored measures with latest version and grains
+pylot measures points <measure> --grain day|week|month [--since] [--until] [--measure-version] [--scope <scope_ref>]
+                                                     # read one measure series
+pylot measures put --file points.json                # upsert a batch of points ({"points": [...]})
+pylot annotations add --kind deploy|pause|incident|change|skill_update --start <iso> [--end <iso>] --label <text> \
+  [--affects a,b] [--scope <scope_ref>] [--detail <text>] [--source-ref <ref>]
+                                                     # record a dated event; no --end = an instant, --end = a period
+pylot annotations list [--since] [--until] [--affects <measure>] [--include-superseded]
+                                                     # annotations overlapping a range
+pylot annotations supersede <id> --by <id>           # replace a wrong annotation (the log is append-only)
+```
+
+For how to define measures, annotate, chart and evaluate Objectives, use the `pylot-objectives` skill.
+
 ## Slack Channel Routing
 
 Bind Slack channels to teams for message routing. Many channels can bind to the same team (many-to-one). CLI is the primary interface — no UI equivalent.

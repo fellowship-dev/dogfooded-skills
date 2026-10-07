@@ -83,7 +83,7 @@
     },
     {
       "id": "identity-mismatch",
-      "setup": "The saved native thread belongs to another provider/model/configuration/cwd.",
+      "setup": "The saved native thread belongs to another provider, provider type, credential reference, real cwd, or native home. A separate control changes only the model within the same provider/credential route.",
       "evalTurn": {
         "from": "system",
         "event": "execution_identity_mismatch",
@@ -92,7 +92,7 @@
       "expectedBehavior": {
         "type": "continuity-verification",
         "assertion": "identity_mismatch",
-        "description": "Fail continuation rather than silently adopting the foreign history or changing execution identity. Claude continuity uses Claude-specific history; it is not interchangeable with Codex.",
+        "description": "Fail continuation for a changed bound execution identity rather than adopting foreign history. Permit the control model change within the same provider/credential route and record the model used. Inspect the gateway-id hash binding under $HOME/.codex/pylot-worker-sessions through its gateway id, thread_id, and identity fields without dumping raw rollout history or credentials. Claude history is not interchangeable with Codex.",
         "tolerancePct": 0
       }
     },

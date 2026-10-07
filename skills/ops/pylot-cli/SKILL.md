@@ -341,8 +341,15 @@ identifies the drive loop; it is not proof of a Codex native thread. A worker
 image with native Codex continuity must persist the mapping from that gateway
 session to the `thread.started` identity under `~/.codex`, then resume that exact
 native thread. Never substitute `--last`, infer an id from another session, or
-silently start fresh when its rollout is missing. Verify the same execution
-identity (provider, model/configuration and working directory) before continuing.
+silently start fresh when its rollout is missing. The source-supported binding is
+`$HOME/.codex/pylot-worker-sessions/<sha256-of-gateway-session-id>.json`:
+inspect only its gateway id, `thread_id`, and `identity` fields to compare the
+saved provider/credential route and paths; never dump raw rollout history or
+credential values. Verify the same execution
+identity (provider, provider type, credential reference, real working directory,
+and native home) before continuing. Model changes within the same provider and
+credential route are supported; record the model used for each turn rather than
+treating a model change alone as incompatible.
 Claude uses its own session/history and `--resume` semantics; do not apply a
 Codex identity rule to Claude or assume either provider can resume the other's
 history.

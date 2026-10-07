@@ -289,7 +289,19 @@ the seq the prompt returned. Only trust `last_result` then. `--wait` polls every
 terminal state; `--follow` streams container logs to stderr and requires `--wait`.
 A devbox that dies mid-turn is reaped with `last_exit_code: -1`, so the loop
 cannot hang forever. Between phases, read the output before sending the next
-prompt — a failed phase should not be built on.
+prompt — a failed phase should not be built on. If `last_result` is absent,
+retain the original `last_output` as evidence; do not invent a successful result.
+Inspect `last_exit_code` and any native continuity failure reason even when
+`prompt --wait` returns shell status 0 and the worker is `idle`: those states
+can accompany a failed provider turn. A nonzero provider exit or explicit
+continuity failure remains a failed phase; preserve its output and resolve the
+failure before prompting onward or claiming success.
+
+Continue the same bounded task by sending the next prompt to the **same worker
+id** after its prior turn completes. Retain the scope, worker id, `session_id`,
+completed `turn_seq`, and full output. A passing turn proves that turn's result;
+application readiness still requires the intended build, tests, running services,
+and functional checks. Do not report readiness from an idle worker alone.
 
 Before invoking a remote slash command, send a plain-text discovery prompt to list
 the worker's installed commands and skills and the repo's instructions — local
@@ -320,14 +332,52 @@ pylot workers resume <wid> --mission "$PYLOT_JOB_ID"
 `--force` is mandatory — the CLI refuses the stop without it. Ask a human before
 stopping a box someone is working in. Stop is idempotent; always stop a mission
 worker when the skill finishes (harvest-on-complete is the backstop, not the plan).
-Conversation-owned devboxes snapshot on stop and `resume` restores that snapshot
-with `session_id` preserved; mission-worker snapshots are opt-in and OFF by default
-(cost control), so treat a mission worker's stop as final unless you know the flag
-is on.
-Harvest the completed turn's full output **before** stopping: stop can replace
-`last_output` with a truncated snapshot transcript. `stopped: true` does not mean
-recovery is available — require `snapshot_status: verified` before relying on
-`resume`. Deleting a conversation is destructive; never do it without an explicit ask.
+Conversation-owned devboxes snapshot on stop; mission-worker snapshots are
+opt-in and OFF by default (cost control), so treat a mission worker's stop as
+final unless you know the flag is on. Harvest the completed turn's full output
+**before** stopping: stop can replace `last_output` with a truncated snapshot
+transcript. `stopped: true` does not mean recovery is available — require
+`snapshot_status: verified` before relying on `resume`. Retain the stop receipt
+and snapshot status/reason; failed or missing snapshots need an explicit recovery
+decision, not an optimistic resume claim.
+
+**Native context continuity is provider-specific.** The gateway `session_id`
+identifies the drive loop; it is not proof of a Codex native thread. A worker
+image with native Codex continuity must persist the mapping from that gateway
+session to the `thread.started` identity under `~/.codex`, then resume that exact
+native thread. Never substitute `--last`, infer an id from another session, or
+silently start fresh when its rollout is missing. The source-supported binding is
+`$HOME/.codex/pylot-worker-sessions/<sha256-of-gateway-session-id>.json`:
+inspect only its gateway id, `thread_id`, and `identity` fields to compare the
+saved provider/credential route and paths; never dump raw rollout history or
+credential values. Verify the same execution
+identity (provider, provider type, credential reference, real working directory,
+and native home) before continuing. Model changes within the same provider and
+credential route are supported; record the model used for each turn rather than
+treating a model change alone as incompatible.
+Claude uses its own session/history and `--resume` semantics; do not apply a
+Codex identity rule to Claude or assume either provider can resume the other's
+history.
+
+1. Before stop, retain the worker and gateway session ids, provider/native
+   identity evidence, completed turn sequence, full result, and any unfinished
+   work checkpoint. Record paths and identifiers without dumping credentials,
+   environment variables, or raw native history.
+2. After a verified snapshot, resume the **same worker id** with the same scope.
+   A new task ARN is expected. Check restored workspace and native session
+   evidence before the next prompt; unchanged `session_id` alone is insufficient.
+3. Send the next bounded prompt to that worker. Verify the sequence advanced and
+   the provider resumed the saved native history (for example, it recalls a
+   prior turn's unique task fact without being supplied it again). Capture the
+   result and finish the application's functional checks before claiming readiness.
+
+Source support does not prove the published worker image contains it. Verify the
+image/version and observed resume behavior before claiming native continuity.
+For older Codex workers that never saved a native mapping or rollout, lost
+history cannot be inferred from the gateway session id. Preserve filesystem and
+output evidence, report the missing history, and resolve an explicit fresh-session
+migration or recovery decision. Do not label that migration a native resume.
+Deleting a conversation is destructive; never do it without an explicit ask.
 
 ### 5. Multi-box work — you are the message bus
 

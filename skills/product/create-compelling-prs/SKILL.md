@@ -165,7 +165,7 @@ Run this before opening or marking a PR ready for review:
 - [ ] **Complete?** Does this complete the bounded work represented by this PR's one driving issue?
 - [ ] **Shippable?** If merged as-is, will the PR close its driving issue, with every deliberately
       deferred named criterion captured verbatim in a linked follow-up using the shared
-      [follow-up issue contract](../../shared/follow-up-issue-template.md)?
+      [follow-up issue contract](references/follow-up-issue-template.md)?
 - [ ] **No manual caveats?** Zero "you'll need to X manually" instructions in the PR body.
 - [ ] **Verification passes?** Current evidence covers the affected behavior and every required repo gate; exact commands, scope and revision are recorded.
 - [ ] **Evidence present?** Screenshots or test output embedded for every meaningful change.
@@ -173,7 +173,7 @@ Run this before opening or marking a PR ready for review:
 - [ ] **Issue linked?** The PR has exactly one driving issue and uses `Closes #N`, `Fixes #N`, or
       `Resolves #N` for it. Every later PR in deliberate multi-PR work gets its own driving issue;
       file and link a follow-up using the shared
-      [follow-up issue contract](../../shared/follow-up-issue-template.md), then close that follow-up
+      [follow-up issue contract](references/follow-up-issue-template.md), then close that follow-up
       from the later PR. Use `Refs #N` only for an issue clearly identified as related context,
       never for the issue that drove the current PR.
 

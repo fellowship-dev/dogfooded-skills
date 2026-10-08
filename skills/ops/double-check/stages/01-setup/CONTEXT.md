@@ -21,10 +21,8 @@ export REPO={repo}  # org/repo
 # Set by the orchestrator only on a stage-04 restart: the head the previous cycle reviewed.
 DELTA_BASE_HEAD={delta_base_head or empty}
 # Patch-id helpers. Resolved now, because later steps cd into REPO_DIR.
-for d in "$HOME/.claude/skills/double-check/shared" skills/double-check/shared skills/ops/double-check/shared; do
-  [ -f "$d/exact-head-receipt.sh" ] && DC_SHARED="$(cd "$d" && pwd)" && break
-done
-source "$DC_SHARED/exact-head-receipt.sh"
+: "${DC_SKILL_DIR:?Pass the absolute loaded skill directory from the orchestrator}"
+source "$DC_SKILL_DIR/shared/exact-head-receipt.sh"
 ```
 
 ### Fetch PR metadata

@@ -189,8 +189,13 @@ check("scripts/rank_candidates.py" in skill, "skill must route deterministic ran
 check("Report persistence and readback outside the comment" in issue, "comment receipt must not be circular")
 check("repository-scoped scheduler serialization" in issue, "initial issue creation must be serialized")
 
-workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text()
-entrypoint = "./skills/ops/trash-truck/evals/test_retirement_contract.py"
-check(entrypoint in workflow, "contract test must be registered in CI")
+# Registration belongs to the owning source repository, not a copied consumer skill.
+# Detect the canonical layout, never a missing workflow: upstream CI drift must still fail.
+if SKILL_ROOT.relative_to(REPO_ROOT) == Path("skills/ops/trash-truck"):
+    workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    entrypoint = "./skills/ops/trash-truck/evals/test_retirement_contract.py"
+    check(entrypoint in workflow, "contract test must be registered in CI")
+else:
+    print("SKIP upstream CI registration: installed skill is outside skills/ops/trash-truck; portable contract checks ran.")
 
 print("Trash Truck retirement contract passed.")

@@ -326,7 +326,9 @@ Prompt, then schedule a wake (see Async Wake Pattern) and re-check `view` next t
 
 ```bash
 pylot workers stop   <wid> --mission "$PYLOT_JOB_ID" --force
-pylot workers resume <wid> --mission "$PYLOT_JOB_ID"
+pylot workers resume <wid> --mission "$PYLOT_JOB_ID" --wait --timeout 900
+# Reconnect to the acknowledged attempt; this is a read, not another resume POST.
+pylot workers restore-status <wid> --attempt <restore-attempt-uuid> --wait --timeout 900
 ```
 
 `--force` is mandatory — the CLI refuses the stop without it. Ask a human before
@@ -340,6 +342,44 @@ transcript. `stopped: true` does not mean recovery is available — require
 `snapshot_status: verified` before relying on `resume`. Retain the stop receipt
 and snapshot status/reason; failed or missing snapshots need an explicit recovery
 decision, not an optimistic resume claim.
+
+**Durable restore requires CLI 0.9.14 or newer and a gateway with asynchronous
+restore support.** Check `pylot workers resume --help` for `--wait` and
+`pylot workers restore-status --help` before starting; an older CLI or worker
+image is not proof these semantics are available.
+
+Resume initiates one durable attempt. HTTP `202` with `restore_status: pending`
+is acknowledgment, not restore success, even if the CLI exits 0. Immediately
+retain `worker_id`, `restore_attempt_id`, snapshot id, destination `task_arn`
+when available, and the original scope in the task checkpoint. `--wait` observes
+that attempt with short status reads. A timeout or disconnected observer does
+not cancel the restore: reconnect with `restore-status` and the saved worker
+and attempt ids. Do not repeat the resume POST because waiting timed out. If an
+acknowledgment was lost, inspect `restore-status <wid>` and worker state to
+recover the attempt identity before deciding whether another initiation is safe.
+
+Accept completion only when the status still names the saved worker and attempt,
+`restore_status` is `succeeded`, the restore receipt matches that attempt and
+snapshot, and the destination task is `RUNNING`. Retain the new task ARN; never
+continue against the stopped source ARN. A `failed` status or identity mismatch
+requires inspecting the recorded reason and resolving recovery before another
+prompt or retry. Gateway restore success proves the restore, while workspace,
+native context, and application readiness still need the checks below.
+
+For a standalone devbox, use:
+
+```bash
+pylot devboxes resume <stopped-task-arn> --wait --timeout 900
+# Use the destination task_arn from the completed attempt for subsequent calls.
+pylot devboxes view <destination-task-arn>
+pylot devboxes connect <destination-task-arn>
+```
+
+`devboxes resume --wait` follows the completed attempt's destination ARN, then
+waits for it to be `RUNNING` and reachable. If its observer times out, recover
+with the saved `worker_id` and `restore_attempt_id` through `workers restore-status`
+as above, then check and connect to that destination. A reachable daemon alone
+does not prove the application's services are ready.
 
 **Native context continuity is provider-specific.** The gateway `session_id`
 identifies the drive loop; it is not proof of a Codex native thread. A worker
@@ -364,7 +404,8 @@ history.
    work checkpoint. Record paths and identifiers without dumping credentials,
    environment variables, or raw native history.
 2. After a verified snapshot, resume the **same worker id** with the same scope.
-   A new task ARN is expected. Check restored workspace and native session
+   Observe the same restore attempt to verified success as above; a new task
+   ARN is expected. Check restored workspace and native session
    evidence before the next prompt; unchanged `session_id` alone is insufficient.
 3. Send the next bounded prompt to that worker. Verify the sequence advanced and
    the provider resumed the saved native history (for example, it recalls a
@@ -414,6 +455,7 @@ conversation-scoped routes and all `/admin/*` routes remain 403 for session JWTs
 |---|---|---|
 | `workers spawn`/`list`/`view`/`prompt`/`output`/`stop`/`resume`/`logs` **with `--mission`** | yes | yes |
 | the same verbs **without** `--mission` (unscoped `/workers/:wid`) | **403** | yes |
+| `workers restore-status` (read-only, no `--mission` flag) | yes, own worker | yes |
 | `workers spawn`/`list --conversation` | **403** | yes |
 | `devboxes projects`, `devboxes project <org/repo>` | yes | yes |
 | `devboxes spawn`/`view`/`connect`/`delete`/`list` | **403** | yes |
@@ -423,7 +465,8 @@ conversation-scoped routes and all `/admin/*` routes remain 403 for session JWTs
 A gate 403 reads `{"error":"forbidden","reason":"capability_required","capability":"unknown"}`.
 Nothing outside the operator JWT is capability-gated, but handler-level org fences
 still apply to org-scoped tokens. **Inside a mission, always pass
-`--mission "$PYLOT_JOB_ID"`** — that one habit avoids every operator 403 above.
+`--mission "$PYLOT_JOB_ID"`** on verbs that accept it. `restore-status` instead
+uses the saved worker/attempt ids on its authorized read-only route.
 
 ### 7. Fallback when there is no usable CLI
 

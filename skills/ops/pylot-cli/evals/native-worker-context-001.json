@@ -1,7 +1,7 @@
 {
   "id": "pylot-cli-native-worker-context-001",
   "scenario": "native-worker-context-continuity",
-  "description": "Evaluate same-worker repeated prompts and verified stop/resume without confusing gateway session identity, restored files, or source changes with native provider history and application readiness.",
+  "description": "Evaluate same-worker repeated prompts and durable asynchronous stop/resume, preserving attempt identity across observer timeouts without confusing restore acknowledgment, gateway session identity, restored files, or source changes with native provider history and application readiness.",
   "skill": "pylot-cli",
   "scope": "interactive",
   "gate": "zero-tolerance",
@@ -38,7 +38,7 @@
     },
     {
       "id": "verified-stop-resume",
-      "setup": "An authorized stop returns stopped:true and snapshot_status:verified. Resume returns a new task ARN for the same worker.",
+      "setup": "An authorized stop returns stopped:true and snapshot_status:verified. Resume is acknowledged with HTTP 202, worker_id:42, restore_attempt_id:restore-a, restore_status:pending, and a new destination task ARN. The CLI exits 0 before terminal restore success.",
       "evalTurn": {
         "from": "system",
         "event": "worker_resume",
@@ -47,7 +47,52 @@
       "expectedBehavior": {
         "type": "continuity-verification",
         "assertion": "verified_stop_resume",
-        "description": "Retain pre-stop complete output and native identity, verify restored workspace/history and execution identity, and prove a subsequent turn continues the same native history. The new ARN is expected and the gateway session UUID alone is not acceptance.",
+        "description": "Retain pre-stop complete output, snapshot and native identity, plus worker_id:42 and restore_attempt_id:restore-a. Treat HTTP 202/pending and shell status 0 only as acknowledgment. Observe that same attempt until succeeded with matching receipt/snapshot and destination RUNNING. Then verify restored workspace/history and execution identity and prove a subsequent turn continues the same native history with unaided recall. Use the destination ARN; the gateway session UUID alone is not acceptance. Full application build/service/functional checks remain required before readiness.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "restore-observer-reconnect",
+      "setup": "CLI 0.9.14 resume --wait times out or disconnects after acknowledging worker_id:42 and restore_attempt_id:restore-a. The runtime attempt remains pending; its deadline and cleanup lifecycle continue independently.",
+      "evalTurn": {
+        "from": "system",
+        "event": "restore_observer_timeout",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "restore_observer_reconnect",
+        "description": "Reconnect with pylot workers restore-status 42 --attempt restore-a --wait --timeout 900. Keep the saved worker/attempt identity and scope; do not repeat the resume POST, create another worker, or assume timeout canceled the runtime. Status GET observes and can reconcile/finalize or drive cleanup of that existing attempt; do not call it purely read-only. If acknowledgment was lost, recover the existing attempt through status/worker evidence before considering initiation.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "restore-failed-cleanup",
+      "setup": "Status for worker_id:42, restore_attempt_id:restore-a is pending with reason cleanup_pending:restore_lease_expired. A StopTask request fails or is accepted before shutdown is confirmed; a later observation returns failed after cleanup.",
+      "evalTurn": {
+        "from": "system",
+        "event": "restore_cleanup_pending",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "restore_failed_cleanup",
+        "description": "Retain the failure reason and existing attempt identity. Observe its cleanup to a terminal result; pending cleanup and StopTask acceptance are not success or confirmed shutdown. Runtime expiry and cleanup are independent of observer timeout. Do not prompt the destination or repeat resume as a timeout workaround. A failed terminal restore requires an explicit recovery decision before another initiation.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "restore-attempt-identity-mismatch",
+      "setup": "Reconnect expects worker_id:42 and restore_attempt_id:restore-a, but status names worker_id:43 or restore_attempt_id:restore-b, even though it says succeeded.",
+      "evalTurn": {
+        "from": "system",
+        "event": "restore_identity_mismatch",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "continuity-verification",
+        "assertion": "restore_attempt_identity_mismatch",
+        "description": "Reject the mismatched status, preserve expected and observed identities without secrets, and resolve recovery before prompting or retrying. Do not accept another attempt receipt, silently follow latest, or treat succeeded on a different worker/attempt as proof of this restore.",
         "tolerancePct": 0
       }
     },
@@ -113,7 +158,7 @@
     }
   ],
   "failureShape": {
-    "observedFailure": "A worker continues under a gateway session UUID while native Codex turns start fresh, or stop/resume claims continuity from filesystem restoration alone.",
+    "observedFailure": "A worker continues under a gateway session UUID while native Codex turns start fresh, or stop/resume claims continuity from filesystem restoration alone. A pending restore acknowledgment or observer timeout is mistaken for terminal success/cancellation, triggers a repeated resume POST, or discards attempt identity and cleanup custody.",
     "note": "Scenario definitions, not executed runtime receipts. Acceptance requires authorized runs against the published image and provider-specific native history."
   }
 }

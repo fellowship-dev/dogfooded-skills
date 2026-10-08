@@ -327,7 +327,7 @@ Prompt, then schedule a wake (see Async Wake Pattern) and re-check `view` next t
 ```bash
 pylot workers stop   <wid> --mission "$PYLOT_JOB_ID" --force
 pylot workers resume <wid> --mission "$PYLOT_JOB_ID" --wait --timeout 900
-# Reconnect to the acknowledged attempt; this is a read, not another resume POST.
+# Observe the acknowledged attempt without initiating another restore.
 pylot workers restore-status <wid> --attempt <restore-attempt-uuid> --wait --timeout 900
 ```
 
@@ -357,6 +357,12 @@ not cancel the restore: reconnect with `restore-status` and the saved worker
 and attempt ids. Do not repeat the resume POST because waiting timed out. If an
 acknowledgment was lost, inspect `restore-status <wid>` and worker state to
 recover the attempt identity before deciding whether another initiation is safe.
+The runtime restore deadline and cleanup lifecycle are independent of the CLI
+observer timeout. Status observation can reconcile/finalize the attempt and
+drive cleanup, including stopping a failed or expired destination; it does not
+initiate a new restore. Retain `cleanup_pending` reasons and verify terminal
+cleanup rather than treating an observer timeout or StopTask acceptance as
+confirmed shutdown.
 
 Accept completion only when the status still names the saved worker and attempt,
 `restore_status` is `succeeded`, the restore receipt matches that attempt and
@@ -455,7 +461,7 @@ conversation-scoped routes and all `/admin/*` routes remain 403 for session JWTs
 |---|---|---|
 | `workers spawn`/`list`/`view`/`prompt`/`output`/`stop`/`resume`/`logs` **with `--mission`** | yes | yes |
 | the same verbs **without** `--mission` (unscoped `/workers/:wid`) | **403** | yes |
-| `workers restore-status` (read-only, no `--mission` flag) | yes, own worker | yes |
+| `workers restore-status` (GET observation, no `--mission` flag) | yes, own worker | yes |
 | `workers spawn`/`list --conversation` | **403** | yes |
 | `devboxes projects`, `devboxes project <org/repo>` | yes | yes |
 | `devboxes spawn`/`view`/`connect`/`delete`/`list` | **403** | yes |
@@ -466,7 +472,8 @@ A gate 403 reads `{"error":"forbidden","reason":"capability_required","capabilit
 Nothing outside the operator JWT is capability-gated, but handler-level org fences
 still apply to org-scoped tokens. **Inside a mission, always pass
 `--mission "$PYLOT_JOB_ID"`** on verbs that accept it. `restore-status` instead
-uses the saved worker/attempt ids on its authorized read-only route.
+uses the saved worker/attempt ids on its authorized GET observation route; it
+can reconcile the existing attempt and drive cleanup as described above.
 
 ### 7. Fallback when there is no usable CLI
 

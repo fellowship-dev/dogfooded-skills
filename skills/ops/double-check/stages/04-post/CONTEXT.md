@@ -123,7 +123,7 @@ then
   LIVE_READ_FAILED=true
 fi
 # exact-head-receipt.sh was sourced at the top of this stage (carry branch section).
-LIVE_HEAD_SHA=$(jq -r '.headRefOid // empty' /tmp/dc-pr-$PR.json 2>/dev/null || true)
+LIVE_HEAD_SHA=$(dc_pr_json_read "/tmp/dc-pr-$PR.json" head 2>/dev/null || true)
 # The reviewed diff's patch-id comes from setup (stage 02 reviewed exactly the setup head).
 SETUP_PATCH_ID=$(sed -n 's/^- Setup patch-id: //p' "$SETUP_HANDOFF" | head -1)
 LIVE_PATCH_ID=$SETUP_PATCH_ID
@@ -155,8 +155,12 @@ if [ "$DECISION" = blocked ]; then
   exit 2
 fi
 
-LIVE_STAT=$(jq -r '"+\(.additions)/-\(.deletions), \(.files|length) files"' /tmp/dc-pr-$PR.json)
-LIVE_FILES=$(jq -r '.files[].path' /tmp/dc-pr-$PR.json)
+if ! LIVE_STAT=$(dc_pr_json_read "/tmp/dc-pr-$PR.json" stat 2>/dev/null) ||
+   ! LIVE_FILES=$(dc_pr_json_read "/tmp/dc-pr-$PR.json" files 2>/dev/null); then
+  REASON="live PR diff metadata unavailable or malformed"
+  echo "[stage-04] blocked: $REASON"
+  exit 2
+fi
 echo "[stage-04] live diff: $LIVE_STAT"
 echo "[stage-04] stage-02 head reviewed: $REVIEWED_HEAD_SHA"
 echo "[stage-04] live head: $LIVE_HEAD_SHA"

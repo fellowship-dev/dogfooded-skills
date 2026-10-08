@@ -7,6 +7,41 @@ dc_is_full_sha() {
   printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'
 }
 
+# Parse one cached gh JSON response with Python stdlib; no external jq dependency.
+# Invalid/missing fields return failure and no output. Callers own fail-closed decisions.
+dc_pr_json_read() {
+  python3 -c '
+import json, re, sys
+try:
+    with open(sys.argv[1]) as source:
+        data = json.load(source)
+    if not isinstance(data, dict):
+        raise ValueError("invalid PR")
+    field = sys.argv[2]
+    if field == "head":
+        head = data.get("headRefOid")
+        if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head):
+            raise ValueError("invalid head")
+        print(head)
+    elif field in ("stat", "files"):
+        files = data.get("files")
+        if not isinstance(files, list) or any(not isinstance(f, dict) or not isinstance(f.get("path"), str) or not f["path"] or "\n" in f["path"] or "\r" in f["path"] for f in files):
+            raise ValueError("invalid files")
+        if field == "stat":
+            additions, deletions = data.get("additions"), data.get("deletions")
+            if type(additions) is not int or type(deletions) is not int or min(additions, deletions) < 0:
+                raise ValueError("invalid stats")
+            print(f"+{additions}/-{deletions}, {len(files)} files")
+        else:
+            for item in files:
+                print(item["path"])
+    else:
+        raise ValueError("unknown field")
+except (OSError, ValueError):
+    sys.exit(1)
+' "$1" "$2"
+}
+
 # Prints one of: promote, carry, restart, blocked.  The caller owns all side effects.
 #   promote — the live head is the exact reviewed head.
 #   carry   — the head moved, but the PR's own diff did not: both patch-ids are present and equal
@@ -44,7 +79,7 @@ dc_live_promotion_decision() {
   fi
 
   local live_head_sha
-  live_head_sha=$(jq -r '.headRefOid // empty' "$output_file" 2>/dev/null || true)
+  live_head_sha=$(dc_pr_json_read "$output_file" head 2>/dev/null || true)
   dc_exact_head_decision "$reviewed_head_sha" "$live_head_sha" "$restart_count"
 }
 
@@ -84,11 +119,32 @@ dc_live_patch_receipt() {
 # account count (DC_RECEIPT_AUTHORS, space-separated logins, default `pylot-app`): anyone can type a
 # marker into a comment, and a forged `verdict=ready` would carry an unreviewed diff.
 dc_latest_verdict_receipt() {
-  local pr=$1 repo=$2
-  gh pr view "$pr" --repo "$repo" --json comments 2>/dev/null \
-    | jq -r --arg authors "${DC_RECEIPT_AUTHORS:-pylot-app}" \
-        '.comments[] | select(.author.login as $a | ($authors | split(" ") | index($a))) | .body' \
-        2>/dev/null \
+  local pr=$1 repo=$2 comments_json
+  comments_json=$(gh pr view "$pr" --repo "$repo" --json comments 2>/dev/null) || return 0
+  printf '%s' "$comments_json" \
+    | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    comments = data.get("comments") if isinstance(data, dict) else None
+    if not isinstance(comments, list):
+        raise ValueError("invalid comments")
+    bodies = []
+    authors = sys.argv[1].split(" ")
+    for comment in comments:
+        if not isinstance(comment, dict) or not isinstance(comment.get("author"), dict):
+            raise ValueError("invalid comment author")
+        login, body = comment["author"].get("login"), comment.get("body")
+        if not isinstance(login, str) or not isinstance(body, str):
+            raise ValueError("invalid comment fields")
+        if login in authors:
+            bodies.append(body)
+    # Emit only after validating the whole response: partial malformed input never carries.
+    for body in bodies:
+        print(body)
+except ValueError:
+    pass
+' "${DC_RECEIPT_AUTHORS:-pylot-app}" 2>/dev/null \
     | grep -F 'pylot:exact-head-promoted' \
     | awk '{
         head = "-"; pid = "-"; verdict = "-"
@@ -98,7 +154,7 @@ dc_latest_verdict_receipt() {
           if ($i ~ /^verdict=[a-z-]+$/)    verdict = substr($i, 9)
         }
         if (length(head) == 40) last = head " " pid " " verdict
-      } END { if (last != "") print last }'
+      } END { if (last != "") print last }' || true
   return 0
 }
 

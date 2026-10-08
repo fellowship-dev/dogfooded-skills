@@ -284,7 +284,7 @@ fi
 
 **Rules:**
 - If no CI findings exist: write "No CI review comments found — reviewed diff directly"
-- If tests weren't run: explain why (e.g., "deps-only change, no test suite applicable")
+- If tests were not run: name the owning contract, scope and matching reused receipts or precise execution gap. Dependencies/lockfiles are not automatically exempt; non-runtime classifications need their required static/policy checks.
 - Verdict must be specific: either "ready for CTO review" or list what still needs work
 - If stage 03 was skipped (`fixes_needed: false`): mark all "Fixed?" cells "No (no fix needed)"
 - The `**Head reviewed:**` line is ALWAYS present with the full 40-hex live head — it is the

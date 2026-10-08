@@ -48,5 +48,5 @@ Format:
 ```
 
 - For Pylot/crew-based runs the report goes to `$(git rev-parse --show-toplevel)/reports/`.
-- For deps-only PRs (Dependabot, lockfile-only), tests may be skipped — note this explicitly.
+- Dependency/lockfile PRs retain owning impact/upgrade gates; do not automatically skip them. Record exact scope, matching reused receipts, required checks and any execution gap. Not-applicable requires a contract-backed non-runtime classification and required static/policy evidence.
 - NO Quest POST. Do not call any Quest endpoint, `127.0.0.1:4242`, or `quest.fellowship.dev`.

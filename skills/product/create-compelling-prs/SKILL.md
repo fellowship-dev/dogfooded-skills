@@ -97,7 +97,7 @@ Closes #ISSUE
 [Low/Medium/High — breaking changes? Coverage of affected areas?]
 
 ## Test output
-[paste — full suite green]
+[paste — owning repo dependency verification passed; name the commands and scope]
 ```
 
 ---
@@ -141,6 +141,23 @@ For any UI-impacting change, capture before/after screenshots (Playwright prefer
 
 ---
 
+## Verification Scope
+
+Resolve the owning repository's active instructions and verification contract before selecting
+commands. Map the complete change to affected behavior and direct consumers, including shared
+code, dependency/lockfile changes, migrations, transformations, and integration boundaries.
+Run meaningful focused checks when that contract permits them; preserve every required broad,
+full-suite, build, staging, and release gate. Dependency changes are not test-exempt. Unmapped
+impact or missing meaningful coverage requires broader verification or an explicit unresolved
+coverage gap. Never infer that CI owns a full gate without checking the repository policy and
+its actual configured workflow.
+
+Record commands, scope, results, test counts, exact revision and remaining gates. Failed,
+unavailable, or zero-test runs are not a pass. Reuse a current receipt only when its revision,
+scope, environment and policy still apply; rerun after changes, failures or unresolved concerns.
+Independent acceptance remains required: inspect the diff and reproduce the relevant behavior
+or gate where useful, without automatically repeating the same full suite on unchanged code.
+
 ## Self-Audit Checklist
 
 Run this before opening or marking a PR ready for review:
@@ -150,7 +167,7 @@ Run this before opening or marking a PR ready for review:
       deferred named criterion captured verbatim in a linked follow-up using the shared
       [follow-up issue contract](../../shared/follow-up-issue-template.md)?
 - [ ] **No manual caveats?** Zero "you'll need to X manually" instructions in the PR body.
-- [ ] **Tests pass?** Ran them yourself right now — not trusting earlier cached output.
+- [ ] **Verification passes?** Current evidence covers the affected behavior and every required repo gate; exact commands, scope and revision are recorded.
 - [ ] **Evidence present?** Screenshots or test output embedded for every meaningful change.
 - [ ] **Policy honored?** The playbook's deployment-evidence block is present, verbatim, in the location it names — or the "no policy in playbook" note is in the body.
 - [ ] **Issue linked?** The PR has exactly one driving issue and uses `Closes #N`, `Fixes #N`, or
@@ -170,21 +187,24 @@ After a worker reports done, do not immediately accept. Press harder.
 
 **Iteration protocol:**
 
-1. Ask: **"What would you improve? How can you go the extra mile?"**
-2. Require **actions, not claims** — "I'd add tests" → demand they write them now. "I'd verify it renders" → demand a screenshot.
-3. When improvement is done, ask again.
-4. Stop after ~3 iterations if returns are marginal. After 10 with persistent gaps → respawn with stricter instructions.
+1. Inspect the agreed outcome, diff, affected behavior and current verification receipts.
+2. Identify concrete acceptance gaps. Require **actions, not claims**: a missing behavioral
+   check needs evidence; a rendering gap needs inspection or a screenshot when relevant.
+3. After a correction, verify the affected scope on the resulting revision and resolve any
+   remaining material gaps. Preserve independently required repository gates.
+4. Stop when acceptance is supported. Do not add iterations, tests or code changes merely to
+   demonstrate effort. If a gap cannot be resolved, state the specific blocker and evidence.
 
 **Rules:**
 
 - **Never accept rhetoric.** "I'm confident this is solid" is not evidence — demand it.
-- **Verify independently.** Run the tests yourself. Open the PR URL. Load the live site.
-- **Track the diff between iterations.** No file changes = worker is stalling → push harder.
+- **Verify independently.** Inspect current evidence and reproduce relevant behavior or checks under the owning repo contract. Open the PR URL; load the affected live site when applicable. Resolve material gaps before acceptance.
+- **Track corrections and evidence.** A valid verification receipt can close a gap without a code change; require a concrete result for each identified gap.
 
 **Rotation questions** (vary to avoid formulaic answers):
 
 - "What would a senior engineer reject in code review?"
-- "Run the full test suite now and paste the output."
+- "Which affected behavior and repository gates does this evidence cover? Run the missing meaningful checks and paste the output."
 - "Screenshot the affected page. Does it match the design system?"
 - "What did you punt on? Re-read the task and list every deliverable."
 - "If this gets rejected, what's the most likely reason? Fix it preemptively."

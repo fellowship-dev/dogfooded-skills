@@ -140,10 +140,20 @@ Remove the complete authorized slice across every included surface: code, tests,
 Before editing, capture a clean baseline and the characterization or usage evidence that protects behavior outside the slice. After editing, verify:
 
 - static consumers and dynamic entry points no longer depend on the retired surface;
-- targeted and full tests or builds pass;
+- meaningful checks protect affected behavior and surviving consumers under the owning
+  repository's verification contract; run focused tests/builds when permitted and preserve
+  required broad/full, dependency, migration, transformation, integration and release gates;
+  unknown impact or missing meaningful coverage requires a broader check or an explicit gap,
+  not an assumed pass;
 - configuration, jobs, integrations, documentation, and alerts agree with the new state;
 - migrations, data, and rollback posture are safe where applicable;
 - the exact deployed revision and post-deploy evidence are checked when deployment is separately authorized.
+
+Record the selected scope and rationale, exact commands, results, test counts, environment and
+revision. Missing tools, failed commands or zero-test results are not a pass. Independent
+acceptance checks the approved manifest and surviving behavior; repeat checks when changes,
+failures or unresolved concerns justify it, rather than automatically rerunning a full suite.
+Do not assume CI supplies a full gate without verifying its configured workflow and repo policy.
 
 An open or merged PR means retirement is proposed or landed in source. Mark a production surface `retired` only after deployed-revision and post-deploy evidence prove the full manifest is gone.
 

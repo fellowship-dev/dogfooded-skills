@@ -250,7 +250,27 @@ No `task_def` means no image was ever built and the spawn boots into
 `404 no_project`/`no_repo` (repo not in any team's devbox config), `409` mission
 already terminal, `422 provider_required`, `502` ECS/secrets.
 
-### 2. Spawn
+### 2. Choose reuse, resume, or spawn
+
+For another round of the **same active deliverable**, first inspect its recorded
+worker, scope, task ARN and completed turn. Reuse a running, healthy devbox and
+its native context after the checks below; a new round alone is not a reason to
+spawn or start a fresh native session. Never borrow another owner's box or
+reuse an incompatible repository, execution identity or unfinished turn.
+
+- **Warm reuse:** continue the recorded worker when its prior turn is complete,
+  native identity is intact, and workspace/application checks still pass.
+- **Resume:** if that worker is stopped, use §4's verified snapshot and durable
+  restore procedure, then verify native continuity and application readiness.
+- **Spawn:** use a new box when no compatible reusable worker exists or an
+  explicit recovery decision requires it. Record why reuse was unsuitable.
+
+Keep warm reuse within the authorized working window and budget. Prefer short
+idle exposure and verified stop when the active work ends; do not add keepalive,
+raise TTL, or hold compute overnight to improve a timing result. Record resource
+lifetimes and allocated CPU/memory separately from measured billed cost; an
+allocation estimate is not a bill.
+
 
 ```bash
 # inside a mission — your own job
@@ -302,6 +322,46 @@ id** after its prior turn completes. Retain the scope, worker id, `session_id`,
 completed `turn_seq`, and full output. A passing turn proves that turn's result;
 application readiness still requires the intended build, tests, running services,
 and functional checks. Do not report readiness from an idle worker alone.
+
+#### Safe refresh between rounds
+
+Before any source update, inventory the intended repository and real checkout
+path, current branch/HEAD and upstream, and staged, unstaged, untracked and linked
+worktree state. For example, from the intended checkout:
+
+```bash
+git rev-parse --show-toplevel
+git branch --show-current
+git rev-parse HEAD
+git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' # absent upstream needs an explicit target
+git status --short --untracked-files=all
+git diff --stat
+git diff --cached --stat
+git worktree list --porcelain
+```
+
+Verify the remote's repository identity without exposing credential-bearing URLs.
+Inspect relevant diffs privately when needed; do not dump secrets or unrelated
+work. Dirty state is work to preserve, not a startup failure. Fetch the verified
+remote (`git fetch <remote>`) to inspect incoming commits without changing the
+branch, index or worktree. Do not automatically pull, reset, stash, clean, switch
+branches or rebase. Continue with the current source when that is the intended
+state. Fast-forward only a clean checkout on the intended branch to an explicitly
+verified target, after confirming the current HEAD is its ancestor and reviewing
+the incoming scope (`git merge --ff-only <verified-target>`). For divergence,
+dirty state or a different intended branch, retain the inventory and resolve the
+integration plan without moving or discarding someone else's work.
+
+A code-only commit does not itself invalidate a healthy environment. Compare the
+changed inputs against the repository's readiness contract: dependency locks,
+runtime/image, startup/service configuration, schema/migrations and required
+configuration changes can invalidate prior evidence. Run the affected setup or
+readiness checks when those inputs change; an unknown fingerprint requires
+verification. Never rerun destructive setup or recreate a database merely to
+refresh readiness. Before claiming the next round ready, verify required service
+health and perform a useful task action (focused check and browser/job flow where
+applicable). Reuse caches and unaffected readiness evidence, but retain the full
+repository-required service gate and record source and runtime revisions.
 
 Before invoking a remote slash command, send a plain-text discovery prompt to list
 the worker's installed commands and skills and the repo's instructions — local

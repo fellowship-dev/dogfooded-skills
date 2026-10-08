@@ -66,6 +66,13 @@ never the full orchestrator context.
 
 ## Execution
 
+Resolve `DC_SKILL_DIR` to the absolute directory containing the loaded `SKILL.md`, using
+its supplied resource path before changing the working directory. Use that same root for
+stage instructions, templates and helpers; do not infer it from the reviewed repository's
+cwd or prefer another installed version. Pass it explicitly to each stage and export it
+in that stage's shell. If the loaded resource path is unavailable, stop and resolve it
+before running stages.
+
 ### Exact-head cycles (sequential subagents)
 
 Run one Task per stage, one after another. Do NOT launch any stages in parallel. Do not start the
@@ -90,9 +97,11 @@ Task prompt template:
 You are running stage {NN}-{name} of the double-check procedure.
 
 PR: {pr}    REPO: {repo}
+DC_SKILL_DIR: {absolute skill directory}
+Export DC_SKILL_DIR to this absolute path before executing shell snippets.
 
 Read your stage instructions:
-  skills/double-check/stages/{NN}-{name}/CONTEXT.md
+  {DC_SKILL_DIR}/stages/{NN}-{name}/CONTEXT.md
 
 Your inputs:
   {list only the input handoff paths from that stage's CONTEXT.md}
@@ -115,7 +124,7 @@ Stage gating:
 
 Run stage 04 yourself in the orchestrator context — do NOT spawn a Task. Read CONTEXT.md:
 ```
-skills/double-check/stages/04-post/CONTEXT.md
+{DC_SKILL_DIR}/stages/04-post/CONTEXT.md
 ```
 Run the live claims-vs-diff and exact-head gates (`gh pr view`), then only for a matching head
 post the comment and apply the label. Verify labels/comment actually landed, write the report

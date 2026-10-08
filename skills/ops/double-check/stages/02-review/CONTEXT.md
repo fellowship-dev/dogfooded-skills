@@ -93,7 +93,7 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
      mismatch *more* suspicious, not less.
    - `Closes`/`Implements` refs count as claims. For a closing driving issue, assess each
      criterion against the diff or a linked follow-up conforming to
-     [the follow-up issue contract](../../../../shared/follow-up-issue-template.md). Read the
+     [the follow-up issue contract](../../references/follow-up-issue-template.md). Read the
      follow-up: it must carry the deferred criteria verbatim. A conforming transfer backs the
      closing reference; generate no finding merely because that remainder is absent from this
      diff. Operational or post-merge acceptance remains owed by the follow-up, not claimed done.

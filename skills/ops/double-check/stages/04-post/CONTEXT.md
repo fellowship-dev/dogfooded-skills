@@ -35,9 +35,8 @@ stop. No review runs and no label is touched.
 
 ```bash
 SETUP_HANDOFF=".procedure-output/double-check/01-setup/handoff.md"
-for d in "$HOME/.claude/skills/double-check/shared" skills/double-check/shared skills/ops/double-check/shared; do
-  [ -f "$d/exact-head-receipt.sh" ] && source "$d/exact-head-receipt.sh" && break
-done
+: "${DC_SKILL_DIR:?Pass the absolute loaded skill directory from the orchestrator}"
+source "$DC_SKILL_DIR/shared/exact-head-receipt.sh"
 REVIEW_SCOPE=$(awk '/^review_scope:/{print $2; exit}' "$SETUP_HANDOFF")
 RESTART_COUNT=${RESTART_COUNT:-0}
 if [ "$REVIEW_SCOPE" = carry ]; then
@@ -216,7 +215,7 @@ if [ "$CLAIMS" = "fail" ]; then VERDICT=needs-work; fi
 
 ### Post the curated review comment
 
-Fill `shared/review-comment-template.md` from the stage-02 (curated findings, new issues, verdict)
+Fill `$DC_SKILL_DIR/shared/review-comment-template.md` from the stage-02 (curated findings, new issues, verdict)
 and stage-03 (tests, fixes) handoffs, then post:
 
 ```bash
@@ -488,7 +487,7 @@ declaring failure.
 REPORT_FILE="reports/$(date +%Y-%m-%d)-review-$(echo $REPO | tr '/' '-')-pr$PR.md"
 ```
 
-Fill `shared/report-template.md` and write it to `REPORT_FILE`. For Pylot/crew runs the report
+Fill `$DC_SKILL_DIR/shared/report-template.md` and write it to `REPORT_FILE`. For Pylot/crew runs the report
 goes to `$(git rev-parse --show-toplevel)/reports/`. Operators surface this file via the mission
 report.
 

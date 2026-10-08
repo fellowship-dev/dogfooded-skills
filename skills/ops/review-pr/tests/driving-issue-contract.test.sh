@@ -62,7 +62,7 @@ assert_contains "$DOUBLE_CHECK" 'follow-up: it must carry the deferred criteria 
 assert_contains "$DOUBLE_CHECK" 'If a criterion is neither implemented nor transferred' double-check-uncovered-remainder-requires-fix
 assert_contains "$DOUBLE_CHECK" 'Operational or post-merge acceptance remains owed by the follow-up, not claimed done.' double-check-transfer-is-not-completion
 assert_contains "$DOUBLE_CHECK" 'Never recommend downgrading the' double-check-retains-closing-reference
-assert_contains "$DOUBLE_CHECK" '../../../../shared/follow-up-issue-template.md' double-check-shared-contract
+assert_contains "$DOUBLE_CHECK" '../../references/follow-up-issue-template.md' double-check-shared-contract
 assert_not_contains "$DOUBLE_CHECK" 'implement it is unbacked.' double-check-unconditional-rejection-removed
 
 # Author behavior: exactly one closing driving issue, decomposition, and the same shared contract.
@@ -70,7 +70,7 @@ assert_contains "$AUTHOR" 'exactly one driving issue' author-one-driving-issue
 assert_contains "$AUTHOR" '`Closes #N`, `Fixes #N`, or' author-closing-keyword
 assert_contains "$AUTHOR" 'Every later PR in deliberate multi-PR work gets its own driving issue' author-decomposes
 assert_contains "$AUTHOR" 'clearly identified as related context' author-related-refs-exception
-assert_contains "$AUTHOR" '../../shared/follow-up-issue-template.md' author-shared-contract
+assert_contains "$AUTHOR" 'references/follow-up-issue-template.md' author-shared-contract
 assert_not_contains "$AUTHOR" 'final phase carries the `Closes`' author-obsolete-final-phase-removed
 
 # Behavioral producer-to-reviewer fixture: Stage 00 must retain both a Refs-only driving link and
@@ -88,14 +88,29 @@ expected_links=$(printf '%s\n' \
 printf 'PASS refs-driving-fixture\n'
 assert_contains "$REVIEW" 'driving issue only with `Refs #N`' refs-fixture-reviewer-consumer
 
-# All three consumer references must resolve to the one canonical file.
-for consumer in "$REVIEW" "$AUTHOR" "$DOUBLE_CHECK"; do
-  target=$(grep -oE '\([^)]*follow-up-issue-template\.md\)' "$consumer" | head -1 | tr -d '()')
-  resolved=$(cd "$(dirname "$consumer")" && realpath "$target")
-  [ "$resolved" = "$TEMPLATE" ] || {
-    printf 'FAIL shared-template-resolution: %s resolves to %s\n' "$consumer" "$resolved" >&2
-    exit 1
-  }
-done
-printf 'PASS all-three-consumers-resolve-canonical-template\n'
+# Review-pr retains the canonical reference. Portable installs carry exact, provenance-marked
+# copies inside each skill; fail on missing, escaped, stale or unproven copies.
+python3 - "$REVIEW" "$AUTHOR" "$DOUBLE_CHECK" "$TEMPLATE" <<'PY_CONTRACT'
+from pathlib import Path
+import re
+import sys
+
+review, author, double_check, canonical = map(Path, sys.argv[1:])
+canonical = canonical.resolve(strict=True)
+
+def target(consumer):
+    match = re.search(r"\]\(([^)]*follow-up-issue-template\.md)\)", consumer.read_text())
+    assert match, f"missing follow-up reference: {consumer}"
+    return (consumer.parent / match.group(1)).resolve(strict=True)
+
+assert target(review) == canonical, "review-pr must retain the canonical reference"
+header = b"<!-- Vendored from skills/shared/follow-up-issue-template.md at 3f2479aa27f8068a4463b8d64c4f79a549093ac4; keep this installed copy synchronized with that canonical contract. -->\n\n"
+for consumer, skill_root in [(author, author.parent), (double_check, double_check.parents[2])]:
+    resolved = target(consumer)
+    assert resolved.is_relative_to(skill_root.resolve()), f"reference escapes installed skill: {resolved}"
+    content = resolved.read_bytes()
+    assert content.startswith(header), f"missing exact vendored provenance: {resolved}"
+    assert content[len(header):] == canonical.read_bytes(), f"stale vendored contract: {resolved}"
+print("PASS canonical-review-and-identical-portable-contracts")
+PY_CONTRACT
 printf 'PASS driving issue contract\n'

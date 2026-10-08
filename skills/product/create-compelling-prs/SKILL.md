@@ -79,7 +79,7 @@ Closes #ISSUE
 [Public API, behavior, outputs — nothing visible changed]
 
 ## Test output
-[paste — proves no regressions]
+[paste exact commands, revisions, scope and results; state limits and remaining required gates]
 
 Closes #ISSUE
 ```

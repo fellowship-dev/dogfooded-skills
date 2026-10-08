@@ -8,7 +8,7 @@ skips this stage entirely.
 - `.procedure-output/double-check/02-review/handoff.md` — the Fix List + Tests Posture
 
 ## Task
-Apply the fixes the review stage identified, test the fix delta once, and push the fix commits to the
+Apply the fixes the review stage identified, verify the fix delta under the owning contract, and push the fix commits to the
 PR branch. Operate on the same working tree the setup stage prepared (`REPO_DIR`, already on the PR
 branch with the base merged).
 
@@ -29,46 +29,57 @@ For each item in the stage-02 Fix List (MUST-FIX items, plus NICE-TO-HAVE items 
 2. Implement the fix
 3. Commit: `git add ... && git commit -m "fix: [description] (review finding for #$PR)"`
 
-### Run tests — once, scoped to your fix delta
+### Select and run verification for your fix delta
 
-Test what your fix commits changed, once. The PR's own changes were tested by its author's push,
-and CI plus the release gate stay the full-suite authority, so never run the full suite here
-(no `npm test` that maps to "all", no full corpus).
+Read the owning repository's active instructions and verification contract before running
+commands. Select meaningful checks for `PRE_FIX_HEAD_SHA..HEAD` and affected behavior/direct
+consumers, not just filenames. The author's previous run does not prove your fixes or changed
+integration behavior. Preserve required broad/full-suite, dependency/lockfile, migration,
+transformation, build, integration and release gates. Verify actual CI configuration and policy
+before assigning a gate to CI; never assume a full gate exists elsewhere.
 
-Pick the command in this order:
+Pick commands in this order:
 
-1. **The repo's scoped gate, based on `PRE_FIX_HEAD_SHA`.** Use the scoped/changed-only command
-   the repo playbook names, pointed at your own commits. For `fellowship-dev/pylot`
+1. **The repo's impact/scoped gate, based on `PRE_FIX_HEAD_SHA`.** Use the command the
+   repo playbook names, pointed at your own commits. For `fellowship-dev/pylot`
    (install the three package roots first if `node_modules` is missing, per the playbook):
 
    ```bash
+   set -e
    cd "$REPO_DIR"
-   [ -d node_modules ] || npm ci; [ -d gateway/node_modules ] || npm --prefix gateway ci
+   [ -d node_modules ] || npm ci
+   [ -d gateway/node_modules ] || npm --prefix gateway ci
    [ -d infra/node_modules ] || npm --prefix infra ci
    PYLOT_GATE_BASE_SHA=$PRE_FIX_HEAD_SHA PYLOT_GATE_SKIP_BATS=1 ./scripts/test.sh corpus --changed-only
    ```
 
-   `scripts/gate-scope.sh` diffs `PRE_FIX_HEAD_SHA..HEAD` and still fails closed to the full
-   corpus for shared or unmapped paths. That is the gate deciding, not you.
-2. **No scoped gate named:** the targeted tests for the files you touched, or else the stack
-   default below.
+   Stop on an installation failure. `scripts/gate-scope.sh` diffs
+   `PRE_FIX_HEAD_SHA..HEAD` and still fails closed to the full corpus for shared or unmapped
+   paths. That expansion remains mandatory; do not override it to save time.
+2. **No impact command named:** inspect the repo's test scripts and runner configuration,
+   select explicit affected tests plus direct-consumer/integration checks, and explain the
+   mapping. For shared, dependency, transformational or unmapped impact, broaden the scope
+   conservatively. Run a full suite when the owning contract requires it or meaningful coverage
+   cannot be selected more narrowly. Do not invent stack defaults or try unrelated runners
+   until one appears green.
 
-```bash
-# Stack defaults, only when the repo names no scoped command:
-npm test 2>/dev/null || npx jest --passWithNoTests 2>/dev/null || echo "No test command found"
-RAILS_ENV=test bundle exec rspec <touched spec files> --format progress 2>/dev/null || echo "Not a Rails project"
-pytest 2>/dev/null || python -m pytest 2>/dev/null || echo "No pytest found"
-go test ./... 2>/dev/null || echo "Not a Go project"
-```
+Keep stdout, stderr and exit status. Do not hide errors, chain a failure into a success echo,
+or permit zero tests as a successful test result. An empty impact selection is acceptable only
+when the repo contract explicitly classifies it as non-runtime and its required documentation,
+policy or static checks pass; report it as non-runtime verification, not tests passed.
 
-Record: the exact command, pass/fail, number of tests, any regressions introduced by your fixes,
-and the commit SHA it ran on.
+Record the exact command, scope and rationale, result, test count, environment, commit SHA,
+remaining required gates and any regressions. Missing tooling or coverage is an explicit gap.
+If tests fail, debug and re-fix, then rerun the affected checks on the final revision. A
+pre-existing failure needs independent evidence and disclosure; it cannot satisfy a required
+green gate. Dependencies/lockfiles are not automatically exempt. Markdown may be executable
+policy: use the repo's classification rather than declaring it test-free yourself.
 
-If tests fail after your fixes: debug and re-fix until green, or explicitly note the failure as
-pre-existing. If the review's Tests Posture said "not applicable" (deps-only/lockfile-only), skip
-the suite and note why. Do not decide on your own that a fix is "docs only": in some repos the
-Markdown is the code under test. Let the repo's scoped gate decide (pylot's classifier already
-treats pure docs as a near-empty run).
+Run each selected check once on unchanged code where the contract permits receipt reuse.
+Repeat only for new changes, failures or unresolved concerns; retain independent review and
+exact-head acceptance. Before choosing a hook as the verification run, inspect what it runs
+and ensure it covers the required scope. Avoid an identical explicit-plus-hook run only when
+repo policy allows deduplication; hook bypass never waives other hook checks.
 
 ### Waiting on a long command
 
@@ -93,20 +104,15 @@ runs slept up to ten minutes after the work had finished.
 
 If you made fix commits:
 
-The test run above is this push's test run. Push with `--no-verify`, so the repo's pre-push hook
-does not run a second, wider gate (the PR's whole scope) on the same code, only when either:
-
-the scoped run above was green on the exact commit you are pushing. Otherwise push normally and
-let the hook be the test run, waited on as above.
+A green scoped receipt alone does not authorize `--no-verify`. Push normally unless the
+owning repo explicitly permits bypass and every check the hook would omit has passed on the
+exact pushed revision with the required scope/environment. Record that authority and evidence.
+If the hook supplies the verification run, wait for its result and record the exact revision;
+missing or failing evidence cannot be converted into a pass by bypassing the hook.
 
 ```bash
 cd "$REPO_DIR"
-TESTED_SHA={40-hex SHA the green scoped run ran on, or empty if tests did not run green}
-if [ -n "$TESTED_SHA" ] && [ "$(git rev-parse HEAD)" = "$TESTED_SHA" ]; then
-  git push --no-verify origin $PR_BRANCH   # green scoped run on this exact commit
-else
-  git push origin $PR_BRANCH               # the hook is the test run; wait on it as above
-fi
+git push origin $PR_BRANCH
 POST_FIX_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid')
 if [ "$POST_FIX_HEAD_SHA" != "$PRE_FIX_HEAD_SHA" ]; then
   REVIEW_RECEIPT_INVALIDATED=true
@@ -137,9 +143,11 @@ review_receipt_invalidated: {true when a push changed head; otherwise false}
 {or "none"}
 
 ## Tests After Fixes
-- Command: {exact command, e.g. scoped gate based on PRE_FIX_HEAD_SHA}
+- Contract and scope: {owner policy, affected behavior/consumers, selection rationale}
+- Command: {exact command, e.g. impact gate based on PRE_FIX_HEAD_SHA}
 - Ran on: {40-character commit SHA}
 - Suite: {pass (N/N) | fail — details | not run — reason}
+- Environment and remaining gates: {details}
 - Regressions: {none | list}
 
 ## Push
@@ -148,8 +156,9 @@ review_receipt_invalidated: {true when a push changed head; otherwise false}
 
 ## Success criteria
 - Each Fix-List item addressed (or documented why not)
-- Fix delta tested once with the scoped command, result and exact SHA recorded (or explicitly
-  skipped with reason); no full-suite run and no duplicate hook run
+- Meaningful fix-delta/consumer verification follows the owning contract; required broader
+  gates preserved, commands/results/counts/environment/exact SHA recorded, gaps disclosed
+- Repeated runs justified by changes, failures, concerns or required policy; hook checks not waived
 - Fix commits pushed (or push failure documented)
 - A successful fix push invalidates the Stage 02 receipt; the orchestrator starts a fresh exact-head cycle
 

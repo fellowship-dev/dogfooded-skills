@@ -255,9 +255,14 @@ name — keep this protocol in sync with it, don't let the two drift):
     foreground with the tool's longest timeout, or in the background with its PID recorded and a
     blocking wait that returns the moment it exits (stage 03's "Waiting on a long command"). Never poll with a
     fixed `sleep N` of 30 seconds or more: measured runs slept up to 10 minutes past completion.
-19. **The full suite is not this skill's job.** Stage 03 tests its own fix delta once, with the
-    repo's scoped gate; CI and the release gate stay the full-suite authority. Never run a test
-    suite twice for one push (an explicit run and then the same run again in a pre-push hook).
+19. **Verification follows the owning repo contract.** Stage 03 selects meaningful checks for
+    its fix delta and affected consumers, preserving required broad/full, dependency,
+    transformation, integration and release gates. CI owns a gate only when current repo policy
+    and configured workflows establish that. Avoid duplicate runs on the same revision only
+    when policy allows reuse and scope/environment match; rerun after changes, failures or
+    unresolved concerns. Hook bypass requires explicit repo permission and proof that all
+    checks the bypass omits passed. Stage 02's independent review and stage 04's exact-head
+    acceptance remain required; focused testing does not waive either.
 
 ## Reference files
 

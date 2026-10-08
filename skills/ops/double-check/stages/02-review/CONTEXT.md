@@ -135,8 +135,10 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
      drift, RMW races).
    You may ESCALATE the tier (never lower it) — record the new tier + reason in your handoff.
 
-5. **Decide tests posture.** Note whether tests should be run after fixes (and the likely stack),
-   or whether tests are not applicable (e.g. deps-only / lockfile-only PR — note this explicitly).
+5. **Decide verification posture.** Read the owning scope contract, assess affected behavior
+   and dependencies, name required checks/broad boundaries and matching reusable receipts.
+   Dependencies/lockfiles are not automatically exempt. Use not-applicable only for a
+   contract-backed non-runtime classification with required policy/static checks recorded.
 
 6. **Refresh live review input before the verdict.** Long corpus/test work makes the setup comment
    snapshot stale. Fetch `gh pr view $PR --repo $REPO --json comments,headRefOid`; require its
@@ -220,7 +222,7 @@ here in one line — this text is what a human reads first.}
 {stage 03, if it runs, appends its test run as {"what":"test suite after fixes","how":"executed"}}
 
 ## Tests Posture
-{stack + whether to run after fixes, OR "not applicable — deps-only/lockfile-only"}
+{owning scope contract, required checks/broad boundaries and valid receipts; OR explicit contract-backed non-runtime reason with required static/policy checks}
 
 ## Fix List (for stage 03)
 {ordered list of concrete fixes to apply, each tied to a finding above — or "none"}

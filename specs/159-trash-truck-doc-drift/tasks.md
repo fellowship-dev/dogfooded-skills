@@ -93,6 +93,21 @@ KTD5 + KTD2 lines changed.
 - [X] T011 Re-run `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`; confirm
   still passes, unchanged from T001 baseline.
 
+---
+
+## Phase 7: Correction (independent review F-001)
+
+- [X] T012 Remove `.specify/**` and `.claude/commands/speckit.*.md` (19 files bootstrapped in
+  347cbb2) — CONFIRMED finding: this exact scaffolding pattern was flagged and reverted before
+  merge three times prior (`56d2683`, `ec4c63d`, `fa3067d`/`fa930a2`); it is transient tooling,
+  not shipped deliverable.
+- [X] T013 Tighten `invariant-matrix.tsv` INV-001's `expected_check` to unscoped
+  `git diff --name-only origin/main` (a path-filtered check structurally cannot see files
+  outside its own prefixes); attach `F-001` to its `finding_ids`.
+- [X] T014 Re-run full verification battery (T001, T009–T011 equivalents) against the
+  corrected tree; re-run `/speckit-analyze 159` and `/speckit-checklist 159` manually (the
+  scaffolding that served those commands is now gone by design).
+
 ## Dependencies
 
 - Setup (T001) → Stories (Phase 2–5, any order across stories) → Polish (T009–T011).

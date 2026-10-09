@@ -6,12 +6,19 @@ Happy-path smoke test — run after implementing tasks.md, before opening the PR
    `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`
    → expect `Trash Truck retirement contract passed.`
 
-2. **Scope fence** (excludes this feature's own `.specify/`/`.claude/commands/`/`specs/`
-   tooling bootstrap, which is process infrastructure, not skill content):
-   `git diff --name-only origin/main -- README.md skills/ops/trash-truck/ docs/plans/` →
+2. **Scope fence** — run **unscoped**, no path filter (a path-filtered check can't see files
+   outside its own prefixes and previously masked an out-of-scope scaffolding leak — see
+   finding F-001):
+   `git diff --name-only origin/main` →
    expect exactly `README.md`, `skills/ops/trash-truck/SKILL.md`,
    `skills/ops/trash-truck/references/candidate-packet.md`,
-   `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md`.
+   `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md`, plus this feature's own
+   `specs/159-trash-truck-doc-drift/**` design record (the established `specs/<feature>/`
+   convention — see README.md's Contributing section and e.g. `specs/134-invariant-matrix/`).
+   It must **never** include `.specify/**` or
+   `.claude/commands/speckit.*.md` — that transient Spec-Kit bootstrap scaffolding must not ship
+   (precedent: commits `56d2683`, `ec4c63d`, `fa3067d`, `fa930a2` all removed this exact pattern
+   before merge).
 
 3. **Evidence-cutoff count** (excludes this feature's own planning docs under `specs/`,
    which discuss "evidence cutoff" as meta-commentary):

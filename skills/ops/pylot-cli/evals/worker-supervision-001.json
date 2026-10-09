@@ -1,0 +1,119 @@
+{
+  "id": "pylot-cli-worker-supervision-001",
+  "scenario": "exact-worker-turn-supervision",
+  "description": "Correction-backed scenarios for worker identity capture, exact-turn evidence across subsequent turns and stop, observer reconnect, safe diagnostics and historical output limits.",
+  "skill": "pylot-cli",
+  "scope": "interactive",
+  "gate": "zero-tolerance",
+  "rule": "worker-supervision",
+  "thread": {
+    "channel": "worker-supervision-request",
+    "channelType": "direct",
+    "participants": [
+      "operator-user",
+      "pylot"
+    ],
+    "messages": [
+      {
+        "from": "operator-user",
+        "text": "Continue supervising the same bounded worker task and report the result of the turn I submitted, with its evidence limits."
+      }
+    ]
+  },
+  "turns": [
+    {
+      "id": "spawn-identity-guard",
+      "setup": "Each of the mission, conversation and standalone spawn paths returns worker_id:42 and task_arn:arn:example:task/one. Negative controls return worker_id null, empty string, zero, negative, fractional or string-valued; a separate control has an empty/missing task_arn.",
+      "evalTurn": {
+        "from": "system",
+        "event": "spawn_receipt",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "supervision-verification",
+        "assertion": "spawn_identity_guard",
+        "description": "Capture both identifiers with organization and owner scope from the spawn receipt. Accept only a positive integer worker_id and nonempty string task_arn; stop dependent commands when spawn or either extraction fails. Never prompt with invalid ids or infer identity from SSH environment/id scans. Recover an existing worker through supported exact task view/list reads.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "completed-n-during-next-turn",
+      "setup": "Worker 42 acknowledged turn 7, which completed with exit_code:0 and output SEVEN. Turn 8 is running with latest output EIGHT. Repeat the scenario for mission, conversation and standalone ownership.",
+      "evalTurn": {
+        "from": "system",
+        "event": "read_completed_turn",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "supervision-verification",
+        "assertion": "completed_n_during_next_turn",
+        "description": "Read workers view/output 42 --turn 7 and retain matching worker/turn identity and its terminal evidence. Use the correct explicit organization and mission scope where applicable; omit mission routing for standalone/conversation workers and account for inherited PYLOT_JOB_ID. Return SEVEN. Do not wait for turn 8, use EIGHT or accept latest turn_seq >=7 as turn 7 evidence. A missing/mismatched receipt remains unresolved.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "observer-timeout",
+      "setup": "Prompt acknowledged worker 42 turn 7, then prompt --wait times out while that turn remains pending. A later observation can show either success or exit_code:1 with a native continuity failure despite current worker idle.",
+      "evalTurn": {
+        "from": "system",
+        "event": "prompt_observer_timeout",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "supervision-verification",
+        "assertion": "observer_timeout",
+        "description": "Reconnect read-only with workers wait 42 --turn 7 using saved organization/scope and a bounded observer timeout. Do not resend the prompt, stop the worker, create a replacement or call the provider turn failed/cancelled solely because observation ended. Inspect the exact receipt exit/error and continuity evidence; treat the failure control as failed even when worker idle or a command exits 0.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "routing-before-credentials",
+      "setup": "An unscoped cross-org request returns 403; another request gets HTML from the web-app base URL; the host executable reports 0.6.2 and lacks --turn while a different executable may exist. No credential failure has been established.",
+      "evalTurn": {
+        "from": "system",
+        "event": "diagnostic_failure",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "supervision-verification",
+        "assertion": "routing_before_credentials",
+        "description": "Record the actual executable/version, gateway base and explicit organization; verify view/output/wait help and gateway support for the owner scope. Correct routing/version diagnosis before credential-status checks or requests for credentials. The hosted gateway is https://hooks.fellowship.dev, not the web-app URL. Do not dump credential stores, tokens or full environments, invent a minimum release or install/change credentials without authority.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "historical-output-after-stop",
+      "setup": "Worker 42 turn 7 completed using provider/model A; turn 8 used provider/model B. The worker is now stopped and latest last_output is a snapshot transcript. Historical turn 7 has its own timestamp/exit/error metadata and only output_excerpt, a 16KiB tail of longer output; a local client log exists.",
+      "evalTurn": {
+        "from": "system",
+        "event": "read_stopped_history",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "supervision-verification",
+        "assertion": "historical_output_after_stop",
+        "description": "Read the saved worker 42/turn 7 receipt and retained output after stop. Attribute only metadata recorded for turn 7 to it; never inherit current turn 8 provider/model/timestamps or snapshot output as historical fact. State that the 16KiB excerpt is incomplete and the local log alone is not complete server evidence. Keep unknown historical metadata unresolved. Do not claim full-output acceptance, provider success, verified snapshot or successful restore from stopped state or a receipt for another turn.",
+        "tolerancePct": 0
+      }
+    },
+    {
+      "id": "safe-environment-name-discovery",
+      "setup": "The worker carries a multiline-valued synthetic environment variable EXAMPLE_AUTH_JSON. The operator asks only which variable names exist.",
+      "evalTurn": {
+        "from": "system",
+        "event": "environment_names",
+        "text": null
+      },
+      "expectedBehavior": {
+        "type": "supervision-verification",
+        "assertion": "safe_environment_name_discovery",
+        "description": "Use python3 -c 'import os; print(sorted(os.environ))'. Do not run env | cut, printenv or set for names-only discovery; never expose multiline value contents. This is name inspection, not credential acquisition.",
+        "tolerancePct": 0
+      }
+    }
+  ],
+  "failureShape": {
+    "observedFailure": "Spawn identity was omitted or accepted when invalid; latest turn state/output was substituted for an earlier turn; observer timeout prompted resubmission or credential diagnosis; snapshot/latest metadata and truncated history were represented as complete historical results.",
+    "note": "Regression targets the pre-M6a skill at 1270830692075ba6e169ba7f7e7bc221f041f89d and issue 207 identity/environment correction. Scenario definitions and structural validation are not executed agent or live runtime receipts; full-output and deployed CLI acceptance remain separate."
+  }
+}

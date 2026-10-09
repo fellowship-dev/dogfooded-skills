@@ -27,13 +27,13 @@ None — nothing else depends on this change; it has no shared framework to stan
 **Independent test**: read `skills/ops/pylot-cli/SKILL.md`'s Dispatch section; confirm it states
 exactly 4 one-line dispatch-contract rules, with prompt size ~2560 bytes.
 
-- [ ] T001 [US1] In `skills/ops/pylot-cli/SKILL.md`'s Dispatch section (lines 26-40), reformat the
+- [X] T001 [US1] In `skills/ops/pylot-cli/SKILL.md`'s Dispatch section (lines 26-40), reformat the
   `/skill` prefix rule (currently prose at lines 35-37) and the `team.role` rule (currently prose at
   lines 38-40) into one line each, keeping the existing `pylot dispatch` example (lines 28-31) and
   cross-org guidance (lines 42+) untouched.
-- [ ] T002 [US1] In `skills/ops/pylot-cli/SKILL.md` line 33, replace "Prompt limit: 4 KB — put full
+- [X] T002 [US1] In `skills/ops/pylot-cli/SKILL.md` line 33, replace "Prompt limit: 4 KB — put full
   specs in issue comments." with a one-line rule stating ~2560 bytes (depends on T001, same file).
-- [ ] T003 [US1] In `skills/ops/pylot-cli/SKILL.md`'s Dispatch section, add a 4th one-line no-secrets
+- [X] T003 [US1] In `skills/ops/pylot-cli/SKILL.md`'s Dispatch section, add a 4th one-line no-secrets
   rule, adapted from the existing Preflight-and-dispatch wording ("the task contract is
   self-contained, contains no secrets...", line 217) — per research.md, do NOT copy the wording from
   `## GitHub Auth Through the CLI` (lines 629-640) (depends on T002, same file).
@@ -45,12 +45,18 @@ exactly 4 one-line dispatch-contract rules, with prompt size ~2560 bytes.
 
 ## Phase 4: Polish & Verification
 
-- [ ] T004 [P] Run `git diff` and confirm it touches only `skills/ops/pylot-cli/SKILL.md`, only
+- [X] T004 [P] Run `git diff` and confirm it touches only `skills/ops/pylot-cli/SKILL.md`, only
   within the Dispatch section (SC-001).
-- [ ] T005 [P] Run `grep -n "Secrets: never in prompts or payloads" skills/ops/pylot-cli/SKILL.md`
+- [X] T005 [P] Run `grep -n "Secrets: never in prompts or payloads" skills/ops/pylot-cli/SKILL.md`
   and confirm the `## GitHub Auth Through the CLI` sentence is byte-for-byte unchanged (SC-003).
-- [ ] T006 Run `npx markdownlint-cli2 skills/ops/pylot-cli/SKILL.md` — warnings only, non-blocking.
-- [ ] T007 Walk through `quickstart.md`'s manual verification steps end to end.
+  Correction: the sentence wraps across two source lines ("...Secrets: never in prompts or\npayloads
+  — ..."), so the single-line grep from this task doesn't match; verified instead with
+  `diff <(git show origin/main:skills/ops/pylot-cli/SKILL.md | sed -n '629,641p') <(sed -n
+  '627,639p' skills/ops/pylot-cli/SKILL.md)` → exit 0, byte-identical.
+- [X] T006 Run `npx markdownlint-cli2 skills/ops/pylot-cli/SKILL.md` — warnings only, non-blocking.
+  Pre-existing MD060/MD032/MD012/MD031 warnings remain (lines 79, 272, 287, 370, 509, 519, 674,
+  704), none introduced by this change and none inside the edited lines 26-40.
+- [X] T007 Walk through `quickstart.md`'s manual verification steps end to end.
 
 ## Dependencies
 

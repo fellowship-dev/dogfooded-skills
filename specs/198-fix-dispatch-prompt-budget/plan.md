@@ -21,7 +21,8 @@ each. No code change, no new mechanism — a correction to an existing doc passa
 - **Project Type**: documentation (single Markdown file edit)
 - **Performance Goals**: N/A
 - **Constraints**: scope-fenced to `skills/ops/pylot-cli/SKILL.md` only; must not touch
-  `fellowship-dev/pylot` or the existing no-secrets sentence at SKILL.md:450-451
+  `fellowship-dev/pylot` or the existing no-secrets sentence at SKILL.md:629-640 (issue cites
+  450-451; file drifted since filing, see research.md)
 - **Scale/Scope**: 1 file, ~15 lines (the existing Dispatch section, SKILL.md:26-40)
 
 ## Constitution Check

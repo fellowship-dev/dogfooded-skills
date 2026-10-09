@@ -30,14 +30,12 @@ CONV_ID=$(ls ~/.claude/session-env/ | head -1)
 pylot dispatch "<task>" --agent <team>.<role> --repo <org/repo> --context "conversation_id=$CONV_ID"
 ```
 
-Always pass `--context conversation_id=…` for auto-wake. Prompt limit: 4 KB — put full specs in issue comments.
+Always pass `--context conversation_id=…` for auto-wake. Every dispatch payload must satisfy:
 
-The task text **must start with an explicit `/skill`**. The operator harness routes
-deterministically on that prefix; free text fails at boot with
-`routing failed: task has no explicit /skill` (exit 1, zero tokens). The only
-keyword fallbacks are `auto-pylot` and `investigate … report findings`. Team names
-and roles drift — `pylot teams list` is truth, and `pylot route` validates a
-`<team>.<role>` before you spend a dispatch.
+- **`/skill` prefix**: task text must start with an explicit `/skill`; free text fails at boot with `routing failed: task has no explicit /skill` (exit 1, zero tokens) — except the `auto-pylot` and `investigate … report findings` keyword fallbacks.
+- **`team.role`**: team names and roles drift, so `pylot teams list` is truth and `pylot route` validates a `<team>.<role>` before you spend a dispatch.
+- **Prompt size**: ~2560 bytes (`ECS_OVERRIDES_LIMIT_BYTES` 8192 − `DISPATCH_OVERRIDES_RESERVED_BYTES` 5632) — put full specs in issue comments.
+- **No secrets**: the task contract must be self-contained and contain no secrets.
 
 **Cross-org:** the repository owner and the selected credential are separate
 inputs. Outside the CLI's default org, select the credential explicitly with the

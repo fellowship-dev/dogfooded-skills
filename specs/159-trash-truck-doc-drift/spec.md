@@ -9,30 +9,27 @@ enforce; clarify a superseded plan doc's normativity (issue #159).
 ## User Scenarios & Testing
 
 ### User Story 1 — Honest approval-binding claim (P1)
-Curator reading `candidate-packet.md` should not believe a stale evidence cutoff is
-mechanically caught by `approval_valid()`.
-**Acceptance**: Packet binding sentence + plan KTD5 list only fingerprint, manifest,
-exclusions — not evidence cutoff.
-
+Curator reading `candidate-packet.md` should not believe a stale evidence cutoff is caught by
+`approval_valid()`. **Acceptance**: packet binding sentence + plan KTD5 list only fingerprint,
+manifest, exclusions — not evidence cutoff.
 ### User Story 2 — Discoverable breaking-grammar notice (P2)
 Consumer scanning the README table should see the `focus:<name>` → `mode:`/`candidate:`/
-`persist:` break in the `ops/trash-truck` row itself.
-**Acceptance**: Row cell states the grammar break and points to the note below the table.
-
+`persist:` break in the `ops/trash-truck` row itself. **Acceptance**: row cell states the break
+and points to the note below the table.
 ### User Story 3 — Honest owner-presence fail-safe (P2)
 Owner reading Non-Negotiable Boundaries should see owner-presence framed as instruction-level
-and unverifiable, with its compensating control named.
-**Acceptance**: SKILL.md Boundaries, mode table, and plan KTD2 all agree it's unenforceable
-and name the compensating control (exact-fingerprint owner selection).
-
+and unverifiable, with its compensating control named. **Acceptance**: SKILL.md Boundaries,
+mode table, and plan KTD2 all agree it's unenforceable and name the control (exact-fingerprint
+owner selection).
 ### User Story 4 — Discoverable non-normative plan doc (P3)
 Maintainer opening the plan doc should see it's a historical record, not the live rubric.
-**Acceptance**: One-line banner above the H1 points to `skills/ops/trash-truck/references/`;
+**Acceptance**: one-line banner above the H1 points to `skills/ops/trash-truck/references/`;
 body otherwise unchanged, not moved/renamed.
 
 ## Requirements
 ### Functional
-- **FR-001**: `candidate-packet.md` + plan KTD5 MUST drop "evidence cutoff" from the binding claim.
+- **FR-001**: `candidate-packet.md` + plan KTD5 MUST drop "evidence cutoff" from the binding
+  claim; the 3 other mentions (packet:113, canonical-issue.md:40,58) are correct and MUST survive.
 - **FR-002**: README `ops/trash-truck` row MUST itself state the breaking grammar change.
 - **FR-003**: SKILL.md Boundaries MUST call owner-presence unenforceable + name the compensating
   control; mode table + plan KTD2 MUST be made consistent with it.
@@ -40,11 +37,14 @@ body otherwise unchanged, not moved/renamed.
 - **FR-005**: Only README.md, SKILL.md, candidate-packet.md, and the plan doc MUST change.
 
 ## Success Criteria
-- **SC-001**: `grep -rc "evidence cutoff" --include=*.md .` totals 3 (correct survivors only).
+- **SC-001**: `grep -rc "evidence cutoff" --include=*.md . --exclude-dir=specs` totals 3.
 - **SC-002**: README row itself, not just the blockquote, carries the breaking-grammar fact.
-- **SC-003**: Owner-presence claim reads consistently at all 3 sites.
-- **SC-004**: `test_retirement_contract.py` still passes, unchanged from baseline.
+- **SC-003**: `grep -n "owner is unclear\|owner presence\|interactive owner"` on SKILL.md + plan
+  doc shows all matches framed as unenforceable, naming the compensating control.
+- **SC-004**: `test_retirement_contract.py` still passes (baseline: "...contract passed.").
 
 ## Assumptions
 - Validator code (`rank_candidates.py`) is correct/untouched; only prose changes. Issue items 1
   (pylot#3378 sequencing) and 6 (live readback) are external, out of scope.
+- Issue's two optional/non-blocking items (`repo_head`/`deployed_revision` clause alignment,
+  a `superseded_by` frontmatter key) are declined for this feature, not attempted.

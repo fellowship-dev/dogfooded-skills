@@ -13,8 +13,9 @@ edits are explicitly sequenced (never `[P]`) to avoid clobbering.
 
 ## Phase 1: Setup
 
-- [ ] T001 Run baseline: `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`
-  (expect pass) and `grep -rc "evidence cutoff" --include=*.md .` (expect 5) before any edit.
+- [X] T001 Run baseline: `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`
+  (expect pass) and `grep -rc "evidence cutoff" --include=*.md . --exclude-dir=specs`
+  (expect 5, excluding this feature's own planning-doc mentions) before any edit.
 
 *(No Foundational phase — no shared schema/framework/model work; stories touch disjoint prose.)*
 
@@ -24,15 +25,15 @@ edits are explicitly sequenced (never `[P]`) to avoid clobbering.
 
 **Independent test**: `grep -n "evidence cutoff" skills/ops/trash-truck/references/candidate-packet.md docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md` shows only the two correct/untouched mentions (packet `:113`), none in the binding sentence or KTD5.
 
-- [ ] T002 [P] [US1] Edit `skills/ops/trash-truck/references/candidate-packet.md:135` — change
+- [X] T002 [P] [US1] Edit `skills/ops/trash-truck/references/candidate-packet.md:135` — change
   "...binds the owner only to the fingerprint, manifest, exclusions, and evidence cutoff
   displayed at selection time." → "...binds the owner only to the fingerprint, manifest, and
   exclusions displayed at selection time."
-- [ ] T003 [P] [US1] Edit `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md:181`
+- [X] T003 [P] [US1] Edit `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md:181`
   (KTD5) — change "...plus the displayed manifest and evidence cutoff." → "...plus the
   displayed manifest."
 
-**Checkpoint**: `grep -rc "evidence cutoff" --include=*.md .` totals 3.
+**Checkpoint**: `grep -rc "evidence cutoff" --include=*.md . --exclude-dir=specs` totals 3.
 
 ---
 
@@ -41,7 +42,7 @@ edits are explicitly sequenced (never `[P]`) to avoid clobbering.
 **Independent test**: rendering `README.md`'s `ops/trash-truck` row cell alone shows the
 breaking-grammar fact, without reading the blockquote below.
 
-- [ ] T004 [US2] Edit `README.md:67` — append to the `ops/trash-truck` row description:
+- [X] T004 [US2] Edit `README.md:67` — append to the `ops/trash-truck` row description:
   "— **breaking:** the `focus:<name>` invocation grammar was replaced by `mode:` /
   `candidate:` / `persist:`; see note below." Keep the existing blockquote at `:69` unchanged.
 
@@ -53,15 +54,15 @@ breaking-grammar fact, without reading the blockquote below.
 
 **Independent test**: `grep -n "owner is unclear\|owner presence\|interactive owner" skills/ops/trash-truck/SKILL.md docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md` shows all matches framed as unenforceable + naming the compensating control.
 
-- [ ] T005 [US3] Edit `skills/ops/trash-truck/SKILL.md:32-39` (Non-Negotiable Boundaries) — add
+- [X] T005 [US3] Edit `skills/ops/trash-truck/SKILL.md:32-39` (Non-Negotiable Boundaries) — add
   a bullet naming owner-presence detection as instruction-level/unverifiable by
   `resolve_mode()`, and naming the compensating control (execution requires explicit owner
   selection of an exact fingerprint, §5–§7). Mirror the honest-limitation shape of
   `candidate-packet.md:148`.
-- [ ] T006 [US3] Edit `skills/ops/trash-truck/SKILL.md:28` (mode table, "Presence of an
+- [X] T006 [US3] Edit `skills/ops/trash-truck/SKILL.md:28` (mode table, "Presence of an
   interactive owner is unclear" row) — reword to be consistent with the T005 bullet; same file
   as T005, run after it.
-- [ ] T007 [US3] Edit `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md:178`
+- [X] T007 [US3] Edit `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md:178`
   (KTD2) — align wording with the T005/T006 framing. Same file as T003; run after T003
   completes.
 
@@ -75,7 +76,7 @@ asserts a mechanical guarantee.
 **Independent test**: opening the plan doc shows a one-line banner above the H1 pointing at
 `skills/ops/trash-truck/references/`; `git log --diff-filter=R` shows no rename.
 
-- [ ] T008 [US4] Add a one-line banner above the H1 in
+- [X] T008 [US4] Add a one-line banner above the H1 in
   `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md` pointing to
   `skills/ops/trash-truck/references/` as normative. Same file as T003/T007 — run last of the
   three plan-doc edits. Do not rename/move the file; do not reword the body elsewhere.
@@ -87,9 +88,9 @@ KTD5 + KTD2 lines changed.
 
 ## Phase 6: Polish
 
-- [ ] T009 Run all 9 steps of `specs/159-trash-truck-doc-drift/quickstart.md` end to end.
-- [ ] T010 Run `npx markdownlint-cli2` on the four changed files; fix any new warnings.
-- [ ] T011 Re-run `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`; confirm
+- [X] T009 Run all 9 steps of `specs/159-trash-truck-doc-drift/quickstart.md` end to end.
+- [X] T010 Run `npx markdownlint-cli2` on the four changed files; fix any new warnings.
+- [X] T011 Re-run `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`; confirm
   still passes, unchanged from T001 baseline.
 
 ## Dependencies

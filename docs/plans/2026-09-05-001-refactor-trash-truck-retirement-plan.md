@@ -10,6 +10,10 @@ product_contract_source: ce-plan-bootstrap
 execution: code
 ---
 
+> **Non-normative delivery record.** This plan documents how the Trash Truck retirement
+> workflow was implemented; it is not the live rubric. For current behavior consult
+> `skills/ops/trash-truck/references/`.
+
 # Trash Truck Retirement Workflow - Plan
 
 ## Goal Capsule
@@ -175,10 +179,10 @@ The current skill finds low-level static cleanup and opens PRs automatically. Th
 ### Key Technical Decisions
 
 - KTD1. **Replace the old janitor workflow rather than extend it.** Delete `skills/ops/trash-truck/pre-scan.sh` and rewrite the skill around retirement evidence because its debug-line, misplaced-file, and unused-function bias conflicts with the materiality and corroboration requirements. Code search remains one low-weight evidence surface implemented through ordinary tools or bounded workers.
-- KTD2. **Use explicit mode input with a fail-safe default.** Define `mode:interactive` and `mode:scheduled`; interactive accepts an optional named candidate. An invocation that cannot prove an interactive owner is present behaves as scheduled/report-only. This makes the no-target and named-target branches explicit without inventing a fourth execution mode.
+- KTD2. **Use explicit mode input with a fail-safe default.** Define `mode:interactive` and `mode:scheduled`; interactive accepts an optional named candidate. An invocation where the invoking agent cannot judge that an interactive owner is present — a judgment call, not a mechanical check — behaves as scheduled/report-only. This makes the no-target and named-target branches explicit without inventing a fourth execution mode.
 - KTD3. **Rank by deterministic expected net payoff.** Apply a materiality floor, then calculate a documented composite from confidence and material payoff discounted by effort and risk. Persist each component and rationale; keep blast radius and reversibility visible even when they are not collapsed into one score. (session-settled: user-directed — chosen over prioritizing the stalest or largest target: confidence-to-payoff gives the owner the strongest actionable candidates first.)
 - KTD4. **Use one canonical review issue per repository.** Identify it with a stable repo-derived marker, keep its human-owned purpose and discussion intact, and write machine-owned investigation packets through an idempotent bounded block or comments. Reopen nothing automatically and do not create the issue for a first no-candidate run. (session-settled: user-directed — chosen over one issue per candidate: one durable review thread avoids issue churn and repeated investigation.)
-- KTD5. **Treat owner selection as a fingerprinted capability.** Bind approval to normalized candidate identity plus the displayed manifest and evidence cutoff. Refresh supporting drift-prone evidence before action and invalidate the capability when scope, eligibility, deployed code, or irreversible impact changes.
+- KTD5. **Treat owner selection as a fingerprinted capability.** Bind approval to normalized candidate identity plus the displayed manifest. Refresh supporting drift-prone evidence before action and invalidate the capability when scope, eligibility, deployed code, or irreversible impact changes.
 - KTD6. **Keep evidence adapters capability-driven and portable.** Remove the current restrictive `allowed-tools` declaration. The skill probes available read-only tools and connectors, records each surface's status, and degrades to an honest evidence gap instead of assuming PostHog, Mixpanel, CloudWatch, GitHub, or subagents always exist.
 - KTD7. **Centralize judgment in one curator.** Evidence workers receive bounded read-only questions and return source envelopes. They cannot rank, mutate, or declare retirement; the invoking agent reconciles identities, conflicts, recurrence windows, and deployed revisions.
 - KTD8. **Make scheduled persistence policy-aware and idempotent.** Reuse the repository's issue-filing rules, search open and closed issues plus related PRs, serialize by repository where the host supports it, then read back create/update results and repair or report races deterministically.

@@ -6,13 +6,16 @@ Happy-path smoke test — run after implementing tasks.md, before opening the PR
    `python3 skills/ops/trash-truck/evals/test_retirement_contract.py`
    → expect `Trash Truck retirement contract passed.`
 
-2. **Scope fence**:
-   `git diff --name-only origin/main...HEAD` → expect exactly `README.md`,
-   `skills/ops/trash-truck/SKILL.md`, `skills/ops/trash-truck/references/candidate-packet.md`,
+2. **Scope fence** (excludes this feature's own `.specify/`/`.claude/commands/`/`specs/`
+   tooling bootstrap, which is process infrastructure, not skill content):
+   `git diff --name-only origin/main -- README.md skills/ops/trash-truck/ docs/plans/` →
+   expect exactly `README.md`, `skills/ops/trash-truck/SKILL.md`,
+   `skills/ops/trash-truck/references/candidate-packet.md`,
    `docs/plans/2026-09-05-001-refactor-trash-truck-retirement-plan.md`.
 
-3. **Evidence-cutoff count**:
-   `grep -rc "evidence cutoff" --include=*.md .` → total 3, surviving at
+3. **Evidence-cutoff count** (excludes this feature's own planning docs under `specs/`,
+   which discuss "evidence cutoff" as meta-commentary):
+   `grep -rc "evidence cutoff" --include=*.md . --exclude-dir=specs` → total 3, surviving at
    `candidate-packet.md:113`, `canonical-issue.md:40`, `canonical-issue.md:58` only.
 
 4. **Packet sentence reads grammatically**: open `candidate-packet.md:135`, confirm

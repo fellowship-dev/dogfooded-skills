@@ -46,6 +46,13 @@ global option first: `pylot --org <Org> context <Org>/<repo> …`. A plain
 or capability is unavailable — retry with the repo's org before diagnosing
 authorization. `pylot auth status` shows which orgs hold a credential.
 
+Before diagnosing credentials, record the actual CLI executable and `pylot
+--version`, selected gateway base URL, and explicit `--org <Org>`. For the hosted
+service the gateway is `https://hooks.fellowship.dev`; `pylot.fellowship.dev` is
+the web app. HTML instead of JSON, an absent flag, or an unscoped cross-org denial
+requires checking routing/version first. Use credential-status diagnostics only
+after those checks; never print credential stores, tokens, or full environments.
+
 ## Monitor Missions
 
 ```bash
@@ -273,16 +280,29 @@ allocation estimate is not a bill.
 
 
 ```bash
+# Choose one spawn path; retain the receipt and stop if any command fails.
 # inside a mission — your own job
-pylot workers spawn --mission "$PYLOT_JOB_ID" repo=<org/repo>
+SPAWN_RECEIPT=$(pylot --org <Org> workers spawn --mission "$PYLOT_JOB_ID" repo=<org/repo>) &&
+WORKER_ID=$(printf '%s' "$SPAWN_RECEIPT" | jq -er '.worker_id | select(type == "number" and . > 0 and . == floor)') &&
+TASK_ARN=$(printf '%s' "$SPAWN_RECEIPT" | jq -er '.task_arn | select(type == "string" and length > 0)')
+```
+
+```bash
 # from a conversation — name= is the human-readable pretty name (tag pylot:name)
-pylot workers spawn --conversation "$CONV_ID" repo=<org/repo> name=<short-purpose>
+SPAWN_RECEIPT=$(pylot --org <Org> workers spawn --conversation "$CONV_ID" repo=<org/repo> name=<short-purpose>) &&
+WORKER_ID=$(printf '%s' "$SPAWN_RECEIPT" | jq -er '.worker_id | select(type == "number" and . > 0 and . == floor)') &&
+TASK_ARN=$(printf '%s' "$SPAWN_RECEIPT" | jq -er '.task_arn | select(type == "string" and length > 0)')
 ```
 
 ```bash
 # from a local session (a laptop running `pylot auth login`, no mission context):
-pylot devboxes spawn <org/repo> --idle-ttl 3600 name=<short-purpose>   # standalone box, the default
-pylot devboxes view <task-arn>                                          # wait for RUNNING before the first prompt
+SPAWN_RECEIPT=$(pylot --org <Org> devboxes spawn <org/repo> --idle-ttl 3600 name=<short-purpose>) &&
+WORKER_ID=$(printf '%s' "$SPAWN_RECEIPT" | jq -er '.worker_id | select(type == "number" and . > 0 and . == floor)') &&
+TASK_ARN=$(printf '%s' "$SPAWN_RECEIPT" | jq -er '.task_arn | select(type == "string" and length > 0)') &&
+pylot --org <Org> devboxes view "$TASK_ARN"   # wait for RUNNING before the first prompt
+```
+
+```bash
 # persistent-conversation variant — capture only the id so the session credential is never printed
 CONV_ID=$(pylot conversations create --org <org> --team <team> --repos <repo-name> --title "<task>" | jq -r .id)
 pylot devboxes connect <task-arn>      # → ssh_command; drive by SSH when direct command control beats prompting
@@ -293,33 +313,58 @@ daemon boots, so an early prompt is not lost; if you need RUNNING confirmed,
 `pylot workers list --mission "$PYLOT_JOB_ID"` carries live `ecs_status` (the
 single-worker `view` does not). `name=` is honoured on the conversation path only.
 
+Retain `WORKER_ID`, `TASK_ARN`, organization and owner scope before driving the
+worker. Never prompt with an empty/null id. On a gateway/CLI supporting worker-id
+reads, `devboxes view <task-arn>` and `devboxes list` expose `worker_id` while
+running, and `spawn --wait` retains it; use normal reads to recover an existing
+worker's identity. Do not infer an id from SSH environment or scan id ranges.
+
+For environment variable **names only**, use
+`python3 -c 'import os; print(sorted(os.environ))'`. Never use `env | cut`,
+`printenv`, or `set`: multiline secret values can expose inner lines as apparent
+variable names or entries.
+
 ### 3. Drive
 
 ```bash
 pylot workers prompt <wid> --mission "$PYLOT_JOB_ID" "<text>"     # 202 {turn_seq} | 409 busy|stopped
 pylot workers prompt <wid> --mission "$PYLOT_JOB_ID" --wait --timeout 3600 "<text>"
-pylot workers view   <wid> --mission "$PYLOT_JOB_ID"              # turn_state, turn_seq, last_result, last_exit_code
-pylot workers output <wid> --mission "$PYLOT_JOB_ID"              # result text only
-pylot workers logs   <wid> --mission "$PYLOT_JOB_ID"              # CloudWatch tail (--mission required)
+pylot workers view   <wid> --mission "$PYLOT_JOB_ID" --turn <N>  # exact turn receipt
+pylot workers output <wid> --mission "$PYLOT_JOB_ID" --turn <N>  # retained output for N
+pylot workers wait   <wid> --mission "$PYLOT_JOB_ID" --turn <N> --timeout 900 # observe only
+pylot workers logs   <wid> --mission "$PYLOT_JOB_ID"             # CloudWatch tail (--mission required)
 ```
 
-The turn is done when `turn_state` is `idle`/`error`/`reaped` **and** `turn_seq` ≥
-the seq the prompt returned. Only trust `last_result` then. `--wait` polls every
-5 s up to 900 s (override with `--timeout`) and exits non-zero on a non-`idle`
-terminal state; `--follow` streams container logs to stderr and requires `--wait`.
-A devbox that dies mid-turn is reaped with `last_exit_code: -1`, so the loop
-cannot hang forever. Between phases, read the output before sending the next
-prompt — a failed phase should not be built on. If `last_result` is absent,
-retain the original `last_output` as evidence; do not invent a successful result.
-Inspect `last_exit_code` and any native continuity failure reason even when
-`prompt --wait` returns shell status 0 and the worker is `idle`: those states
-can accompany a failed provider turn. A nonzero provider exit or explicit
-continuity failure remains a failed phase; preserve its output and resolve the
-failure before prompting onward or claiming success.
+Verify `pylot --version`, `workers view --help`, `workers output --help` and
+`workers wait --help` before relying on `--turn`. The gateway must also support
+exact-turn history for the worker's owner scope. For standalone/conversation
+workers omit `--mission` and ensure `PYLOT_JOB_ID` does not route the call to an
+unrelated mission. Retain the organization, scope, worker id and `turn_seq`
+acknowledged by each prompt. `prompt --wait` must observe that acknowledged turn;
+use `workers wait --turn N` to reconnect without submitting another prompt.
 
-Continue the same bounded task by sending the next prompt to the **same worker
-id** after its prior turn completes. Retain the scope, worker id, `session_id`,
-completed `turn_seq`, and full output. A passing turn proves that turn's result;
+Completion belongs to that exact worker/turn pair. A later `turn_seq`, current
+idle state, or latest output cannot prove turn N's result. Read completed N with
+`view/output --turn N` while N+1 is running and after stopping the worker. Keep
+the receipt identity with its exit/error evidence and output; a missing or
+mismatched receipt is unresolved evidence, not success.
+
+A wait timeout or disconnected observer ends observation, not the provider turn.
+Reconnect to the saved turn before deciding what to do next; do not resubmit
+because waiting timed out. Inspect that turn's exit/error evidence and any native
+continuity failure even if the worker is idle or a command exited 0. A nonzero
+provider exit or explicit continuity failure remains a failed phase. Resolve it
+before prompting onward or claiming success. `--follow` streams container logs
+to stderr and requires `prompt --wait`; logs do not replace exact-turn evidence.
+
+History currently retains an `output_excerpt` capped to a 16KiB tail. Exact-turn
+retrieval does not make that excerpt full output, and a client-local log is not
+proof of complete server output. Retain full output when available; if only an
+excerpt exists, record that limitation and do not claim complete evidence.
+
+Continue the same bounded task on the **same worker id** after its prior turn
+completes. Retain scope, worker id, `session_id`, completed `turn_seq`, and output
+with its completeness limits. A passing turn proves that turn's result;
 application readiness still requires the intended build, tests, running services,
 and functional checks. Do not report readiness from an idle worker alone.
 
@@ -376,11 +421,13 @@ Two boot failures, both fixable without archaeology:
 - A turn fails `403 unknown job` / `unknown devbox worker` → proxy-principal
   regression; check the worker row's `job_id` and file it against the gateway.
 
-If `--wait` / `--follow` / `output` are absent from `pylot workers prompt --help`,
-this container's CLI predates them: poll `view` on a sleep loop, or use §7.
+If the required commands or `--turn` flags are absent, record the unsupported
+CLI version and use the authorized supported-version adoption path. Do not
+replace exact-turn evidence with a latest-state polling loop.
 
 In a chat/Lambda runtime there is no budget to block on `--wait` — never busy-poll.
-Prompt, then schedule a wake (see Async Wake Pattern) and re-check `view` next turn.
+Prompt, retain its turn identity, then schedule a wake (see Async Wake Pattern)
+and re-check that exact turn next time.
 
 ### 4. Stop (destructive) and resume
 
@@ -396,9 +443,11 @@ stopping a box someone is working in. Stop is idempotent; always stop a mission
 worker when the skill finishes (harvest-on-complete is the backstop, not the plan).
 Conversation-owned devboxes snapshot on stop; mission-worker snapshots are
 opt-in and OFF by default (cost control), so treat a mission worker's stop as
-final unless you know the flag is on. Harvest the completed turn's full output
-**before** stopping: stop can replace `last_output` with a truncated snapshot
-transcript. `stopped: true` does not mean recovery is available — require
+final unless you know the flag is on. Retain the completed turn's exact identity
+and output (including completeness limits) **before** stopping. Retrieve the same
+turn afterward with `view/output --turn N`; stop can replace latest `last_output`
+with a truncated snapshot transcript, which is not that turn's result.
+`stopped: true` does not mean recovery is available — require
 `snapshot_status: verified` before relying on `resume`. Retain the stop receipt
 and snapshot status/reason; failed or missing snapshots need an explicit recovery
 decision, not an optimistic resume claim.

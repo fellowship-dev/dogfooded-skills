@@ -88,8 +88,8 @@ pre-curated here). Read it yourself only as far as you need to fill the receipt 
 # below regenerates diff.patch from git before the merge.
 gh pr diff $PR --repo $REPO > "$OUT/diff.patch" || DIFF_FALLBACK=1
 
-# Authoritative changed-file manifest with per-file line counts — stage 02 reconciles the
-# PR body's claims against THIS list, so it must be complete and unedited.
+# Authoritative changed-file manifest with per-file line counts — stage 02 reviews against
+# THIS list, so it must be complete and unedited.
 gh pr view $PR --repo $REPO --json additions,deletions,files \
   --jq '"TOTAL +\(.additions)/-\(.deletions), \(.files|length) files", (.files[] | "\(.path)  +\(.additions)/-\(.deletions)")' \
   > "$OUT/changed-files.txt"
@@ -266,8 +266,7 @@ review_scope: {full | delta | carry}
 
 ## Artifacts (verbatim files, written by shell — not retyped here)
 Absolute paths (`$OUT/...`):
-- PR body: `{OUT}/pr-body.md` ({bytes} bytes) — the claims source stage 02 reconciles against
-  the diff
+- PR body: `{OUT}/pr-body.md` ({bytes} bytes) — author intent only; never a verdict input
 - First review: `{OUT}/first-review.md` ({bytes} bytes)
 - Changed files: `{OUT}/changed-files.txt` (TOTAL line: {copy the one TOTAL line here})
 - Full diff: `{OUT}/diff.patch` ({lines} lines, untruncated)

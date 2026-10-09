@@ -91,8 +91,14 @@ fi
 
 # Extract verdict from review handoff (format: "verdict: ready" or "verdict: needs-work")
 VERDICT=$(grep "^verdict:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
-CLAIMS=$(grep "^claims_reconciled:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
-[ -n "$CLAIMS" ] || CLAIMS=unknown
+MUST_FIX_OPEN=$(grep "^must_fix_open:" "$REVIEW_HANDOFF" | head -1 | awk '{print $2}')
+BODY_NOTE=$(sed -n 's/^body_note: //p' "$REVIEW_HANDOFF" | head -1)
+# Zero MUST-FIX code items is a pass, on a first check and a re-check alike. Only code-level
+# MUST-FIX items hold a PR at needs-work; body staleness and non-code asks never do.
+if [ "$VERDICT" = "needs-work" ] && [ "$MUST_FIX_OPEN" = "0" ]; then
+  echo "[stage-04] verdict needs-work with must_fix_open=0 — normalizing to ready"
+  VERDICT=ready
+fi
 
 # Stage 02 records the exact remote checkout it reviewed. Missing/malformed is unsafe.
 REVIEWED_HEAD_SHA=$(awk '/^reviewed_head_sha:/{print $2; exit}' "$REVIEW_HANDOFF")
@@ -108,11 +114,10 @@ Bash and not inside a fence), then stop:
 
 [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: no exact reviewed HEAD SHA recorded" status=blocked
 
-### Claims-vs-diff gate against the LIVE PR (BLOCKING — run before posting)
+### Exact-head gate against the LIVE PR (BLOCKING — run before posting)
 
-Stage 02 judged a handoff. This step confirms that judgement against GitHub itself: stage 02 may have misread the
-diff file, and the branch may have moved since setup. **Always run it** — it is
-the skill's only orchestrator-level verification of its own subject matter.
+Stage 02 judged a handoff. This step confirms that the branch has not moved since setup.
+**Always run it** before any comment or label mutation.
 
 ```bash
 # Do not use local checkout state, abbreviated SHAs, filenames, or diff stats as an identity.
@@ -202,20 +207,10 @@ not inside a fence), then stop:
 - `restart`: [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check restart required: PR HEAD moved after review" status=blocked
 - `blocked`: [pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check blocked: exact head unavailable or superseded" status=blocked
 
-Then:
-
-- **`CLAIMS=unknown`** (stage 02 could not reconcile, e.g. truncated diff) — reconcile now yourself:
-  read the live `.body` and `.files` from `/tmp/dc-pr-$PR.json` and apply the stage-02 rules
-  (backed / elsewhere / unbacked). Set `CLAIMS=pass` or `CLAIMS=fail` from what you find.
-- **`CLAIMS=pass`** — sanity-check that the live changed-file list still matches the manifest
-  stage 02 reviewed. SHA equality above is mandatory even when the file list is unchanged; a
-  stage-03 fix or any other push requires a fresh stage-02 complete-diff review before posting.
-- **`CLAIMS=fail`** — force `VERDICT=needs-work` and take **Branch D** below. Do not apply
-  `double-checked`, whatever stage 02's verdict said.
-
-```bash
-if [ "$CLAIMS" = "fail" ]; then VERDICT=needs-work; fi
-```
+Then sanity-check that the live changed-file list still matches the manifest stage 02 reviewed.
+SHA equality above is mandatory even when the file list is unchanged; a stage-03 fix or any other
+push requires a fresh stage-02 review before posting. The PR body is not re-checked here: body
+staleness never changes the verdict.
 
 ### Post the curated review comment
 
@@ -245,15 +240,8 @@ gh pr comment $PR --repo $REPO --body "$(cat <<REVIEW_EOF
 ### Intent
 [1-2 sentences: does the PR deliver what it's supposed to?]
 
-### Claims vs Diff — $CLAIMS
-Live diff: $LIVE_STAT
-
-| Claim | Status | Evidence |
-|-------|--------|----------|
-| [claim from PR title/body] | backed / elsewhere / **unbacked** | [where it is, or that it is absent] |
-
-[On unbacked claims, add: "**This PR's description does not match its diff.** Correct the body to
-describe what actually landed, or land the missing code. \`double-checked\` withheld until then."]
+[Only when stage 02 recorded a body_note other than "none", add one line:
+"Note: the PR body is stale against the diff — <body_note>. Not a blocker."]
 
 ### Implementation
 [2-4 bullets: key approach, files changed grouped by area]
@@ -292,8 +280,8 @@ fi
 - If stage 03 was skipped (`fixes_needed: false`): mark all "Fixed?" cells "No (no fix needed)"
 - The `**Head reviewed:**` line is ALWAYS present with the full 40-hex live head — it is the
   receipt downstream consumers and the dedup gate compare against the current head
-- The Claims vs Diff table is ALWAYS present (write "no checkable claims in the body" if the body
-  makes none). Never soften an unbacked claim into an observation.
+- The verdict follows `must_fix_open`: zero open MUST-FIX code items is "Ready for CTO review".
+  A stale body gets at most the one-line note above; never list it as a remaining item.
 
 The `dc_require_promotable_head` invocation directly above `gh pr comment` is mandatory. If it
 fails, it emits the restart/blocked outcome and exits — never an approving comment.
@@ -313,8 +301,8 @@ the label untouched; never remove/re-add it merely to replay a promotion.
 
 #### Branch D — First-check non-promotion (`IS_RECHECK=false` and `VERDICT != ready`) — takes precedence over C
 
-This includes claims mismatches (`CLAIMS=fail` forced `needs-work` above) and an explicit
-`needs-work` verdict. On a **re-check** (IS_RECHECK=true), Branch B already retains `needs-work`
+This is an explicit `needs-work` verdict with at least one open MUST-FIX code item, or a
+missing/malformed verdict. On a **re-check** (IS_RECHECK=true), Branch B already retains `needs-work`
 and does not re-toggle the positive label.
 
 Fail closed: `double-checked` fires CTO, FlowChad, and staging, so remove it if present and do
@@ -325,7 +313,7 @@ positive follow-on may be created from a negative or conflicting review verdict.
 ```bash
 if [ "$IS_RECHECK" = "false" ] && [ "$VERDICT" != "ready" ]; then
   # Branch D: negative/conflicting first-check verdict — fail closed.
-  echo "[stage-04] verdict=$VERDICT claims=$CLAIMS — withholding double-checked and retaining needs-work"
+  echo "[stage-04] verdict=$VERDICT must_fix_open=${MUST_FIX_OPEN:-unknown} — withholding double-checked and retaining needs-work"
 
   MARKER_SEEN=$(gh pr view $PR --repo $REPO --json comments \
     --jq '.comments[].body | select(contains("pylot:first-check-fail-closed"))' 2>/dev/null | head -1)
@@ -337,7 +325,7 @@ if [ "$IS_RECHECK" = "false" ] && [ "$VERDICT" != "ready" ]; then
 ## Double-check blocked: negative or conflicting review verdict
 
 **Verdict:** \`$VERDICT\`
-**Claims reconciled:** \`$CLAIMS\`
+**Open MUST-FIX items:** \`${MUST_FIX_OPEN:-unknown}\`
 **Head reviewed:** \`$LIVE_HEAD_SHA\`
 
 The review did not produce an explicitly positive verdict for this exact head. The
@@ -399,6 +387,10 @@ echo "[stage-04] loop closed — cto-review will re-fire via pull_request.labele
 ---
 
 #### Branch B — Re-check FAIL (IS_RECHECK=true AND verdict=needs-work)
+
+Only reachable with at least one open MUST-FIX code item. A re-check whose review lists zero
+MUST-FIX items was normalized to `ready` above and takes Branch A, even if its prose says
+"needs-work".
 
 Leave `needs-work` in place. Do NOT re-toggle `double-checked` (cto-review must NOT fire while
 work remains). Post a structured verdict comment guarded by a stable HTML marker so retries
@@ -531,8 +523,9 @@ If any step failed, emit `status=failed` with the reason instead. Head-transitio
 unreadable live state emit `status=blocked` (a deliberate stop, not a failure) via the gates above.
 
 ## Success criteria
-- Live claims-vs-diff gate run (`gh pr view`) before posting, and its result reflected in `CLAIMS`
-- Curated review comment posted, including the Claims vs Diff table and the full 40-hex
+- Live exact-head gate run (`gh pr view`) before posting
+- `VERDICT=ready` whenever `must_fix_open` is 0, on first checks and re-checks alike
+- Curated review comment posted, including the full 40-hex
   `**Head reviewed:**` line
 - Labels applied per the branch above (first-check fail-closed: double-checked removed/withheld +
   needs-work retained + fail-closed comment; re-check PASS: needs-work removed + double-checked

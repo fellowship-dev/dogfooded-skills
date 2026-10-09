@@ -69,7 +69,7 @@ comment and influences the verdict.
 | `security` | Security-sensitivity classification (#3240) | `security` is never a trigger by itself — informational only. Whether this diff actually needs an owner decision is decided by Step 0b's owner-authority classifier below, not by this label's presence |
 | `chad-rejects` | FlowChad QA failure (LEGACY) | FlowChad per-PR runs were retired 2026-09-06 (pylot#3388); a stale `chad-rejects` from before then is context, not a blocker — weigh the underlying evidence comment on its merits |
 | `reviewed`, `double-checked`, `approved`, `dispatched`, `ready-to-work` | Pipeline labels | Not blockers |
-| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. Staging evidence is required only on release-train PRs (base = the team-declared promote branch, pylot#3389); the setup stage gates that. |
+| `lane:fast`, `lane:staging`, `chad-approves`, `staging-verified` | LEGACY labels (owner ruling 2026-09-06) | Not blockers, never wait on them. Per-PR flowchad and test-in-staging are retired: their absence is the expected state on EVERY ordinary PR — never record "no staging evidence" or "no FlowChad verdict" as a blocker or let it lower the verdict. cto-review never requires staging evidence on any PR: staging is a release-train step (pylot#3389). |
 
 **For each comment thread, identify blockers:**
 - Explicit hold comments (e.g. "do not merge", "waiting for owner") — resolved only if a subsequent comment or commit addresses them
@@ -297,7 +297,7 @@ Wrong-but-plausible: {none | list of findings}
 ## Receipts (#2918)
 Labels seen: {comma-separated list, or "none"}
 Lane: {fast | staging | none — legacy label from the setup handoff, informational only}
-{For every ordinary (non-release-train) PR, add verbatim — the trade must be stated, never assumed:}
+{Add verbatim — the trade must be stated, never assumed:}
 Per-PR staging retired (owner ruling 2026-09-06, pylot#3389): the pre-merge staging deploy did
 not run, by design. Compensating controls in force: review-pr's findings, double-check, this
 cohesive review, the #2918 owner hard-stop, CI green, and the mandatory staging run on the

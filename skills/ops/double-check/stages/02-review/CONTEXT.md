@@ -7,11 +7,11 @@ you have NO implementation history, which prevents confirmation bias.
 ## Inputs
 - `.procedure-output/double-check/01-setup/handoff.md` — PR metadata, receipt, local checkout
   dir, and the paths of the four verbatim setup artifacts below
-- The setup artifacts it lists under `## Artifacts`: `pr-body.md` (the claims), `first-review.md`
+- The setup artifacts it lists under `## Artifacts`: `pr-body.md` (author intent), `first-review.md`
   (verbatim), `changed-files.txt` (authoritative manifest) and `diff.patch` (the full diff). They
   are setup output, not orchestration history: reading them keeps the clean context. Read
-  `diff.patch` in full (page through it with offsets when it is long); never judge a claim
-  against a part you did not read.
+  `diff.patch` in full (page through it with offsets when it is long); never judge code you
+  did not read.
 
 Do NOT request or expect orchestration history. This handoff is everything at the start of review;
 before writing your verdict you must independently refresh the PR comments as described below.
@@ -26,12 +26,11 @@ review it again. In delta mode:
   for context a delta hunk depends on.
 - Re-check the findings the change is meant to fix: the open MUST-FIX and needs-work items in the
   latest double-check or CTO comment in `first-review.md`, and in `prior-review.md` when present.
-  Each one is fixed, still open, or moot; an open one keeps the verdict at `needs-work`, wherever
-  its file sits.
-- Steps 0 (claims vs diff) and 6 (live refresh) run as usual. The claims check stays against the
-  full manifest: the body may have changed with the rework.
-- With zero delta files (a re-run after a body-only edit), only the findings re-check and the
-  claims check apply.
+  Each one is fixed, still open, or moot; an open MUST-FIX code item keeps the verdict at
+  `needs-work`, wherever its file sits. Asks about the PR body or staging evidence are moot.
+- Step 6 (live refresh) runs as usual.
+- With zero delta files (a re-run after a body-only edit), only the findings re-check applies.
+  A body edit alone never changes the verdict.
 - Record `review_scope: delta` and the delta file count in your handoff.
 
 `review_scope: full` (or absent) is the full review below. `carry` never reaches this stage.
@@ -40,8 +39,6 @@ review it again. In delta mode:
 Review the PR **in cohesion** — the whole diff together, all dimensions in ONE pass — and produce
 a single consolidated verdict. This is NOT split per-file or per-dimension. In this one review you:
 
-0. **Reconcile the PR's claims against the diff.** The title and body are claims; the diff is the
-   only evidence. Claims with no code behind them are the defect. BLOCKING — see step 2 below.
 1. **Verify the first review's claims.** For each finding in the setup's `first-review.md`,
    judge whether it is accurate against the actual diff.
 2. **Find missed edge cases.** Surface correctness/security/spec issues the first review did NOT
@@ -49,7 +46,13 @@ a single consolidated verdict. This is NOT split per-file or per-dimension. In t
 3. **Check tests and docs.** Does the change include/adjust tests where it should? Are docs,
    types, and deps consistent with the change?
 
-All four are judged together as cross-cutting concerns, yielding ONE verdict.
+All three are judged together as cross-cutting concerns, yielding ONE verdict.
+
+**Code decides the verdict; the PR body never does.** Use the title and body only to understand
+intent. There is no claims-reconciliation step: a body that is stale, incomplete, or describes a
+different revision is at most a one-line `body_note` in the handoff, never a finding, never
+MUST-FIX, and never a reason for `needs-work`. On a 30-day sweep most `needs-work` verdicts came
+from stale bodies on otherwise clean diffs and cost a rework each.
 
 ## Steps
 
@@ -62,57 +65,19 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    full diff and perform the normal cohesive review. Staleness never forces a pipeline
    restart and never suppresses this stage.
 
-2. **Reconcile claims vs diff — BLOCKING, do this before curating anything.**
-   Extract every *concrete, checkable* claim from the PR title and body: named files/modules,
-   endpoints or routes, functions, migrations, config keys, test files and test counts,
-   `Closes`/`Implements`/`Fixes` issue refs, and any staging/deploy evidence (build ids,
-   `deployed_sha`, smoke results). Check each against the setup's `changed-files.txt`
-   manifest and `diff.patch`. Also extract **diff-provenance / range claims** — assertions about
-   a commit range other than this PR's own merge-base diff, e.g. what a base-branch merge brought
-   in, or "no source delta since `<sha>`". These have no evidence source in the manifest or
-   diff file; check them instead against a range diff terminating at the handoff's `Setup head SHA`
-   (never local `HEAD`, which the setup stage may have advanced past that SHA by merging the base
-   branch in): `git diff --stat <cited-sha>..<Setup head SHA>` in the `REPO_DIR` the handoff
-   records under `## Local Checkout` — stage 01's success criteria guarantee this checkout exists
-   whenever this stage runs. Classify each claim:
+2. **Check the driving issue's acceptance criteria.** For a `Closes`/`Implements`/`Fixes`
+   driving issue, assess each criterion against the diff or a linked follow-up conforming to
+   [the follow-up issue contract](../../references/follow-up-issue-template.md). Read the
+   follow-up: it must carry the deferred criteria verbatim. A conforming transfer backs the
+   closing reference; generate no finding merely because that remainder is absent from this
+   diff. Operational or post-merge acceptance remains owed by the follow-up, not claimed done.
+   If a criterion is neither implemented nor transferred, require completion or a conforming
+   linked follow-up while retaining the closing reference (a MUST-FIX code finding).
+   Never recommend downgrading the driving issue to `Refs`, including when curating a
+   first-review finding that recommends it.
 
-   - **backed** — the change is present in this diff.
-   - **elsewhere** — the body explicitly scopes it out, or names the specific other PR / merged
-     SHA that carries it. A bare "already shipped" / "handled previously" assertion with no
-     pointer is NOT `elsewhere`.
-   - **unbacked** — claimed, absent from the diff, no pointer. A diff-provenance/range claim that
-     cites no SHA, or whose cited range the range diff contradicts or cannot produce, is
-     **unbacked** — never `unknown` and never "not a claim".
-
-   **Any `unbacked` claim ⇒ `claims_reconciled: fail` ⇒ `verdict: needs-work`.** Non-waivable:
-   - "The mismatch is intentional / the commit message explains it" is **not** a waiver. A body
-     that describes code this diff does not contain is itself the defect — the body must be
-     corrected or the code must land. Do not record it as a non-blocking observation.
-   - Risk tier does not exempt it. A LOW-tier docs-only diff under a body claiming N source files
-     and M new tests is precisely the case this gate exists for — a small diff makes the
-     mismatch *more* suspicious, not less.
-   - `Closes`/`Implements` refs count as claims. For a closing driving issue, assess each
-     criterion against the diff or a linked follow-up conforming to
-     [the follow-up issue contract](../../references/follow-up-issue-template.md). Read the
-     follow-up: it must carry the deferred criteria verbatim. A conforming transfer backs the
-     closing reference; generate no finding merely because that remainder is absent from this
-     diff. Operational or post-merge acceptance remains owed by the follow-up, not claimed done.
-     If a criterion is neither implemented nor transferred, require completion or a conforming
-     linked follow-up while retaining the closing reference. Never recommend downgrading the
-     driving issue to `Refs`, including when curating a first-review finding that recommends it.
-   - Staging evidence attesting to code absent from the diff is unbacked.
-
-   Also note the inverse — substantive changes in the diff the body never mentions
-   (**undisclosed**). Record them; escalate to needs-work only when they are risky or outside the
-   PR's stated scope.
-
-   If `diff.patch` or `changed-files.txt` is missing, empty while the manifest lists files, or
-   flagged incomplete by the setup handoff, you cannot reconcile: set `claims_reconciled: unknown`
-   and say which claims you could not check.
-   Stage 04 re-checks those against the live PR.
-
-   Be precise, not pedantic: only claims a reader could verify against the diff. Wording, tone,
-   and forward-looking intent ("this unblocks X") are not claims.
+   If the body is stale against the diff (names files, tests, or evidence the diff does not
+   carry), write one line in `body_note` and move on. It does not affect the verdict.
 
 3. **Curate the findings — keyed by the first review's IDs when it numbered them.** Classify EACH finding as:
    - **MUST FIX** — accurate, important for correctness/security/spec compliance
@@ -146,21 +111,19 @@ All four are judged together as cross-cutting concerns, yielding ONE verdict.
    in the curation. If the read fails or head changed, write `verdict: blocked` with the reason;
    do not produce an approving verdict.
 
-7. **Form the consolidated verdict.** One of:
-   - `ready` — ready for CTO review (no MUST-FIX items, no blocking new issues, and
-     `claims_reconciled` is not `fail`)
-   - `needs-work` — list the specific remaining items
-
-   `claims_reconciled: fail` forces `needs-work`. There is no combination of clean findings that
-   overrides it.
+7. **Form the consolidated verdict from MUST-FIX code items only.** Count the open MUST-FIX
+   items (curated first-review findings, new issues, and on a re-check the prior findings still
+   open) and record the count as `must_fix_open`.
+   - `must_fix_open: 0` ⇒ `verdict: ready`. **Zero MUST-FIX code items is a pass**, on a first
+     check and on a re-check alike. NICE-TO-HAVE items, body staleness, missing staging evidence,
+     and "no outstanding code-level items, but…" never hold the verdict at `needs-work`.
+   - `must_fix_open` ≥ 1 ⇒ `verdict: needs-work`, listing exactly those items.
 
 8. Set `fixes_needed`:
    - `true` if there is at least one MUST-FIX finding OR a NICE-TO-HAVE you judge worth doing
      OR a new blocking issue to fix.
    - `false` if nothing actionable needs a code change (verdict can still be `ready` or `needs-work`,
      but with no fixes for stage 03 to apply).
-   - An unbacked-claim failure alone does NOT set `fixes_needed: true` — stage 03 fixes code, and
-     the remedy here is the author correcting the body or landing the missing code.
 
 This stage has NO side effects — no code edits, no pushes, no comments. It only judges and records.
 
@@ -172,25 +135,14 @@ Path: `.procedure-output/double-check/02-review/handoff.md`
 # Stage 02: Cohesive Review
 
 verdict: {ready | needs-work}
+must_fix_open: {N — verdict is ready iff N is 0}
 fixes_needed: {true | false}
-claims_reconciled: {pass | fail | unknown}
+body_note: {one line if the PR body is stale against the diff — or "none"; never affects the verdict}
 reviewed_head_sha: {40-character Setup head SHA}
 review_scope: {full | delta}
 
-## Claims vs Diff
-| Claim (from PR title/body) | Status | Evidence |
-|----|--------|----------|
-| {e.g. "POST /orgs/:org/skills/home handler in skills-api.mts"} | unbacked | not in the 2 changed files |
-| {e.g. "18 new unit tests"} | unbacked | no test file in the diff |
-| {e.g. "T040 GitHub App permission"} | elsewhere | body scopes it out as a follow-on infra PR |
-| {e.g. "T049 marked done in tasks.md"} | backed | tasks.md hunk |
-{one row per concrete claim — or "no checkable claims in the body"}
-
-Undisclosed changes: {diff changes the body never mentions — or "none"}
-
 ## Intent
-{1-2 sentences: does the PR deliver what it's supposed to? If claims_reconciled is fail, say so
-here in one line — this text is what a human reads first.}
+{1-2 sentences: does the PR deliver what it's supposed to? This text is what a human reads first.}
 
 ## Implementation
 {2-4 bullets: key approach, files changed grouped by area}
@@ -216,7 +168,6 @@ here in one line — this text is what a human reads first.}
 ## Verified (delta this stage adds to the manifest)
 | What | How |
 |------|-----|
-| PR title/body claims reconciled against changed files + diff ({N} claims, {N} unbacked) | read |
 | {e.g. "first-review findings re-judged against diff"} | read |
 | {e.g. "runtime-shape checklist re-confirmed"} | read |
 {stage 03, if it runs, appends its test run as {"what":"test suite after fixes","how":"executed"}}
@@ -232,9 +183,8 @@ here in one line — this text is what a human reads first.}
 ```
 
 ## Success criteria
-- `verdict`, `fixes_needed`, and `claims_reconciled` set explicitly
-- Every concrete PR-body claim classified backed/elsewhere/unbacked in the Claims vs Diff table
-- No `unbacked` claim coexists with `verdict: ready`
+- `verdict`, `must_fix_open`, and `fixes_needed` set explicitly
+- `verdict: ready` exactly when `must_fix_open: 0`; body staleness never changes it
 - Every first-review finding classified (or "none found" noted)
 - New issues surfaced (or explicitly "none")
 - Tests posture decided

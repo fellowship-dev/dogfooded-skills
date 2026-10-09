@@ -1,6 +1,6 @@
 ---
 name: cto-review
-description: Use when performing a CTO-level PR review — includes a staging evidence gate for release-train PRs (base = team-declared promote branch; per-PR staging retired 2026-09-06, pylot#3389) and a non-blocking visual evidence notice for UI PRs.
+description: Use when performing a CTO-level PR review — cohesive review, owner gate, CI and merge-authority checks, and a non-blocking visual evidence notice for UI PRs. No staging-evidence gate (staging is a release-train step, pylot#3389).
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Task
 ---
@@ -33,7 +33,7 @@ Example: `/cto-review 742 fellowship-dev/booster-pack`.
 
 | Stage | Mode | Description |
 |-------|------|-------------|
-| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918), **resolve the pipeline lane** (#2996, step 5.3), and resolve merge authority from the DB-authoritative team `deploy.release_mode`. Only explicit `ship` permits automated merge; every other state is label-only. Short-circuit if CLOSED-not-merged or if an infra/backend PR lacks staging evidence. The staging gate is **waived on `lane:fast`** (#2996) — the lane classifier already proved the diff touches no deployable surface and test-in-staging deliberately never ran. Visual evidence (5.6) is evaluated the same way but is a **notice, not a short-circuit**. Both checks search the PR body first, then comments (newest-first), and both accept `N/A` within 3 lines of their heading as the waiver. |
+| 01-setup | subagent | Fetch repo context, PR metadata, full diff, merge state, **all PR comments + label snapshot** (#2918), **resolve the pipeline lane** (#2996, step 5.3), and resolve merge authority from the DB-authoritative team `deploy.release_mode`. Only explicit `ship` permits automated merge; every other state is label-only. Short-circuit only if CLOSED-not-merged. There is no staging-evidence gate (pylot#3389). Visual evidence (5.6) is a **notice, not a short-circuit**: it searches the PR body first, then comments (newest-first), and accepts `N/A` within 3 lines of its heading as the waiver. |
 | 02-review | subagent | **Judgement layer first** (#2918): read all labels + all comments, identify and classify every blocker (resolved/unresolved). Then ONE cohesive review of the whole diff across all dimensions → verdict + checklist + action items + **receipts block**. Review depth is identical in both lanes. |
 | 03-synthesize-act | inline | Post GH comment (always includes `## Checked / Found` receipts), apply label. **Step 3.0: owner gate** (#2918, #3240) — human `waiting-on-owner` present (fresh label read) OR stage 02's `owner_authority_class != none`: post park comment (one decision line + named answerer), apply `waiting-on-owner`, emit `status=blocked`, STOP. `security` is never a trigger. **Step 3.1: lane merge bar** (#2996) — from the same fresh read: `lane:fast` requires `reviewed` only; everything else requires `reviewed` + `double-checked`. Otherwise: merge-or-label honoring merge state, write report file, emit outcome marker. |
 
@@ -77,25 +77,6 @@ After stage 01 completes, read `.procedure-output/cto-review/01-setup/handoff.md
 
 - If `short_circuit: closed-no-merge` → skip stage 02, go straight to stage 03 (which posts
   nothing and emits the blocked/closed outcome).
-- If `short_circuit: missing-staging-evidence` → **only possible on a RELEASE-TRAIN PR**
-  (base = the repo's team-declared promote branch, `deploy.production_branch`; owner ruling
-  2026-09-06, pylot#3389 — ordinary PRs never require staging evidence and must never produce
-  this short-circuit). **DO NOT run stage 02 or 03**.
-  Instead, run these steps inline:
-  1. Apply `needs-work` label:
-     ```bash
-     gh pr edit {PR} --repo {org/repo} --add-label "needs-work"
-     ```
-  2. Post rejection comment:
-     ```bash
-     gh pr comment {PR} --repo {org/repo} \
-       --body "Release train is missing fresh staging evidence at its head. Run \`/test-in-staging\` for this train and include the output before requesting re-review (per-release staging is mandatory — pylot#3389)."
-     ```
-  3. Emit outcome:
-     ```
-     [pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: release train missing staging evidence on PR #{PR}" status=blocked
-     ```
-  Then stop — no further stages.
 - Otherwise → continue to stage 02.
 
 Missing visual evidence is **not** a short_circuit and never appears here. It is carried in the
@@ -149,9 +130,7 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
    │                                              ├── lane:fast ──► require `reviewed`
    │                                              └── else      ──► require `reviewed` + `double-checked`
    │
-   ├── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
-   └── short_circuit: missing-staging-evidence ──► inline rejection (no stages 02/03)
-       (release-train PRs only — base = team-declared promote branch; pylot#3389)
+   └── short_circuit: closed-no-merge ──────────────────────► 03 (no-op)
 
    (visual evidence: notice only — flows through 02/03 as an advisory line, never blocks)
 ```
@@ -162,7 +141,6 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
 - **Failure**: failing stage emits `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage NN: {reason}" status=failed`
 - **Blocked (closed)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
 - **Blocked (owner gate)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review parked: PR #{N} — owner decision required" status=blocked` (#2918, #3240 — fires when a human has applied `waiting-on-owner` OR stage 02's owner-authority classifier matched one of five closed classes; `security` is never a trigger; park comment + `waiting-on-owner` label applied)
-- **Blocked (staging evidence)**: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: release train missing staging evidence on PR #{N}" status=blocked` (fires ONLY on a release-train PR — base = the team-declared promote branch — with no valid fresh evidence in body or comments; ordinary PRs never require staging evidence per the 2026-09-06 owner ruling)
 
 ## Hard Rules
 
@@ -178,12 +156,8 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
    `na-no-configured-checks`. Only pass or N/A may satisfy the CI prerequisite; N/A still requires
    the normal review, lane, owner-gate, and merge-authority requirements.
 10. **No Quest** — reporting is the local report file only.
-11. **The staging gate fires first and is the only evidence short-circuit** (step 5.5). It
-    applies to release-train PRs only (base = the repo's team-declared promote branch,
-    `deploy.production_branch`, pylot#3389); on any other PR it must never fire. On the
-    short-circuit, skip everything else and post its rejection inline.
-    It cannot be bypassed by prose or by verdict.
-    **Visual evidence (step 5.6) is a notice, never a blocker** — it is evaluated after staging,
+11. **No evidence check short-circuits.** There is no staging-evidence gate (rule 16).
+    **Visual evidence (step 5.6) is a notice, never a blocker** — it is
     recorded in the handoff, and appended by stage 03 as an advisory line. It never short-circuits,
     never applies a label, and never gates the merge bar. Its notice MUST still name the self-serve
     path; a bare "add screenshots" message is the defect it exists to fix.
@@ -205,21 +179,14 @@ Post the comment, apply the label, merge-or-label, write the report file, and em
     receipts must also name the lane and the compensating controls (Step 3.1 list) — the whole
     point of the trade is that it is stated, not assumed.
 15. **Lanes are LEGACY (owner ruling 2026-09-06)** — `lane:fast`/`lane:staging` labels no longer
-    change the staging gate (retired for ordinary PRs) and are informational only. The merge bar
+    are informational only. The merge bar
     default is `reviewed double-checked`; the historical fast-lane exception (a `lane:fast` PR
     where double-check was deliberately never dispatched) still merges on `reviewed` alone —
     never `needs-work` such a PR for a missing `double-checked`. No new lane labels are emitted.
-16. **Prod's gate moved to the release train (pylot#3389)** — ordinary PRs merge with no staging
-    deploy, by design. Every promote to the repo's team-declared `deploy.production_branch` must
-    carry fresh `/test-in-staging` evidence at its exact head (this skill's stage-01 gate enforces
-    it, resolved from live team config — never from `defaultBranchRef`. Owner dispatch 2026-09-10:
-    a matched team with no declared `production_branch` falls back to the literal `main`; a repo
-    with no team match at all stays unconfigured/fail-open rather than defaulting to `main`, so
-    genuinely undeclared repos with no promote flow are never misclassified, pylot#164 — this repo
-    (dogfooded-skills) is itself declared under the `pylot` team, so it hits the matched-team
-    fallback and IS subject to the gate on `main`, same as pylot's own PRs), and
-    `scripts/ci-release-gate.sh` still runs the unscoped full corpus before anything reaches
-    production. The staging *step* is mandatory per release; the release *count* is not.
+16. **No staging-evidence requirement (pylot#3389)** — cto-review never asks for, checks, or
+    blocks on staging evidence, on any PR. Staging is a release-train step owned by the release
+    process, and `scripts/ci-release-gate.sh` still runs the unscoped full corpus before anything
+    reaches production. Never write "no staging evidence" as a blocker or a `needs-work` item.
 17. **Merge authority is explicit and DB-authoritative** — stage 01 MUST use
     `resolve-merge-strategy.sh`, which reads live team configuration through the Pylot CLI. Only
     `deploy.release_mode=ship` grants automated merge authority. `propose`, missing configuration,

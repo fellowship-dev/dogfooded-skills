@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fixture harness for the cto-review VISUAL-evidence gate (CONTEXT.md step 5.6).
 
-Companion to test_evidence_gate.py, which covers the STAGING gate at step 5.5.
+Covers the visual-evidence notice at step 5.6 (the former staging gate at step 5.5 is retired).
 
-Unlike that harness, this one does not re-implement the gate's regexes in Python:
+This harness does not re-implement the gate's regexes in Python:
 both layers are EXTRACTED VERBATIM from CONTEXT.md and executed in bash, so a
 fixture can only pass if the deployed text passes. Mutate either block in
 CONTEXT.md and fixtures here go red.

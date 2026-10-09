@@ -36,7 +36,6 @@ jobs:
             ./skills/ops/jev-evidence/tests/test_packaging.py
             ./skills/ops/cto-review/stages/01-setup/test_ci_gate.py
             ./skills/ops/cto-review/stages/01-setup/test_collect_ci_evidence.py
-            ./skills/ops/cto-review/stages/01-setup/test_evidence_gate.py
             ./skills/ops/cto-review/stages/01-setup/test_visual_gate.py
             ./skills/ops/cto-review/tests/patch-id-merge-pin.test.sh
             ./skills/ops/cto-review/tests/test_owner_gate_contract.py

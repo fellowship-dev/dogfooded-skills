@@ -6,7 +6,7 @@
 ## Task
 Build everything the review stage needs in one place: repo architectural context, PR metadata, the
 FULL diff, and the authoritative merge state. Detect the CLOSED-not-merged case and short-circuit so
-the review stage is skipped. Also gate on staging evidence for infra/backend PRs.
+the review stage is skipped. There is no staging-evidence gate (step 5.5).
 
 ## Steps
 
@@ -135,8 +135,7 @@ Record in the handoff:
 
 5.3. **Pipeline lane labels are LEGACY (owner ruling 2026-09-06).** `lane:fast`/`lane:staging`
 labels may still appear on older PRs; record them in the handoff as `lane: {fast | staging |
-none}` for context, but they no longer change the staging-evidence gate, the merge bar, or
-anything else. Never wait on a lane label and never emit one.
+none}` for context, but they no longer change the merge bar or anything else. Never wait on a lane label and never emit one.
 
 ```bash
 LANE="none"
@@ -147,347 +146,12 @@ esac
 echo "[cto-review] lane (legacy, informational only): $LANE"
 ```
 
-5.5. **Staging evidence gate — RELEASE TRAINS ONLY (owner ruling 2026-09-06, pylot#3389).**
-Per-PR staging testing is retired: ordinary PRs NEVER require staging evidence — test-in-staging
-deliberately does not run for them, and a missing-evidence short-circuit on such a PR is a bug,
-not a gate. The mandatory staging step lives on the **release train**: a PR whose base branch is
-the repo's team-declared promote branch must carry fresh staging evidence at its exact head before
-merge. The promote branch is **never** inferred from repo metadata (`defaultBranchRef`) — that
-proxy inverts on any repo where the default branch isn't the promote target, and false-fires on
-every PR in a repo with no promote flow at all (pylot#164). Only fires for open PRs; merged/closed
-PRs skip this gate entirely.
+5.5. **No staging-evidence gate.** cto-review never requires staging evidence on a PR, release
+train or not, and never short-circuits on its absence. Staging is a release-train step owned by
+the release process (pylot#3389), not by PR review. Never record missing staging evidence as a
+blocker or a `needs-work` item.
 
-Run this bash block immediately after step 5 (requires `MERGE_STATE` set in step 3):
-
-```bash
-# Gate only fires for open PRs — merged/closed PRs skip evidence check
-if [ "${MERGE_STATE:-open}" = "open" ]; then
-  # Collect changed filenames (stage-02 handoff still wants them)
-  CHANGED_FILES=$(gh pr diff $PR --repo $REPO --name-only 2>/dev/null || echo "")
-
-  # Staging evidence is required ONLY for release-train PRs: base = the team-declared promote
-  # branch (pylot#164). Resolved from Pylot's DB-authoritative team config, the same object
-  # resolve-merge-strategy.sh already reads .deploy.release_mode from (step 8 below) — never
-  # from repo default-branch metadata. Owner dispatch (2026-09-10): when a team matches the repo
-  # but declares no production_branch, fall back to the literal `main` — but a repo with NO team
-  # match at all stays unconfigured (fail-open), so genuinely undeclared repos with no promote
-  # flow at all are never misclassified as a release train (SC-003). Note: dogfooded-skills is
-  # declared under the pylot team (matched-team/field-absent case, NOT this no-match case) — see
-  # specs/164-fix-release-train-detection/spec.md FR-003 correction.
-  BASE_BRANCH=$(gh pr view $PR --repo $REPO --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "")
-  RELEASE_TRAIN_BASE=""
-  RELEASE_TRAIN_REASON=""
-  RELEASE_TRAIN_SOURCE=""
-  if TEAMS_JSON=$(pylot teams list 2>/dev/null); then
-    MATCH_JSON=$(printf '%s' "$TEAMS_JSON" | jq -c --arg repo "$REPO" '
-      [
-        .teams[]?
-        | select(any(.repos[]?; ascii_downcase == ($repo | ascii_downcase)))
-      ] as $matches
-      | if ($matches | length) == 0 then
-          {status: "no-match"}
-        elif ($matches | length) > 1 then
-          {status: "ambiguous"}
-        else
-          ($matches[0].deploy.production_branch // "") as $pb
-          | if $pb == "" then {status: "field-absent"} else {status: "declared", branch: $pb} end
-        end
-    ' 2>/dev/null || echo '{"status":"error"}')
-    MATCH_STATUS=$(printf '%s' "$MATCH_JSON" | jq -r '.status // "error"' 2>/dev/null || echo "error")
-    case "$MATCH_STATUS" in
-      declared)
-        RELEASE_TRAIN_BASE=$(printf '%s' "$MATCH_JSON" | jq -r '.branch')
-        RELEASE_TRAIN_SOURCE="declared"
-        ;;
-      field-absent)
-        RELEASE_TRAIN_BASE="main"
-        RELEASE_TRAIN_SOURCE="literal-fallback"
-        RELEASE_TRAIN_REASON="team matches $REPO but declares no deploy.production_branch; falling back to literal main per owner dispatch 2026-09-10"
-        ;;
-      no-match)
-        RELEASE_TRAIN_REASON="no team declares $REPO"
-        ;;
-      ambiguous)
-        RELEASE_TRAIN_REASON="multiple teams declare $REPO; ambiguous match"
-        ;;
-      *)
-        RELEASE_TRAIN_REASON="pylot teams list query failed"
-        ;;
-    esac
-  else
-    RELEASE_TRAIN_REASON="pylot teams list unreachable"
-  fi
-
-  NEEDS_EVIDENCE=false
-  if [ -n "$BASE_BRANCH" ] && [ -n "$RELEASE_TRAIN_BASE" ] && [ "$BASE_BRANCH" = "$RELEASE_TRAIN_BASE" ]; then
-    NEEDS_EVIDENCE=true
-    if [ "$RELEASE_TRAIN_SOURCE" = "literal-fallback" ]; then
-      echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the owner-mandated literal main fallback; team declares no deploy.production_branch); the train must carry fresh staging evidence at its head (pylot#3389)"
-    else
-      echo "[cto-review] staging evidence gate: REQUIRED — release-train PR (base=$BASE_BRANCH matches the team-declared promote branch); the train must carry fresh staging evidence at its head (pylot#3389)"
-    fi
-    RELEASE_TRAIN_HANDOFF="$RELEASE_TRAIN_BASE"
-  elif [ -n "$RELEASE_TRAIN_BASE" ]; then
-    echo "[cto-review] staging evidence gate: NOT REQUIRED — base=$BASE_BRANCH is not the team-declared promote branch ($RELEASE_TRAIN_BASE); per-PR staging retired by owner ruling 2026-09-06"
-    RELEASE_TRAIN_HANDOFF="not-required (promote branch is $RELEASE_TRAIN_BASE)"
-  else
-    echo "[cto-review] staging evidence gate: NOT REQUIRED — release-train base unconfigured ($RELEASE_TRAIN_REASON); failing open per pylot#164"
-    RELEASE_TRAIN_HANDOFF="unconfigured ($RELEASE_TRAIN_REASON)"
-  fi
-  # End release-train predicate (pylot#164)
-
-  if [ "$NEEDS_EVIDENCE" = "true" ]; then
-    # Fetch PR body to check for evidence section
-    PR_BODY=$(gh pr view $PR --repo $REPO --json body --jq '.body' 2>/dev/null || echo "")
-    # Heading match is format-tolerant (#1754 follow-up): case-insensitive and
-    # decoration-tolerant so "## Staging evidence", "## ✅ Staging Evidence — PR cycle",
-    # "### Staging Evidence" all count. Substance (the verified build below) is NOT loosened.
-    EVIDENCE_HEADING='^#{1,4}[[:space:]].*[Ss]taging[[:space:]]+[Ee]vidence'
-    if echo "$PR_BODY" | grep -qiE "$EVIDENCE_HEADING"; then
-      # Section exists — now validate it is real, current evidence (not pending/stale)
-      # Check for pending placeholder — always block
-      if echo "$PR_BODY" | grep -iA2 -E "$EVIDENCE_HEADING" | grep -qE '>\s*pending'; then
-        echo "[cto-review] staging evidence gate: BLOCKED — evidence is pending"
-        mkdir -p .procedure-output/cto-review/01-setup
-        cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
-# Stage 01: Setup
-
-## PR Identity
-- PR: #${PR}
-- Repo: ${REPO}
-
-## Merge State
-- merge_state: open
-- short_circuit: missing-staging-evidence
-- release_train_base: ${RELEASE_TRAIN_HANDOFF}
-
-## Changed Files
-${CHANGED_FILES}
-EOF
-        exit 0
-      fi
-
-      # N/A bypass — docs-only PRs emit no deployed_sha; pass them through
-      if echo "$PR_BODY" | grep -iA3 -E "$EVIDENCE_HEADING" | grep -qiF 'N/A'; then
-        echo "[cto-review] staging evidence gate: PASSED (N/A — docs-only PR)"
-      else
-
-      # Verify staging evidence against the real build record (fellowship-dev/pylot#1713).
-      # The worker emits staging_build_id: `<BUILD_ID>` only when its deploy SUCCEEDED
-      # and /health confirmed sha == HEAD. The gate calls /admin/build-worker/<id> and
-      # requires SUCCEEDED + sha == HEAD. A pasted deployed_sha string cannot pass this gate.
-      PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
-      # PR_HEAD_SHA must be an env-var PREFIX on the python3 command (VAR=x cmd form).
-      # Trailing VAR=x after `python3 -c "script"` is argv, not environment — the script
-      # would see an empty head_sha and the freshness check silently passes (pylot#1861).
-      GATE_RESULT=$(echo "$PR_BODY" | PR_HEAD_SHA="$PR_HEAD_SHA" python3 -c "
-import sys, re, os, urllib.request, json
-
-body = sys.stdin.read()
-STAGING_URL = os.environ.get('PYLOT_STAGING_URL', '').rstrip('/')
-STAGING_TOKEN = os.environ.get('PYLOT_STAGING_DISPATCH_TOKEN', '')
-head_sha = os.environ.get('PR_HEAD_SHA', '')
-if not head_sha:
-    # Fail CLOSED: an unresolved PR HEAD means freshness is unverifiable — an empty
-    # head_sha trivially matching any build sha is the exact bug class this guards.
-    print('BLOCK:PR head sha unresolved — freshness unverifiable')
-    sys.exit(0)
-
-# Format-tolerant build-id extraction (#1754 follow-up + pylot#2097): accept
-# staging_build_id / 'staging build id' (':' or '=' or none, backticks optional) AND the
-# prose form '**Build:** \`pylot-builder-staging:<id>\`' that real evidence blocks use
-# (pylot#2084 false-block). The VALUE is still verified against the live build record
-# below — loosening the format never loosens the check.
-BUILD_ID_RE = re.compile(r'(?:staging[_ ]build[_ ]id|\*\*build:?\*\*)\s*[:=]?\s*\`?([A-Za-z0-9][A-Za-z0-9:/_-]+)\`?', re.I)
-m = BUILD_ID_RE.search(body)
-if not m:
-    print('BLOCK:no verified build for HEAD')
-    sys.exit(0)
-build_id = m.group(1)
-try:
-    req = urllib.request.Request(
-        f'{STAGING_URL}/admin/build-worker/{build_id}',
-        headers={'Authorization': f'Bearer {STAGING_TOKEN}'},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        record = json.loads(resp.read())
-except Exception as e:
-    print(f'BLOCK:build-record lookup failed: {e}')
-    sys.exit(0)
-status = record.get('status', '')
-if status != 'SUCCEEDED':
-    print('BLOCK:build did not succeed')
-    sys.exit(0)
-build_sha = record.get('sha', '')
-short = min(len(head_sha), len(build_sha), 7)
-if head_sha[:short] != build_sha[:short]:
-    print('BLOCK:build sha mismatch')
-    sys.exit(0)
-print('PASS:verified build for HEAD')
-" 2>/dev/null || echo "BLOCK:build-record check failed (python error)")
-
-      GATE_DECISION=$(echo "$GATE_RESULT" | cut -d: -f1)
-      GATE_REASON=$(echo "$GATE_RESULT" | cut -d: -f2-)
-
-      if [ "$GATE_DECISION" = "PASS" ]; then
-        echo "[cto-review] staging evidence gate: PASSED ($GATE_REASON)"
-      else
-        echo "[cto-review] staging evidence gate: BLOCKED — $GATE_REASON"
-        mkdir -p .procedure-output/cto-review/01-setup
-        cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
-# Stage 01: Setup
-
-## PR Identity
-- PR: #${PR}
-- Repo: ${REPO}
-
-## Merge State
-- merge_state: open
-- short_circuit: missing-staging-evidence
-- release_train_base: ${RELEASE_TRAIN_HANDOFF}
-
-## Changed Files
-${CHANGED_FILES}
-EOF
-        exit 0
-      fi
-      fi  # end N/A bypass else branch
-    else
-      # Body had no evidence heading — scan PR comments newest-first (pylot#1861 fix 2).
-      # /test-in-staging posts its evidence block as a comment by default; body-only scan
-      # was causing false-negative blocks even when evidence existed in a comment.
-      # Use jq --arg to select the full body of the first (newest) matching comment in one
-      # shot — avoids the line-by-line read trap that would capture only the heading line.
-      COMMENT_BODY=$(gh pr view $PR --repo $REPO --json comments 2>/dev/null \
-        | jq -r --arg pat "$EVIDENCE_HEADING" \
-          '[.comments[]] | reverse | map(select(.body | test($pat;"i"))) | .[0].body // ""' \
-        2>/dev/null || true)
-
-      if [ -n "$COMMENT_BODY" ]; then
-        echo "[cto-review] staging evidence gate: evidence found in PR comment — evaluating"
-        PR_BODY="$COMMENT_BODY"
-        # Fall through: $PR_BODY now holds the comment body — reuse the heading/pending/NA/build checks.
-        if echo "$PR_BODY" | grep -iA2 -E "$EVIDENCE_HEADING" | grep -qE '>\s*pending'; then
-          echo "[cto-review] staging evidence gate: BLOCKED — evidence in comment is pending"
-          mkdir -p .procedure-output/cto-review/01-setup
-          cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
-# Stage 01: Setup
-
-## PR Identity
-- PR: #${PR}
-- Repo: ${REPO}
-
-## Merge State
-- merge_state: open
-- short_circuit: missing-staging-evidence
-- release_train_base: ${RELEASE_TRAIN_HANDOFF}
-
-## Changed Files
-${CHANGED_FILES}
-EOF
-          exit 0
-        fi
-
-        if echo "$PR_BODY" | grep -iA3 -E "$EVIDENCE_HEADING" | grep -qiF 'N/A'; then
-          echo "[cto-review] staging evidence gate: PASSED (N/A in comment — docs-only PR)"
-        else
-          PR_HEAD_SHA=$(gh pr view $PR --repo $REPO --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
-          GATE_RESULT=$(echo "$PR_BODY" | PR_HEAD_SHA="$PR_HEAD_SHA" python3 -c "
-import sys, re, os, urllib.request, json
-
-body = sys.stdin.read()
-STAGING_URL = os.environ.get('PYLOT_STAGING_URL', '').rstrip('/')
-STAGING_TOKEN = os.environ.get('PYLOT_STAGING_DISPATCH_TOKEN', '')
-head_sha = os.environ.get('PR_HEAD_SHA', '')
-if not head_sha:
-    print('BLOCK:PR head sha unresolved — freshness unverifiable')
-    sys.exit(0)
-
-BUILD_ID_RE = re.compile(r'(?:staging[_ ]build[_ ]id|\*\*build:?\*\*)\s*[:=]?\s*\`?([A-Za-z0-9][A-Za-z0-9:/_-]+)\`?', re.I)
-m = BUILD_ID_RE.search(body)
-if not m:
-    print('BLOCK:no verified build for HEAD')
-    sys.exit(0)
-build_id = m.group(1)
-try:
-    req = urllib.request.Request(
-        f'{STAGING_URL}/admin/build-worker/{build_id}',
-        headers={'Authorization': f'Bearer {STAGING_TOKEN}'},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        record = json.loads(resp.read())
-except Exception as e:
-    print(f'BLOCK:build-record lookup failed: {e}')
-    sys.exit(0)
-status = record.get('status', '')
-if status != 'SUCCEEDED':
-    print('BLOCK:build did not succeed')
-    sys.exit(0)
-build_sha = record.get('sha', '')
-short = min(len(head_sha), len(build_sha), 7)
-if head_sha[:short] != build_sha[:short]:
-    print('BLOCK:build sha mismatch')
-    sys.exit(0)
-print('PASS:verified build for HEAD')
-" 2>/dev/null || echo "BLOCK:build-record check failed (python error)")
-
-          GATE_DECISION=$(echo "$GATE_RESULT" | cut -d: -f1)
-          GATE_REASON=$(echo "$GATE_RESULT" | cut -d: -f2-)
-
-          if [ "$GATE_DECISION" = "PASS" ]; then
-            echo "[cto-review] staging evidence gate: PASSED via comment ($GATE_REASON)"
-          else
-            echo "[cto-review] staging evidence gate: BLOCKED — $GATE_REASON (evidence in comment)"
-            mkdir -p .procedure-output/cto-review/01-setup
-            cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
-# Stage 01: Setup
-
-## PR Identity
-- PR: #${PR}
-- Repo: ${REPO}
-
-## Merge State
-- merge_state: open
-- short_circuit: missing-staging-evidence
-- release_train_base: ${RELEASE_TRAIN_HANDOFF}
-
-## Changed Files
-${CHANGED_FILES}
-EOF
-            exit 0
-          fi
-        fi
-      else
-        echo "[cto-review] staging evidence gate: BLOCKED — no staging evidence in body or comments"
-        # Write a minimal handoff for the orchestrator to act on
-        mkdir -p .procedure-output/cto-review/01-setup
-        cat > .procedure-output/cto-review/01-setup/handoff.md << EOF
-# Stage 01: Setup
-
-## PR Identity
-- PR: #${PR}
-- Repo: ${REPO}
-
-## Merge State
-- merge_state: open
-- short_circuit: missing-staging-evidence
-- release_train_base: ${RELEASE_TRAIN_HANDOFF}
-
-## Changed Files
-${CHANGED_FILES}
-EOF
-        exit 0
-      fi
-    fi
-  fi
-fi
-```
-
-If `short_circuit: missing-staging-evidence` is set, the orchestrator will post the rejection
-comment, apply `needs-work`, and emit the blocked outcome without running stage 02 or 03.
-
-5.6. **Visual evidence gate** — the same shape as 5.5, for user-facing surfaces. Runs only if
-5.5 did not short-circuit (one blocker at a time). Only fires for open PRs.
+5.6. **Visual evidence notice** — for user-facing surfaces. Only fires for open PRs.
 
 The rule this encodes: *a PR that changes what a user sees must show what a user sees.* Before
 this gate the requirement existed only as repo prose, so it was enforced by an LLM reading
@@ -510,7 +174,7 @@ if [ "${MERGE_STATE:-open}" = "open" ]; then
 
   # Trigger: is there a user-facing surface in the diff? Prints "ext:<file>", "glob:<file>",
   # or "none". Exclusions always win; an explicit .pylot/ui-paths glob overrides the built-in
-  # NOT_UI carve-out (which mirrors the *.d.mts exclusion the staging gate already has).
+  # NOT_UI carve-out (type declarations, tests, stories, examples, and config files).
   #
   # STRICT INCLUDES: if .pylot/ui-paths carries at least one INCLUDE line, that list is the
   # repo's complete declaration of its UI surface and the built-in extension default is not
@@ -554,7 +218,7 @@ else:
 " 2>/dev/null || echo "none")
 
   if [ "$UI_TRIGGER" = "none" ]; then
-    # Record the waiver rationale, exactly as the staging gate does when it does not fire.
+    # Record the waiver rationale.
     echo "[cto-review] visual evidence gate: WAIVED — no user-facing surface in diff"
   else
     # Parse the body. VIS_RESULT is PASS:<reason> or BLOCK:<reason>.
@@ -716,9 +380,7 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 (Note: stage 03 re-reads labels fresh from GitHub at merge time — this snapshot is for stage 02 judgement only.)
 
 ## Lane (#2996)
-- lane: {fast | staging | none}
-- staging_evidence_waived_by_lane: {true | false}
-(`none` is treated as `staging` everywhere. Stage 03 re-reads the lane fresh at merge time.)
+- lane: {fast | staging | none} (legacy, informational only)
 
 ## Comment Thread Summary
 - comment_count: {N}
@@ -731,13 +393,12 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - merge_state: {open | merged | closed-no-merge}
 - mergedAt: {timestamp or null}
 - mergeCommit: {oid or null}
-- short_circuit: {none | closed-no-merge | missing-staging-evidence}
+- short_circuit: {none | closed-no-merge}
 - ci_classification: {pass | block | na-no-configured-checks}
 - ci_receipt: {"CI: N/A — no configured checks" for N/A, otherwise the classifier reason}
 - ci_observed_checks: {check-run names/status/conclusion from the reviewed head}
 - ci_expected_checks: {required contexts/ruleset checks and PR workflow paths, or "none"}
 - merge_strategy: {auto | label-only}
-- release_train_base: {branch | not-required (promote branch is {branch}) | unconfigured (<reason>)} (pylot#164)
 
 ## Visual Evidence
 - trigger: {ext:<file> | glob:<file> | none}
@@ -775,13 +436,12 @@ Labels present at stage-01 time: {comma-separated list, or "none"}
 - Merge state resolved and recorded BEFORE gathering (gates the short-circuit).
 - Label snapshot and all comment bodies captured (step 5.2) — feeds stage 02 judgement layer.
 - Lane resolved from the label snapshot (step 5.3) and recorded; absent label recorded as `none`.
-- Staging evidence gate evaluated before the expensive full-diff fetch, with the `lane:fast`
-  waiver applied and its rationale echoed when it fires.
-- Visual evidence evaluated after it, and only if it did not short-circuit. Its verdict is recorded
-  as `notice`; it never sets a short_circuit and never suppresses stages 02/03.
+- No staging-evidence check runs (step 5.5); staging belongs to the release train.
+- Visual evidence evaluated and recorded as `notice`; it never sets a short_circuit and never
+  suppresses stages 02/03.
 - For `open`/`merged`: full diff, metadata, repo context, CI classification/evidence, and merge
   strategy all captured.
-- For `closed-no-merge` or `missing-staging-evidence`: short_circuit set; remaining gathering skipped.
+- For `closed-no-merge`: short_circuit set; remaining gathering skipped.
 
 ## Failure
 - PR does not exist or `gh auth` fails → write handoff with `status: error` and the reason; the

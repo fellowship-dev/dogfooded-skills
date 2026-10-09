@@ -18,9 +18,9 @@ over here.
 3 sequential stages. No parallelism.
 
 - **01-setup** (subagent): gather repo context, PR metadata, full diff, and merge state. Pure
-  read. Detects the CLOSED-not-merged case and short-circuits. Also runs the staging evidence gate
-  (5.5) for infra/backend diffs, which can short-circuit before the expensive full-diff path, and
-  the visual evidence check (5.6), which records a notice and never short-circuits.
+  read. Detects the CLOSED-not-merged case and short-circuits. Also runs the visual evidence
+  check (5.6), which records a notice and never short-circuits. There is no staging-evidence
+  gate: staging is a release-train step (pylot#3389).
 - **02-review** (subagent): the isolated critical-judgement step. Reviews the WHOLE diff in
   cohesion across every dimension (docs, deps, downstream/template impact, correctness, security,
   process, merge strategy) and produces verdict + checklist + action items. No side effects.
@@ -36,9 +36,9 @@ over here.
   comes from the orchestrator, never a subagent.
 - Merge state is authoritative: a CLOSED-not-merged PR short-circuits (skip 02); an already-merged
   PR gets a post-merge review note and is never re-merged.
-- Evidence checks fire only on OPEN PRs. Staging is the only one that can block; visual is always
-  a notice. Both waive generously — a diff that does not hit the check's paths never reaches its
-  body scan — and both accept `N/A` within 3 lines of their heading as the machine-parsed waiver.
+- The visual evidence check fires only on OPEN PRs and is always a notice. It waives generously —
+  a diff that does not hit its paths never reaches its body scan — and accepts `N/A` within 3
+  lines of its heading as the machine-parsed waiver. No check ever asks for staging evidence.
 - CI is classified once at the reviewed head as pass, block, or N/A. N/A means no configured
   checks, not green CI, and never bypasses the normal review, lane, owner-gate, or merge-authority
   requirements; block never merges.
@@ -66,4 +66,3 @@ Written at runtime in the repo working directory (not inside the skill directory
 - Success: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review PR #{N} complete — verdict={verdict}, action={merged|labeled}" status=success`
 - Failure: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review failed at stage NN: {reason}" status=failed`
 - Blocked (closed): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review skipped: PR #{N} closed without merge" status=blocked`
-- Blocked (evidence): `[pylot:$PYLOT_OUTCOME_NONCE] outcome="cto-review blocked: missing staging evidence on PR #{N}" status=blocked`

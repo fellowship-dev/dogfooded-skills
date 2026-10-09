@@ -22,9 +22,9 @@ Format:
 
 [PR body verbatim — from the live `gh pr view` read in stage 04, or setup's `pr-body.md`]
 
-## Claims vs Diff
+## Verdict basis
 
-[pass | fail | unknown] — live diff [+A/-D, N files]. Claims table; list any unbacked claims.
+must_fix_open: [N] — live diff [+A/-D, N files]. Body note: [one line, or "none"].
 
 ## Intent
 

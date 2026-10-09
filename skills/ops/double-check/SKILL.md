@@ -36,7 +36,7 @@ shim mint short-lived App installation tokens per operation, so git URLs must st
 | Stage | Mode | Description |
 |-------|------|-------------|
 | 01-setup | subagent | Fetch PR metadata including current HEAD, classify the incoming first-review receipt (its `Head reviewed` line) as current/stale/absent, capture comments + full diff, and checkout PR branch + merge base |
-| 02-review | subagent | ONE cohesive critical review in clean context: reconcile the PR's claims against the diff, verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict + curated findings |
+| 02-review | subagent | ONE cohesive critical review in clean context: verify first review's claims, find missed edge cases, check tests/docs → consolidated verdict (`ready` iff zero open MUST-FIX code items) + curated findings |
 | 03-fix | subagent | Apply MUST-FIX (and worthwhile NICE-TO-HAVE) fixes, re-run tests, push — only if fixes are needed |
 | 04-post | inline | Re-fetch the live head, promote when it equals the exact 40-hex head stage 02 reviewed or carries the same patch-id, otherwise perform one restart; then post curated review comment and apply labels only for the matching head |
 
@@ -126,7 +126,7 @@ Run stage 04 yourself in the orchestrator context — do NOT spawn a Task. Read 
 ```
 {DC_SKILL_DIR}/stages/04-post/CONTEXT.md
 ```
-Run the live claims-vs-diff and exact-head gates (`gh pr view`), then only for a matching head
+Run the live exact-head gate (`gh pr view`), then only for a matching head
 post the comment and apply the label. Verify labels/comment actually landed, write the report
 file, and emit the `[pylot] outcome=...` marker from the orchestrator (never from a subagent).
 If stage 04 exits `3`, set `RESTART_COUNT=1` and run a new complete conditional
@@ -143,14 +143,14 @@ Stage 02 or Stage 03 handoff. If it exits `2`, it is terminal blocked: do not ru
 
 ## Exit paths
 
-- **First-check fail closed** (negative verdict or claims mismatch): stage 04 posts a
+- **First-check fail closed** (at least one open MUST-FIX code item): stage 04 posts a
   `<!-- pylot:first-check-fail-closed -->` comment, removes/withholds `double-checked`, adds or
   retains `needs-work`, and creates no positive follow-on. It emits:
   `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-check {repo}#{pr} — verdict {verdict}, double-checked withheld, needs-work retained" status=success`
 - **Re-check PASS** (PR had `needs-work`, verdict=ready): stage 04 removes `needs-work`, re-toggles
   `double-checked` (remove + re-add), and emits:
   `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked re-check PASS {repo}#{pr} — loop closed, cto-review re-fired" status=success`
-- **Re-check FAIL** (PR had `needs-work`, verdict=needs-work): stage 04 leaves `needs-work` in place,
+- **Re-check FAIL** (PR had `needs-work`, at least one open MUST-FIX code item): stage 04 leaves `needs-work` in place,
   does NOT re-toggle `double-checked`, posts a structured verdict comment with a
   `<!-- pylot:recheck-fail -->` marker (idempotent — skipped if marker already present), and emits:
   `[pylot:$PYLOT_OUTCOME_NONCE] outcome="double-checked re-check FAIL {repo}#{pr} — needs-work retained" status=success`
@@ -190,10 +190,10 @@ name — keep this protocol in sync with it, don't let the two drift):
    and re-apply `needs-work` without producing anything.
 1. Read the latest CTO review comment for its specific action items.
 2. Actually ADDRESS them. Code/test/doc fixes: make the changes and push.
-   Staging evidence requested: deploy the branch to staging, run the required
-   procedures, and update the PR **body** (not a comment) with the evidence
-   plus a `deployed_sha: <sha>` line — the CTO gate scans the body. If the ask
-   genuinely exceeds this skill's scope (needs a specialized runner, a human
+   Requests for PR-body edits or staging evidence are not rework items: staging is
+   a release-train step (pylot#3389), and the body never decides the verdict. If
+   no code item remains, run the stages below; zero MUST-FIX items is a pass. If
+   the ask genuinely exceeds this skill's scope (needs a specialized runner, a human
    decision, or credentials you lack): do NOT silently re-apply `needs-work` —
    post a comment beginning `⚠️ NEEDS HUMAN` stating exactly what's blocking
    and what would unblock it, then STOP.
@@ -223,11 +223,12 @@ name — keep this protocol in sync with it, don't let the two drift):
 9. **Apply labels only after the comment posts successfully** (stage 04). On re-check PASS,
    remove `needs-work` BEFORE re-adding `double-checked` — this is the structural loop-break.
    On re-check FAIL, do NOT touch labels or re-toggle `double-checked`.
-10. **The diff is the only evidence; the PR body is a claim.** Stage 02 reconciles every concrete
-    claim in the title/body against the changed files, and stage 04 re-checks it against the live
-    PR. A claim with no code behind it and no pointer to where it landed is `needs-work` —
-    "intentional", "the commit message explains it", and a LOW risk tier are NOT waivers.
-    `double-checked` is withheld until the body matches the diff. (pylot#2649, PR pylot#2782.)
+10. **Code decides the verdict; zero MUST-FIX is a pass.** The verdict is `ready` exactly when no
+    MUST-FIX code item is open, on a first check and on a re-check alike; stage 04 normalizes a
+    `needs-work` with `must_fix_open: 0` to `ready`. The PR body is intent only: there is no
+    claims-reconciliation step, and a stale body is at most a one-line note. (Replaces the
+    pylot#2649 claims gate: on a 30-day sweep most of its `needs-work` flags were stale bodies
+    on clean diffs, each costing a rework.)
 11. **Stage 04 verifies its own side effects** — after labelling, `gh pr view` the PR and confirm
     the expected labels/comment are actually there. Reporting success on unverified side effects
     is the failure this skill exists to catch in others.

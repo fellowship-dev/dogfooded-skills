@@ -27,13 +27,12 @@ NOT parallelism. There is no fan-out anywhere in this proc.
   base branch to surface conflicts. Records `REPO_DIR` for the fix stage.
 - **02-review** (subagent, CLEAN CONTEXT): the isolated critical-judgement step. In a context
   containing only the setup handoff and its verbatim artifact files (PR + first review + diff), it produces ONE cohesive review —
-  reconciling the PR body's claims against the diff, verifying the first review's claims, finding
-  missed edge cases, and checking tests/docs together — and emits a single consolidated verdict +
-  curated findings table. No side effects.
+  verifying the first review's claims, finding missed edge cases, and checking tests/docs
+  together — and emits a single consolidated verdict + curated findings table. No side effects.
 - **03-fix** (subagent): the only stage with code side effects. Applies MUST-FIX (and worthwhile
   NICE-TO-HAVE) fixes in `REPO_DIR`, tests its fix delta once with the repo scoped gate, and pushes. Skipped entirely if
   stage 02 reported `fixes_needed: false`.
-- **04-post** (inline): re-runs the claims-vs-diff gate against the live PR, posts the curated
+- **04-post** (inline): re-runs the exact-head gate against the live PR, posts the curated
   review comment, applies (or withholds) the `double-checked` label, verifies the side effects
   landed, writes the local report file, and emits the `[pylot] outcome=...` marker. Inline so the
   marker comes from the orchestrator.
@@ -42,8 +41,8 @@ NOT parallelism. There is no fan-out anywhere in this proc.
 
 - Stage 02 is the isolated critical-judgement step. It receives only PR + first review + diff.
 - Stage 02 is ONE cohesive review — never split per-file or per-dimension.
-- The PR body is a claim; the diff is the evidence. Unbacked claims ⇒ `needs-work` and
-  `double-checked` is withheld. Never waived by intent, tier, or a clean findings table.
+- Code decides the verdict. Zero open MUST-FIX code items is a pass (first check and re-check).
+  The PR body is intent only: a stale body is at most a one-line note, never `needs-work`.
 - A first check may apply `double-checked` only for an explicit `ready` verdict whose reviewed
   head equals the live 40-hex head, or whose reviewed patch-id equals the live one (a rebase or
   merge-from-base carries the verdict; any change to the PR's own diff is re-reviewed, delta-only

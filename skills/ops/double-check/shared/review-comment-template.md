@@ -18,12 +18,8 @@ records it as `patch_id=` so a rebase carries the verdict)
 ### Intent
 [1-2 sentences: does the PR deliver what it's supposed to?]
 
-### Claims vs Diff — [pass | fail | unknown]
-Live diff: [+A/-D, N files]
-
-| Claim | Status | Evidence |
-|-------|--------|----------|
-| [claim from PR title/body] | backed / elsewhere / **unbacked** | [where it is, or that it is absent] |
+[Only if stage 02 recorded a body_note: "Note: the PR body is stale against the diff — <note>.
+Not a blocker."]
 
 ### Implementation
 [2-4 bullets: key approach, files changed grouped by area]
@@ -53,8 +49,8 @@ REVIEW_EOF
 ```
 
 **Rules:**
-- The Claims vs Diff table is always present — write "no checkable claims in the body" if the body
-  makes none. Any `unbacked` row means the verdict is needs-work and `double-checked` is withheld.
+- Zero open MUST-FIX code items means "Ready for CTO review". A stale PR body is at most the
+  one-line note above and never a remaining item.
 - If no CI findings exist: write "No CI review comments found — reviewed diff directly"
 - If tests were not run: name the owning contract, scope and matching reused receipts or precise execution gap. Dependencies/lockfiles are not automatically exempt; non-runtime classifications need their required static/policy checks.
 - Verdict must be specific: either "ready for CTO review" or list what still needs work

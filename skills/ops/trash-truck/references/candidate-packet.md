@@ -132,7 +132,7 @@ List each affected surface explicitly:
 | Schema/data | Preserve, migrate, archive, or drop | Query and retention obligations | Often limited | Explicit destructive-data authority |
 | Infrastructure | Decommission resource | Runtime and dependency inventory | Provider-specific | Infrastructure authority |
 
-Anything not listed as included is excluded. Selection binds the owner only to the fingerprint, manifest, exclusions, and evidence cutoff displayed at selection time.
+Anything not listed as included is excluded. Selection binds the owner only to the fingerprint, manifest, and exclusions displayed at selection time.
 
 ## Refresh and Invalidation
 

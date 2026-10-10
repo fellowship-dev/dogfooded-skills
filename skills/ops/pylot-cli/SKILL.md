@@ -10,6 +10,13 @@ allowed-tools: Bash, Read
 Work with a human in the loop belongs on a devbox, not a mission. Missions are
 autonomous operator runs (cron, auto-pylot, skill-routed tasks).
 
+Devboxes are isolated environments by default, so they do not need Git
+worktrees. Work in the devbox's normal repository checkout; do not create
+worktrees inside it. Select the intended branch and base there, preserve existing
+changes, and verify the application and tests in that checkout. If a branch
+change interrupts an app service, recover through the documented devbox
+lifecycle rather than creating another checkout.
+
 - Use an **autonomous mission** when the task contract is complete enough for a
   worker to execute, review, and report without live steering. Dispatch it and
   let the factory own the implementation loop.
@@ -636,6 +643,15 @@ never that the App cannot reach it. **Never export a session-wide `GH_TOKEN`.**
 App tokens cannot read user-specific surfaces (GitHub notifications); those need
 a logged-in `gh` identity or event-ledger routing. Secrets: never in prompts or
 payloads — `pylot secrets`, then reference env var names.
+
+Git needs a credential helper; `gh` needs its own per-invocation token shim.
+Verify both with repository-targeted commands. In managed cloud environments,
+check whether the outbound proxy replaces caller-supplied GitHub authentication.
+A private repository read that also succeeds with an intentionally invalid token
+does not prove Pylot-token access. Resolve credential routing through the
+supported environment configuration, preserve proxy and TLS settings, and repeat
+the real repository read and push before accepting authentication. Installation
+or token minting alone is insufficient evidence.
 
 ## Org Setup From a Conversation (admin-action)
 

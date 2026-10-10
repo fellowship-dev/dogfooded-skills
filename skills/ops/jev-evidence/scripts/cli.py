@@ -8,8 +8,10 @@ from pathlib import Path
 def main(argv=None, *, core=None):
     if core is None:
         import contracts as core
+        import experiments
+        core.experiments = experiments
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('version', 'validate', 'portable', 'replay'))
+    parser.add_argument('operation', choices=('version', 'validate', 'portable', 'replay', 'transition'))
     parser.add_argument('bundle', nargs='?', type=Path)
     args = parser.parse_args(argv)
     try:
@@ -19,12 +21,18 @@ def main(argv=None, *, core=None):
             if args.bundle is None:
                 parser.error('bundle path is required; no implicit private store')
             bundle = json.loads(args.bundle.read_text())
-            report = core.validate_bundle(bundle)
+            if args.operation == 'transition':
+                if not isinstance(bundle, dict) or set(bundle) != {'state', 'operation', 'payload'}:
+                    raise ValueError('invalid transition request')
+                state, receipt = core.experiments.transition(bundle['state'], bundle['operation'], bundle['payload'])
+                result = {'state': state, 'receipt': receipt}
+            else:
+                report = core.validate_bundle(bundle)
             if args.operation == 'validate':
                 result = report
             elif args.operation == 'portable':
                 result = core.portable_bundle(bundle)
-            else:
+            elif args.operation == 'replay':
                 result = {'score': core.replay(bundle['scores'], bundle['policy']['weights']),
                           'replay_key': core.replay_key(bundle['identity'], bundle['policy'], bundle['scores'], bundle['attempts']),
                           'inference_calls': 0, 'limitations': report['limitations']}

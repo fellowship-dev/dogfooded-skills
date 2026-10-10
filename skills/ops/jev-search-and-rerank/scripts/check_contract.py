@@ -40,6 +40,10 @@ def load_core():
     # second, independent disk read of schemas/bundle-v1.json would reopen.
     module._VERIFIED_SCHEMA_JSON = verified['schemas/bundle-v1.json']
     exec(compile(verified['scripts/contracts.py'], module.__file__, 'exec'), module.__dict__)
+    experiments = types.ModuleType('jev_evidence_experiments')
+    experiments.__file__ = str(companion / 'scripts/experiments.py')
+    exec(compile(verified['scripts/experiments.py'], experiments.__file__, 'exec'), experiments.__dict__)
+    module.experiments = experiments
     module._verified_cli = verified['scripts/cli.py']
     return module
 

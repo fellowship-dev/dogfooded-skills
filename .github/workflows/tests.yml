@@ -58,6 +58,8 @@ jobs:
             ./skills/ops/speckit-runner/tests/invariant-matrix.test.sh
             ./skills/ops/speckit-runner/tests/pr-postcondition.test.sh
             ./skills/ops/trash-truck/evals/test_retirement_contract.py
+            ./skills/ops/vercel-deploy/tests/stage-03-04-sequencing.test.sh
+            ./skills/ops/vercel-deploy/tests/stage-05-verify.test.sh
           '
           failed=""
           for t in $tests; do

@@ -50,7 +50,7 @@ Before operating a repo, use the intended gateway and org explicitly:
 
 ```bash
 pylot --version
-pylot auth broker --help   # device-auth broker support requires CLI 0.9.19+
+pylot auth broker --help   # proxy-injected cloud broker workflows require CLI 0.9.20+
 pylot --url https://hooks.fellowship.dev --org <org> auth status
 pylot --url https://hooks.fellowship.dev --org <org> devboxes projects
 pylot --url https://hooks.fellowship.dev --org <org> devboxes project <org/repo>
@@ -85,14 +85,17 @@ Keep these failures distinct:
   personal login; the broker secret cannot manage itself. Rotation invalidates
   the old secret immediately and requires updating the environment binding.
 
-**Current cloud compatibility defect:** CLI 0.9.19 sends `X-Pylot-Org` only
-when its local bearer begins with `pdab_`; a proxy placeholder can prevent org
-selection even with `--org`. Playbook reads are also denied by the broker
-allowlist, so repo context is not yet accepted. Track the fix and fresh-instance
-acceptance in [pylot#3988](https://github.com/fellowship-dev/pylot/issues/3988).
-Upgrading from an older launcher is necessary but does not resolve these
-observed failures alone. After a fix ships, retest the exact required reads
-before treating this warning as resolved.
+**Cloud compatibility:** use CLI 0.9.20+ and the gateway fix for
+[pylot#3988](https://github.com/fellowship-dev/pylot/issues/3988). Org selection
+now works with proxy placeholders, and the broker supports read-only repo
+context/playbooks plus org-scoped `route` and `dispatch` (including `--dry-run`).
+Context resolves secret key names only. Normal scope, skill, model and
+active-mission checks still apply; a broker cannot force dispatch or skip
+preflight. Admin writes, secret values, Git-token minting and broker management
+remain outside its allowlist. Older CLIs can still return `broker_org_required`
+despite `--org`; verify the installed executable and gateway versions before
+diagnosing a new login failure. A passing preflight does not enqueue a mission
+or prove native execution; test the required workflow independently.
 
 ## Dispatch a Mission
 

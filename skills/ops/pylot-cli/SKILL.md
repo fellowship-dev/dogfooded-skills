@@ -97,6 +97,22 @@ despite `--org`; verify the installed executable and gateway versions before
 diagnosing a new login failure. A passing preflight does not enqueue a mission
 or prove native execution; test the required workflow independently.
 
+**SSH unavailable:** a missing local SSH key, blocked TCP route, or denied
+SSH-key administration does not establish that devbox execution is unavailable.
+When broker authentication and the target devbox/worker reads succeed, use
+`workers prompt` over HTTPS to run the remote LLM in the configured devbox.
+Reuse the compatible recorded worker, retain its organization and owner scope,
+and verify the acknowledged turn and native result as described under Drive.
+For an external session without mission ownership, omit `--mission`; keep the
+explicit gateway URL and `--org` on worker commands.
+
+Treat a `broker_route_not_allowed` response as a denial of that operation:
+stop the denied operation, then independently check the authorized worker
+workflow. Do not repeat login, request SSH-admin access, change credentials,
+or report all execution blocked solely because SSH administration is denied.
+If prompting itself is denied or the remote runtime fails, preserve that
+specific failure and report the missing capability or runtime recovery needed.
+
 ## Dispatch a Mission
 
 ```bash

@@ -30,6 +30,70 @@ lifecycle rather than creating another checkout.
   progress can be watched. If a recurring mission needs steering, improve the
   factory skill that should have handled the case.
 
+## Authenticate a fresh external cloud session
+
+The **device-auth broker** authenticates disposable external cloud sessions
+using a durable `pdab_…` shared secret bound in the environment settings as
+`PYLOT_API_TOKEN`. Enrollment happens once on a signed-in machine with
+`pylot auth broker enroll` and one supervised official device approval. Later
+sessions consuming that binding use it automatically; they do not need their
+own `pylot auth login` or a copied `~/.pylot/credentials` directory. The broker
+keeps and refreshes its grant server-side; no successful refresh for 30 days
+requires re-enrollment.
+
+This differs from `PYLOT_BROKER_TOKEN`, the mission/worker broker JWT restricted
+to heartbeat and Git-token minting. `PYLOT_API_TOKEN` can also hold other token
+types: inspect the safe identity response, not the variable's contents, before
+applying device-auth broker rules. Do not assume it is always a session JWT.
+
+Before operating a repo, use the intended gateway and org explicitly:
+
+```bash
+pylot --version
+pylot auth broker --help   # device-auth broker support requires CLI 0.9.19+
+pylot --url https://hooks.fellowship.dev --org <org> auth status
+pylot --url https://hooks.fellowship.dev --org <org> devboxes projects
+pylot --url https://hooks.fellowship.dev --org <org> devboxes project <org/repo>
+pylot --url https://hooks.fellowship.dev --org <org> devboxes list <org/repo>
+```
+
+For this broker, `auth status` reports `type: device_broker` and, with the
+environment binding, `_cli.tokenSource: PYLOT_API_TOKEN`. Verify the intended
+org is granted, then verify the required native reads independently. An
+identity response can list several orgs with `org: null`; that does not prove a
+later request selects the right org or has permission for its route. Resolve
+the actual project identifier from discovery rather than guessing repo names.
+
+In managed clouds, inspect supported credential readiness and preserve the
+inherited proxy, TLS trust and authentication guards. A bound variable can
+contain a proxy placeholder rather than the real secret; never print it,
+inspect credential files, or replace it with a copied credential. Do not start
+interactive login merely because a raw token is not visible.
+
+The broker has an explicit endpoint allowlist for org-scoped reads and
+devbox/worker operations. Granted scopes do not authorize every gateway route.
+Keep these failures distinct:
+
+- `broker_org_required`: select the target org. If it persists with explicit
+  `--org`, report a selector-transport failure; do not repeat login.
+- `broker_route_not_allowed`: that operation is outside the broker's current
+  allowlist. Stop that operation and report the required capability; do not
+  silently switch to a personal credential.
+- `broker_reauth_required`, `broker_grant_revoked` or `broker_secret_revoked`:
+  follow the server's specific recovery hint with the owner on a signed-in
+  machine. Broker management (`status`, `revoke`, `rotate-secret`) requires a
+  personal login; the broker secret cannot manage itself. Rotation invalidates
+  the old secret immediately and requires updating the environment binding.
+
+**Current cloud compatibility defect:** CLI 0.9.19 sends `X-Pylot-Org` only
+when its local bearer begins with `pdab_`; a proxy placeholder can prevent org
+selection even with `--org`. Playbook reads are also denied by the broker
+allowlist, so repo context is not yet accepted. Track the fix and fresh-instance
+acceptance in [pylot#3988](https://github.com/fellowship-dev/pylot/issues/3988).
+Upgrading from an older launcher is necessary but does not resolve these
+observed failures alone. After a fix ships, retest the exact required reads
+before treating this warning as resolved.
+
 ## Dispatch a Mission
 
 ```bash
@@ -635,7 +699,12 @@ label), and closed-issue reopens.
 
 `pylot auth login` stores per-org credentials in `~/.pylot/credentials`;
 `pylot auth git-token --repo <org>/<repo>` mints a one-off short-lived App
-installation token. The App has org-wide access, but each minted token is scoped
+installation token when the selected principal permits that endpoint. A
+device-auth broker login is Pylot-service authentication; its current allowlist
+does not include Git-token minting. In connector-backed Buddy cloud setup, use
+`PYLOT_GH_AUTH_MODE=inherited gh ...` per invocation for the intended repository.
+Keep connector readiness and Pylot-token provenance as separate acceptance gates.
+The App has org-wide access, but each minted token is scoped
 to the single repo you asked for — a narrow `gh repo list` under that token is
 not an App limit; mint another token for another repo. A repo "lacking pylot
 support" means its devbox config is missing (not in a team, no worker image),

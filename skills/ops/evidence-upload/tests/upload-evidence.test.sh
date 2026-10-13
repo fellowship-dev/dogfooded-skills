@@ -88,6 +88,7 @@ printf '%s\n' "$out" | sed -n 2p | grep -qxF "![Step 1]($url1)" && pass markdown
 grep -q -- '--aws-sigv4 aws:amz:us-east-1:s3' "$CURL_LOG" && grep -q 'Content-Type: image/gif' "$CURL_LOG" \
   && grep -q 'Cache-Control: public, max-age=31536000, immutable' "$CURL_LOG" && grep -q -- '-sI' "$CURL_LOG" \
   && pass put-headers || bad "put-headers: $(cat "$CURL_LOG")"
+grep -qE 'x-amz-content-sha256: [0-9a-f]{64}' "$CURL_LOG" && pass payload-hash-header || bad "payload-hash-header (curl < 8 needs it for S3 SigV4): $(cat "$CURL_LOG")"
 if grep -q 'AKIATEST\|sec"ret' "$CURL_LOG"; then bad "creds-in-argv"; else pass creds-not-in-argv; fi
 grep -q creds-ok "$CFG_LOG" && grep -q mode600 "$CFG_LOG" && pass creds-config-file || bad "creds-config-file: $(cat "$CFG_LOG")"
 cfg=$(head -1 "$CFG_LOG"); [ ! -e "$cfg" ] && pass config-removed || bad "config-removed: $cfg"

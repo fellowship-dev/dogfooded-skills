@@ -71,10 +71,11 @@ if [ "$DRY_RUN" -eq 0 ]; then
   fi
 fi
 
-sha16() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -c1-16
-  else shasum -a 256 "$1" | cut -c1-16; fi
+sha256_full() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d" " -f1
+  else shasum -a 256 "$1" | cut -d" " -f1; fi
 }
+sha16() { sha256_full "$1" | cut -c1-16; }
 
 content_type() {
   local ext
@@ -111,7 +112,8 @@ for f in "${FILES[@]}"; do
   fi
   name=$(basename "$f" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^[.-]+//')
   [ -n "$name" ] || name="file.${f##*.}"
-  key="${REPO}/${PREFIX}/$(sha16 "$f")-${name}"
+  sum=$(sha256_full "$f")
+  key="${REPO}/${PREFIX}/${sum:0:16}-${name}"
   url="${BASE}/${key}"
 
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -121,6 +123,7 @@ for f in "${FILES[@]}"; do
   put_code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 300 \
     -K "$CFG" --aws-sigv4 "aws:amz:${EVIDENCE_REGION}:s3" \
     -H "Content-Type: ${ct}" \
+    -H "x-amz-content-sha256: ${sum}" \
     -H "Cache-Control: public, max-age=31536000, immutable" \
     -T "$f" "https://${EVIDENCE_BUCKET}.s3.${EVIDENCE_REGION}.amazonaws.com/${key}" 2>/dev/null) || put_code="${put_code:-000}"
   if [ "$put_code" != "200" ]; then

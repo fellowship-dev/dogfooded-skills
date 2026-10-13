@@ -63,6 +63,14 @@ git -C "$TMP" init -q repo && git -C "$TMP/repo" remote add origin git@github.co
 out=$(cd "$TMP/repo" && env "${ENVS[@]}" bash "$UP" --dry-run --prefix _smoke "$TMP/files/demo.gif")
 printf '%s\n' "$out" | grep -Eq '^key: Org/Some\.repo/_smoke/[0-9a-f]{16}-demo\.gif$' && pass prefix-and-remote || bad "prefix-and-remote: $out"
 
+# 4b. Unsafe prefix characters are sanitized; dot segments rejected.
+out=$(env "${ENVS[@]}" bash "$UP" --dry-run --repo o/r --prefix "Sign up flow/2026-10-13" "$TMP/files/demo.gif")
+printf '%s\n' "$out" | grep -Eq '^key: o/r/Sign-up-flow/2026-10-13/[0-9a-f]{16}-demo\.gif$' && pass prefix-sanitized || bad "prefix-sanitized: $out"
+set +e
+env "${ENVS[@]}" bash "$UP" --dry-run --repo o/r --prefix "a/../b" "$TMP/files/demo.gif" >/dev/null 2>&1; code=$?
+set -e
+[ "$code" = 2 ] && pass prefix-dotdot || bad "prefix-dotdot: code=$code"
+
 # 5. Unsupported extension fails that file (exit 1) without uploading.
 : > "$CURL_LOG"
 set +e

@@ -11,7 +11,7 @@
 #   EVIDENCE_BUCKET, EVIDENCE_REGION, EVIDENCE_PUBLIC_BASE_URL
 #
 # Key layout: <owner>/<repo>/<YYYY>/<MM>/<sha256-first-16>-<sanitized-basename>
-# (--prefix replaces the <YYYY>/<MM> segment).
+# (--prefix replaces the <YYYY>/<MM> segment; unsafe characters become "-").
 #
 # Output (stdout), per file: the public URL, then a Markdown line.
 #   --url-only prints only the URL. --dry-run prints the key and URL without
@@ -57,8 +57,9 @@ printf '%s' "$REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || die "repo 
 if [ -z "$PREFIX" ]; then
   PREFIX=$(date -u +%Y/%m)
 fi
-PREFIX="${PREFIX#/}"; PREFIX="${PREFIX%/}"
-printf '%s' "$PREFIX" | grep -Eq '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$' || die "--prefix may contain only [A-Za-z0-9_.-] segments separated by /"
+# Sanitize: unsafe characters (e.g. spaces in flow names) become "-".
+PREFIX=$(printf '%s' "$PREFIX" | sed -E 's#[^A-Za-z0-9_./-]+#-#g; s#/+#/#g; s#^/##; s#/$##')
+[ -n "$PREFIX" ] || die "--prefix is empty after sanitizing"
 case "/$PREFIX/" in */../*|*/./*) die "--prefix may not contain . or .. segments" ;; esac
 
 if [ "$DRY_RUN" -eq 0 ]; then

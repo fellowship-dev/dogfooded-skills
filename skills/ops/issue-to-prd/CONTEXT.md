@@ -1,60 +1,39 @@
 # issue-to-prd — Overview
 
-ICM procedure that converts a GitHub issue into a structured PRD or posts clarifying questions.
+ICM procedure that turns an issue into `specs/{issue}-{slug}/spec.md`: a PRD plus the open
+decisions for the owner, each with options and a recommended answer.
 
 ## Purpose
-Issues arrive underspecified. This procedure catches context gaps, clarity gaps, and failure modes
-before an agent starts work — preventing wasted tokens and off-target PRs.
+Issues arrive underspecified. This procedure catches context gaps, clarity gaps and failure
+modes before an implementer starts, and it surfaces the product decisions an agent would
+otherwise make silently.
 
-## Replaces
-- `external-rule` (greet) event rule: replaced by `challenge-new-issue`
-- Manual `build-prd` skill (retired 2026-09-14; its gap checklist lives in stage 03 references)
+## Place in the devbox workflow
+1. **Spec:** this skill, then the owner decision round on its questions.
+2. **Features:** `/ce-plan` (writes `specs/{issue}-{slug}/plan.md` next to the spec) →
+   `/ce-work` → `/code-review` at the level the rule gives.
+3. **Bugs:** usually skip this skill; a plain implementation prompt is enough.
 
 ## Architecture
-11 sequential stages. Each stage is atomic: defined inputs, defined outputs, explicit side effects.
-Stage 00 is a guard. Stage 01b triages after stage 01 and may recommend stopping via one comment
-and a label. Other stages 01-05 are pure analysis. Stage 05b may dispatch a mission but writes
-nothing to GitHub; stage 05c reads the outcomes baseline. Stages 06-07 write to GitHub.
+Seven sequential stages. Each is atomic: defined inputs, defined outputs, no GitHub writes.
+Stages 01-05 are analysis and write only `$WORK/` handoffs outside the repository. Stage 06
+writes the one deliverable, the spec.
 
 ## Key invariants
-- Stage 00: the ONLY place this skill decides it is not allowed to run. Aborts emit `status=success`.
-- Stage 01b: cited triage verdicts other than `prd` post one recommendation and label, then stop;
-  never close the issue. Doubt falls through to `prd`.
-- Stages 01-05, except 01b: read-only. No GH comments, no label changes.
-- Stage 05b: no GH writes at all. Its only side effect is `pylot dispatch`, and only on an explicit
-  owner signal.
-- Stage 06: after triage permits the PRD path, batch all questions into ONE comment — including
-  anything stage 05b wants said. It does not run after a non-`prd` stage 01b verdict.
-- Stage 07: runs ONLY when stage 06 produced a PRD (not a questions list).
-- Labels added, never removed. `prd-ready` signals "has a PRD" and enables deep-triage to
-  greenlight; `ready-to-work` is withheld while prototype variants are pending.
-
-## Blast radius
-
-This skill fires on **every new issue** in every enabled org (`challenge-new-issue`: 318 fires) and
-again whenever a question is answered (`rechallenge-after-answers`: 477 fires). Anything added here
-runs org-wide, hundreds of times, unattended. Two consequences are load-bearing:
-
-- **Stage 07 rewrites the issue body.** That destroyed an owner-authored epic checklist and a
-  machine-read dedupe marker on 2026-08-02
-  ([pylot#2837](https://github.com/fellowship-dev/pylot/issues/2837)). Stage 00 now keeps it off
-  `no-automation` and `epic` issues; making the rewrite itself non-destructive is #2837's job.
-- **Any new hop must be gated to near-zero by default.** Stage 05b's design rule — auto-detection
-  asks, only humans dispatch — exists for this reason, not out of caution about prototypes
-  specifically.
+- Read-only toward GitHub. The only file written in the repository is the spec.
+- Stage 01b stops on a citation, never on a hunch. Doubt falls through to `prd`. A non-`prd`
+  verdict becomes an owner question, never a closed or labelled issue.
+- Every spec ends with `## Questions for the owner`. Recommendations are not decisions.
+- Unattended runs never prompt. Attended runs ask once, record answers, and stop.
+- Owner answers already recorded in a prior spec outrank anything the stages infer.
 
 ## Folder map
 ```
-SKILL.md           — invocation reference
+SKILL.md           — invocation and output contract
 CONTEXT.md         — this file
-shared/            — prd-template.md, failure-modes.md, prototype-mission-brief.md
-stages/00,01,01b,02-05,05b,05c,06-07/  — CONTEXT.md + output/ per stage
-stages/03/references/   — gap-checklist.md
-stages/05b/references/  — gate-checklist.md
+shared/            — prd-template.md, failure-modes.md
+stages/01,01b,02-06/   — CONTEXT.md per stage
+stages/03/references/  — gap-checklist.md
+scripts/check_spec.py  — structural check of a written spec
+evals/             — contract test, fixtures, triage scenario
 ```
-
-## Emit on completion
-- Guard path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="skipped: <label|state> — issue-to-prd does not structure this issue" status=success`
-- Triage path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="triage: <verdict> — <reason>" status=success`
-- Questions path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="questions posted" status=success`
-- PRD path: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="PRD published" status=success`

@@ -1,8 +1,7 @@
 # Stage 01b: Triage Challenge
 
 ## Inputs
-- `stages/00-automation-guard/output/handoff.md` (label list)
-- `stages/01-read-issue/output/handoff.md` (title, body, comments)
+- `$WORK/01-read-issue.md` (title, body, comments)
 
 ## Why this stage exists
 
@@ -60,43 +59,12 @@ and no way for the reporter to see the reasoning — that is the more expensive 
 6. Nothing above lands on a citation → verdict `prd`.
 
 ## On non-`prd` verdict
-Abort the pipeline — do not run stages 02-07. Post **one** comment naming the verdict, the cited
-mechanism/need/smallest-version, and (for `delete-retire`) a pointer to the existing mechanism:
+Skip stages 02-05. Go straight to stage 06, which writes a short **triage spec**: the verdict,
+its cited evidence, and one owner question ("close as `<verdict>`, re-scope to the smaller
+version, or proceed with the full ask?") with a recommended answer. The owner decides; this skill
+never closes, labels or comments on the issue.
 
-```bash
-gh issue comment {number} --repo {repo} --body "..."
-```
-
-Apply the label matching the verdict: `delete-retire` → `wontfix`; `close` → `wontfix`;
-`re-scope` → `needs-rescope`. Ensure the selected label exists first: even GitHub's default
-labels may have been removed from a repository.
-
-```bash
-case "$TRIAGE_VERDICT" in
-  delete-retire|close)
-    TRIAGE_LABEL="wontfix"
-    TRIAGE_DESCRIPTION="Triage recommends no new implementation — see cited comment"
-    ;;
-  re-scope)
-    TRIAGE_LABEL="needs-rescope"
-    TRIAGE_DESCRIPTION="Ask is larger than its smallest version — see triage comment"
-    ;;
-  *) echo "Unexpected non-PRD triage verdict" >&2; exit 1 ;;
-esac
-gh label create "$TRIAGE_LABEL" --repo {repo} --color "fbca04" \
-  --description "$TRIAGE_DESCRIPTION" 2>/dev/null || true
-gh issue edit {number} --repo {repo} --add-label "$TRIAGE_LABEL"
-```
-
-Set `TRIAGE_VERDICT` from the recorded verdict. If posting the comment or applying the label
-fails, stop and report that failed action; do not emit success or continue to stage 02.
-
-Do not close the issue directly — that is the owner's call once they see the verdict; this stage
-only posts the recommendation and its evidence.
-
-Emit `[pylot:$PYLOT_OUTCOME_NONCE] outcome="triage: <verdict> — <one-line reason>" status=success`.
-
-## Output: handoff.md
+## Output: `$WORK/01b-triage-challenge.md`
 ```markdown
 # Stage 01b: Triage Challenge
 
@@ -114,8 +82,8 @@ remaining not-yet-done item) for re-scope; "no match found" for prd}
 
 ## Success criteria
 - Verdict is one of the four values, always with cited evidence — never a bare assertion
-- On non-`prd`: exactly one comment posted, correct label applied, stages 02-07 skipped,
-  `status=success` emitted
+- On non-`prd`: stages 02-05 skipped; stage 06 writes the triage spec with one owner question;
+  no GitHub writes
 - On `prd`: handoff records the core need and "no match found" so stage 06 does not re-derive it
 - Ambiguous or uncited redundancy/scope/benefit signals always fall through to `prd` — never guessed
   into a stop

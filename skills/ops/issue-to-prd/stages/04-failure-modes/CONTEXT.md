@@ -1,9 +1,9 @@
 # Stage 04: Failure Mode Analysis
 
 ## Inputs
-- `stages/01-read-issue/output/handoff.md`
-- `stages/02-context-completeness/output/handoff.md`
-- `stages/03-assess-clarity/output/handoff.md`
+- `$WORK/01-read-issue.md`
+- `$WORK/02-context-completeness.md`
+- `$WORK/03-assess-clarity.md`
 
 ## Reference
 `shared/failure-modes.md` — common pitfall catalog
@@ -23,7 +23,7 @@ Predict how an agent can go astray on this issue. Produce guardrails for the PRD
    - Pointers to existing code that already solves part of the problem
    - Scope fences (which files to touch)
 
-## Output: handoff.md
+## Output: `$WORK/04-failure-modes.md`
 ```markdown
 # Stage 04: Failure Mode Analysis
 

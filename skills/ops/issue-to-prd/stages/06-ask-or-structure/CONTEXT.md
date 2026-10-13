@@ -1,178 +1,108 @@
 # Stage 06: Ask or Structure
 
 ## Inputs
-- All prior handoffs: 01b, 02, 03, 04, 05, 05b, 05c
+- All prior handoffs in `$WORK/`: 01, 01b, and (on the `prd` path) 02, 03, 04, 05
+- `shared/prd-template.md`
 
 ## Task
-Decision point: synthesize all findings into either a question list (exit) or a PRD draft.
+Write the spec to `specs/{number}-{slug}/spec.md` in the target repository. There is always a
+spec, and it always ends with `## Questions for the owner`. "Ask" and "structure" are no longer
+two exits: the spec structures everything the evidence settles and asks about everything it
+does not.
 
-## Decision logic
-ANY of the following triggers questions:
-- Stage 02 verdict = `needs-context`
-- Stage 03 verdict = `needs-questions`
-- Stage 04 has failure modes requiring human clarification to guardrail
-- Stage 05 has open questions blocking the test plan
+## Why every spec carries owner questions
+The 2026-10-13 bake-off scored this procedure first on vague asks, but every agent arm still
+contradicted at least one real owner decision. The agents asked the right questions and then
+recommended the conservative engineering answer (restrict deletes after submission, add a second
+association for safety), which the owner overrode. So the agent proposes; the owner decides.
+Implementation starts only after the owner decision round.
 
-## Ask-path dedup guard — run before any write
+## Path and slug
+- `slug`: 2-5 lowercase words from the issue title, kebab-case, ASCII only.
+- If `specs/{number}-*/` already exists, reuse that folder and update its `spec.md` in place.
+  Keep owner answers already recorded there; they are decisions, not suggestions.
+- Create the folder if needed. Write nothing else into it; `plan.md` belongs to the planner.
 
-`issue-to-prd` re-fires on every answered question (`rechallenge-after-answers`), so a fresh pass
-can land on an issue that is already correctly parked and still waiting on the owner. Before
-batching questions, check whether that is exactly what is happening. This is a manual read of
-labels and comment content/timestamps via the `gh` calls this skill already uses — the same
-deliberately low-tech, content-marker detection style as `stages/05b-prototype-gate/CONTEXT.md` § P,
-and the same "stop before writing" shape as the precondition in `stages/07-publish/CONTEXT.md`.
+## Triage path (stage 01b verdict is not `prd`)
+Write a short spec: `# {title}`, the status line, `## Triage verdict` (verdict, core need,
+cited evidence, the smaller version for `re-scope`), and `## Questions for the owner` with one
+question: close as the verdict, re-scope to the named smaller version, or proceed with the full
+ask. Recommend the verdict. Skip the template's other sections.
 
-Anchor on **content**, never on author type alone: other bot comments can land on this issue between
-the question comment and now (stage 05b's own prototype-options comment is one example), and "most
-recent bot comment" cannot tell those apart from the actual question. Mirror § P exactly — the
-questions comment carries its own marker (see the post step below), and the guard matches on that
-marker, sorted explicitly by `created_at` rather than trusting API ordering:
+## PRD path
+1. Use `shared/prd-template.md` as the skeleton and fill every section from the handoffs.
+2. Weave stage 02's context additions into the relevant sections.
+3. Stage 04's guardrails go in `## Implementation Constraints`; stage 05's test plan goes in
+   `## Testing Strategy`.
+4. `## Smallest version that works` comes from stage 01b's `Core need`. If `## Scope` is larger,
+   cite the specific failing case that needs the extra size; otherwise trim the scope.
+5. `## What this lets us delete`: stage 01b's search result plus anything found while drafting.
+   If nothing is superseded, write "Nothing — net-new capability; no existing mechanism serves
+   this need". Never a bare "Nothing".
+6. `## Measurable Impact` only when the issue itself states all three: a named metric, an
+   explicit numeric target, and causal framing tying this work to the metric. Copy them
+   verbatim; the baseline is "not yet measured" unless the issue gives one. Otherwise write the
+   single line "Not applicable — the issue states no goal, eval, or outcome contract." Never
+   invent a metric or compute a target.
+7. Citation rule: every factual claim cites `file:line` or a measured number from the handoffs.
+   An uncited claim is not asserted; it becomes an owner question or a stated assumption.
 
-```bash
-LABELS=$(gh issue view {number} --repo {repo} --json labels -q '[.labels[].name] | join(",")')
-QUESTION_COMMENT=$(gh api "repos/{repo}/issues/{number}/comments?per_page=100" --paginate \
-  --jq '[.[] | select(.body | test("<!-- pylot:question issue={number} -->"))] | sort_by(.created_at) | .[] | "\(.id)\t\(.created_at)"' \
-  | tail -1)
-```
+## Questions for the owner
+Collect every open decision from stages 02 (context gaps), 03 (missing or ambiguous required
+sections), 04 (failure modes that need a human call to guardrail) and 05 (testing
+prerequisites). Then add the decisions you were about to make silently: any product or design
+choice the issue does not settle (constraints on user actions, data-model shape, what happens
+to existing records, defaults, visibility, who can do what) is an owner question **even when
+you are confident**. Engineering details the codebase already settles are not questions.
 
-All three must hold, or the guard does not apply and normal routing (the ask/PRD steps below)
-proceeds:
-
-1. The `open-questions` label is present on the issue.
-2. A prior question comment carrying the `<!-- pylot:question issue={number} -->` marker exists
-   (`QUESTION_COMMENT` is non-empty).
-3. No comment created after that marker comment's timestamp comes from a non-bot author.
-
-**No marker-carrying comment found** (condition 2 fails — e.g. the label predates this marker, or an
-older cycle's comment was posted before this guard existed) is not evidence the issue is unanswered
-or answered. It is ambiguous, and ambiguity always falls through to normal routing, **never** to a
-skip: a duplicate question comment is recoverable, a silently stranded issue is not. Expect this on
-every issue already parked on `open-questions` from before this guard shipped: the first post-sync
-pass over such an issue will not find the marker, will fall through, and will post one further
-questions comment as a one-time cold-start cost — the guard only engages starting from the *next*
-ask/answer cycle for that issue, once its own marker-carrying comment exists.
-
-**All three hold** → the issue is exactly where the last pass left it: post nothing, apply no
-label (it is already there), and exit early with:
-`[pylot:$PYLOT_OUTCOME_NONCE] outcome="already parked on open-questions, no new comment needed" status=success`.
-Do not proceed to the ask/PRD steps below.
-
-**Any one fails** → proceed to the normal ask/PRD routing below (a new answer arrived, the label
-was removed, or no marker-carrying question exists yet — this pass owns the write).
-
-**If questions → exit early:**
-1. Batch ALL gaps into a single numbered list Q1-Qn (one comment only — never two)
-2. Post comment: `gh issue comment {number} --repo {repo} --body "..."` — append the dedup guard's
-   marker on its own line after the visible question text: `<!-- pylot:question issue={number} -->`.
-   It is an HTML comment, invisible on GitHub; the human-visible question wording is otherwise
-   untouched.
-3. Add label: `gh issue edit {number} --repo {repo} --add-label "open-questions"`
-4. Emit: `[pylot:$PYLOT_OUTCOME_NONCE] outcome="questions posted" status=success`
-5. STOP — do not proceed to stage 07
-
-**If all clear → PRD draft:**
-1. Use `shared/prd-template.md` as the skeleton
-2. Fill in all sections from prior handoffs
-3. Weave in stage 02 context additions to relevant sections
-4. Add stage 04 guardrails as "Implementation Constraints" section
-5. Add stage 05 test plan as "Testing Strategy" section
-6. Populate `## Measurable Impact` from stage 05c handoff, gated on `Contract`:
-   - `Contract: linked-metric` → include the full section:
-     - **Hypothesis**: one sentence built from the issue's own `Source Text` (e.g. "Implementing
-       this feature will increase pr_merged rate") — never invent a hypothesis unrelated to what
-       the issue said
-     - **Baseline**: copy `Baseline` field from stage 05c handoff verbatim
-     - **Baseline source**: copy `Baseline Source` field verbatim (endpoint / window / cohort /
-       sample size)
-     - **Target**: copy `Target` field verbatim — this is the issue's own stated target, never an
-       agent computation
-     - **Evaluation rule**: copy `Eval Criteria` field verbatim
-   - `Contract: none` → replace the whole section with one line: "Not applicable — no goal, eval,
-     or outcome contract is established for this issue." Do not include Hypothesis/Baseline/
-     Target/Evaluation rule fields, and do not mention any metric name.
-   - If stage 05c's `Contract` field itself is ambiguous, missing, or unreadable → treat as
-     "needs a goal decision": one line, "Needs a goal decision — outcomes baseline stage did not
-     produce a clear contract verdict." Never fall back to a generic metric or a computed target.
-7. Fill `## Smallest version that works` from stage 01b's `Core need` line. If `## Scope` ends up
-   larger than that smallest version, cite the specific failing case in the issue/comments that
-   requires the extra size — a stated preference is not a citation, and an uncited larger scope
-   must be trimmed back to the smallest version instead.
-8. Fill `## What this lets us delete` from stage 01b's handoff (it already searched for an existing
-   mechanism and recorded "no match found" or a citation) plus anything else discovered while
-   drafting. If truly nothing is superseded, write "Nothing — net-new capability; no existing
-   mechanism serves this need" rather than leaving the section templated. Never write a bare
-   "Nothing" with no reason.
-9. Citation rule, applied to every claim in the draft (Problem Statement, Scope, Technical
-   Requirements, and the two sections above): each factual claim cites `file:line` or a measured
-   number from stage 01b/02/03/04/05's handoffs. A claim with no citation and no measurement is not
-   asserted in the body — it becomes a `## Open Questions` entry instead.
-10. Write draft to `stages/06-ask-or-structure/output/handoff.md`
-
-## Routing stage 05b's verdict
-
-Stage 05b never writes to GitHub. Whatever it decided is carried here, into the comment or the PRD
-this stage was already going to produce. **It never earns an extra comment.**
-
-| 05b verdict | Questions path | PRD path |
-| --- | --- | --- |
-| `skip` | nothing | nothing |
-| `ask` | append **one** question to the batch (below) | one line in `## Open Questions` (below) |
-| `dispatch` / `already-dispatched` | one line under the questions | one line in `## Implementation Notes` + **withhold `ready-to-work`** (stage 07) |
-| `picked` | — | variant becomes the design basis (below) |
-
-**`ask`, questions path** — the last numbered question, carrying the marker stage 05b looks for
-next pass:
+Each question uses exactly this shape:
 
 ```markdown
-Q{n}: This looks like a new UI surface with no settled design. Want three bootable variants first
-(throwaway branches + screenshots, you pick one, it becomes the design basis)? Answer "build the
-prototype" here, or add the `prototype-options` label any time later.
-<!-- pylot:proto-ask issue={number} -->
+### Q1. {The decision, as a question}
+- **Why it matters:** {one or two lines, with a `file:line` citation where one exists}
+- **Options:**
+  - A. {option}
+  - B. {option}
+- **Recommended:** {letter} — {reason}
+- **Blocks implementation:** yes | no
 ```
 
-**`ask`, PRD path** — one line in `## Open Questions`, and nothing else. Do **not** add the
-`open-questions` label on this path: the PRD is otherwise complete and the issue is not blocked on
-this.
+- At least two options per question, each a real choice (not "A. do it / B. don't" unless that
+  is the decision).
+- One recommended answer per question, with a reason. Recommend what the evidence supports, not
+  the most restrictive option: say so when the conservative choice costs the user something.
+- `Blocks implementation: no` only when the recommended answer is cheap to reverse later.
+- Where the spec body depends on an answer, write the recommended answer into the body and mark
+  it `(pending Q{n})`. Do not present it as decided.
+- If the owner already answered (stage 01 handoff), record the answer under the question as
+  `- **Owner answer:** …`, apply it to the body, and drop the `(pending …)` mark.
+- If there are genuinely no open decisions, write "None — every decision is settled by the
+  issue or the codebase" and say why in one line. Expect this to be rare on vague asks.
 
-```markdown
-- Prototype variants: this reads as UI exploration (<the two shapes from 05b's handoff>). Add the
-  `prototype-options` label to get three bootable variants before implementation.
-```
+## Status line
+Right under the title: `**Status:** awaiting-owner-decisions` while any question has no owner
+answer, or `**Status:** decided` once every question has one. An implementer must not start on
+`awaiting-owner-decisions`.
 
-**`dispatch` / `already-dispatched`** — one line in `## Implementation Notes`:
+## Attended and unattended runs
+- **Unattended** (a devbox, a scheduled run, or a prompt that says nobody will answer): never
+  prompt. Write the spec with the questions and stop. When running inside a devbox as part of
+  the work, commit `specs/{number}-{slug}/spec.md` with the change, or on its own if the run
+  only writes the spec; follow the caller's branch and delivery instructions.
+- **Attended** (a person is in the session): write the spec first, then present the questions
+  once, all together, each with its recommendation. Record the answers in the spec as above,
+  update the body and the status line, and stop. Do not re-ask answered questions.
 
-```markdown
-Prototype variants dispatched (`proto-{number}`). The options comment will land on this issue with
-three branches and screenshots. **Do not start implementation until a variant is picked** — the
-design basis does not exist yet.
-```
+In both modes this skill makes no GitHub writes: no comments, labels or issue-body edits.
+Publishing the questions anywhere else is the caller's job.
 
-**`picked`** — the chosen branch is now the design basis. Cite it where the PRD is normally
-vaguest:
-
-- `## Technical Requirements` — point at `proto/{number}-<letter>` and the files under
-  `/proto/{slug}` as the pattern to follow.
-- `## Implementation Notes` — carry over the thesis from the options comment, and list the losing
-  branches for deletion **as a checklist item, not an executed command**:
-  `git push origin --delete proto/{number}-a proto/{number}-c`. Deletion is a mutation; it belongs
-  to the implementing PR or the owner, never to this skill.
-
-## Output (questions path): handoff.md
-```text
-Verdict: needs-questions
-Questions posted: Q1 ... Qn
-```
-
-## Output (PRD path): handoff.md
-Full PRD draft (see `shared/prd-template.md` for structure).
+## Output
+- `specs/{number}-{slug}/spec.md` (the deliverable)
+- `$WORK/06-ask-or-structure.md`: the spec path, the status and the question count
 
 ## Success criteria
-- Questions: single comment, `open-questions` label applied, exit emitted, stage stops
-- PRD: all sections populated, no unresolved TBD/TODO
-- PRD: `## Smallest version that works` and `## What this lets us delete` are both present,
-  non-templated, and — for a larger-than-minimal scope or a bare "nothing to delete" — carry the
-  required citation/reason; every other claim in the draft cites `file:line`/a measured number or
-  is moved to `## Open Questions`
-- Stage 05b's verdict is routed into the existing comment or PRD — **never into a second comment**
-- Dedup guard: when all three conditions hold, zero comments posted, zero labels applied, and the
-  stage exits success on that alone — never a second questions comment on an already-parked issue
+- `python3 {skill_dir}/scripts/check_spec.py specs/{number}-{slug}/spec.md` exits 0
+- Every question has at least two options and one recommended answer
+- PRD path: every template section is present and filled; no TBD/TODO
+- Every claim cites `file:line` or a measured number, or is an owner question or assumption
+- No GitHub writes and, when unattended, no interactive prompts

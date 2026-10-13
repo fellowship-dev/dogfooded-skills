@@ -1,7 +1,7 @@
 # Stage 02: Context Completeness
 
 ## Inputs
-- `stages/01-read-issue/output/handoff.md`
+- `$WORK/01-read-issue.md`
 - Repo codebase (README, CLAUDE.md, files referenced in the issue)
 
 ## Task
@@ -19,7 +19,7 @@ Audit whether a fresh agent with only this repo + issue would understand what to
    - Missing use cases or intent
 5. For each gap, classify the type of context that would fill it
 
-## Output: handoff.md
+## Output: `$WORK/02-context-completeness.md`
 ```markdown
 # Stage 02: Context Completeness
 

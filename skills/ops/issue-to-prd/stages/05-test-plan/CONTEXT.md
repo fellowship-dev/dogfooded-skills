@@ -1,9 +1,9 @@
 # Stage 05: Test Plan
 
 ## Inputs
-- `stages/01-read-issue/output/handoff.md`
-- `stages/02-context-completeness/output/handoff.md`
-- `stages/03-assess-clarity/output/handoff.md`
+- `$WORK/01-read-issue.md`
+- `$WORK/02-context-completeness.md`
+- `$WORK/03-assess-clarity.md`
 
 ## Principle
 Tests must be done on the PR, not deferred. If testing requires prod access, flag it explicitly.
@@ -27,7 +27,7 @@ Produce a test plan with pre-merge verification steps and tooling prerequisites.
    - Visual evidence tooling (screenshots for UI changes)
 5. Write the pre-merge verification checklist
 
-## Output: handoff.md
+## Output: `$WORK/05-test-plan.md`
 ```markdown
 # Stage 05: Test Plan
 
@@ -43,8 +43,8 @@ Produce a test plan with pre-merge verification steps and tooling prerequisites.
 ## Post-merge Verification (if any)
 - [ ] [flagged explicitly — requires prod access]
 
-## Open questions
-- [Testing prerequisite that needs human decision]
+## Owner questions
+- [Testing prerequisite that needs an owner decision, with options and a recommendation]
 ```
 
 ## Success criteria

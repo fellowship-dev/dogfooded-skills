@@ -1,76 +1,81 @@
 ---
 name: issue-to-prd
-description: Use when converting a new GitHub issue into a structured PRD, or posting clarifying questions when the issue is underspecified.
+description: Use when turning a GitHub issue into a spec before implementation. Writes specs/<issue>-<slug>/spec.md with a PRD and a mandatory "Questions for the owner" section (options plus a recommended answer for every open decision). Works unattended in a devbox or attended in a session; makes no GitHub writes.
 user-invocable: true
 allowed-tools: Read, Write, Bash, Glob, Grep, Task
+metadata:
+  version: 2.0.0
 ---
 
 # issue-to-prd
 
-ICM procedure: convert a new GitHub issue into a structured PRD or post clarifying questions.
+ICM procedure: turn an issue into a committed spec, then hand its open decisions to the owner.
+This is the spec step of the devbox workflow. The owner decision round that follows is
+mandatory, and implementation (`/ce-plan` → `/ce-work` → `/code-review`) starts only once the
+spec's status is `decided`.
 
 ## Invocation
 ```
 /issue-to-prd {repo} {issue_number}
+/issue-to-prd {issue_number}        # issue title, body and comments supplied in the prompt
 ```
-Example: `/issue-to-prd fellowship-dev/pylot 123`
+Example: `/issue-to-prd Lexgo-cl/rails-backend 1230`
 
-## When to use
-- A new issue arrives and needs structuring (triggered by `challenge-new-issue` event rule)
-- A human answered `open-questions` and re-challenge fires (triggered by `rechallenge-after-answers`)
-- Manual invocation to structure a specific issue
+Run it from the target repository's root, at the commit the work will start from.
 
-## What it does
-11-stage ICM procedure:
+## Output contract
+- **`specs/{issue_number}-{slug}/spec.md`** in the target repository: the PRD from
+  `shared/prd-template.md`, ending with `## Questions for the owner`. Every open decision is a
+  question with at least two options, one recommended answer with its reason, and whether it
+  blocks implementation.
+- A status line: `awaiting-owner-decisions` until every question has an owner answer, then
+  `decided`.
+- Inside a devbox the spec is committed with the work (or on its own when the run only writes
+  the spec), following the caller's branch and delivery instructions.
+- No GitHub writes: no comments, labels or issue-body edits. Posting the questions is the
+  caller's job.
+- `scripts/check_spec.py specs/{issue_number}-{slug}/spec.md` must exit 0.
 
-0. **00-automation-guard** — refuse `no-automation` / `epic` / closed issues, before reading anything
-1. **01-read-issue** — fetch issue data (title, body, labels, comments)
-2. **01b-triage-challenge** — search for an existing mechanism serving the same need and check the
-   ask against its smallest version → `delete-retire` / `close` / `re-scope` / `prd`; non-`prd`
-   stops the pipeline (stages 02-07 skipped)
-3. **02-context-completeness** — audit implicit context gaps a fresh agent would miss
-4. **03-assess-clarity** — check against 8-section gap checklist → `clear` or `needs-questions`
-5. **04-failure-modes** — predict how an agent can go astray → guardrails for PRD
-6. **05-test-plan** — test strategy + prerequisites (pre-merge and post-merge)
-7. **05b-prototype-gate** — is this UI exploration? → `skip` / `ask` / `dispatch` / `picked`
-8. **05c-outcomes-baseline** — detect a causal goal/eval/outcome contract in the issue; only then
-   fetch `GET /outcomes/summary` for that named metric's baseline (fail-open)
-9. **06-ask-or-structure** — decision: post questions (exit) OR draft PRD (Measurable Impact
-   included only when a contract exists, else "not applicable")
-10. **07-publish** — rewrite issue body with PRD, apply labels
+## Why the owner round is mandatory
+In the 2026-10-13 bake-off this procedure produced the best specs on vague asks, yet every agent
+arm contradicted at least one real owner decision: agents ask the right questions, then
+recommend the conservative engineering answer. So the spec records recommendations, never
+decisions, for anything the issue and codebase do not settle.
 
-## Exit paths
-- **Guard path** (stage 00): no reads, no writes, `status=success`, stops
-- **Triage path** (stage 01b): posts one comment naming the verdict and its cited evidence, applies
-  `wontfix` or `needs-rescope`, stops (stages 02-07 skipped) — never fires without a citation
-- **Questions path** (stage 06): posts GH comment, adds `open-questions` label, stops
-- **PRD path** (stage 07): rewrites issue body, adds `prd-ready` (+ `ready-to-work` unless
-  prototype variants are pending)
+## Stages
+1. **01-read-issue** — read the issue (via `gh`, read-only, or from the prompt) and any prior
+   spec with owner answers
+2. **01b-triage-challenge** — look for an existing mechanism serving the same need and test the
+   ask against its smallest version → `delete-retire` / `close` / `re-scope` / `prd`; a non-`prd`
+   verdict skips stages 02-05 and stage 06 writes a short triage spec with one owner question
+3. **02-context-completeness** — implicit context gaps a fresh agent would miss
+4. **03-assess-clarity** — 8-section gap checklist → `clear` or `needs-questions`
+5. **04-failure-modes** — how an implementer could go astray → guardrails
+6. **05-test-plan** — test strategy and prerequisites, pre-merge and post-merge
+7. **06-ask-or-structure** — write the spec: structure what the evidence settles, ask about
+   everything else, set the status
 
-## Prototype variants
-Stage 05b can dispatch a mission that pushes `proto/<issue>-a|b|c` branches and posts one options
-comment with screenshots and boot instructions, for the owner to pick from. It is gated hard:
-**auto-detection can only ever ask a question; only an explicit owner signal** (the
-`prototype-options` label, or a "build the prototype" answer) **dispatches.** See
-`stages/05b-prototype-gate/CONTEXT.md`.
-
-## Stage handoffs
-Each stage writes to its `output/handoff.md`. Downstream stages read upstream handoffs.
-All output directories at `stages/{stage}/output/`.
+## Modes
+- **Unattended** (devbox, scheduled run, or "nobody will answer"): never prompt. Write the spec
+  with its questions and stop.
+- **Attended** (a person is in the session): write the spec, then put all questions to them once,
+  with recommendations. Record their answers in the spec, update the status, and stop.
 
 ## Execution
-Run stages sequentially. Read the CONTEXT.md for each stage before executing it.
-Stage 00 is a hard gate — if it aborts, run nothing else.
-Stage 01b is a hard gate — on any verdict but `prd`, run nothing after it (stages 02-07 skipped).
-Stage 05c always runs (fail-open) — it never gates stage 06.
-After stage 06, skip stage 07 if questions were posted.
+Set a scratch directory for stage handoffs outside the repository, so nothing but the spec
+lands in the working tree:
+
+```bash
+WORK="${TMPDIR:-/tmp}/issue-to-prd-{issue_number}"; mkdir -p "$WORK"
+```
+
+Run the stages in order and read each stage's `CONTEXT.md` before executing it. Each stage
+writes `$WORK/{stage}.md` and later stages read earlier handoffs. Stage 01b is a gate: on any
+verdict but `prd`, skip to stage 06.
 
 ## Reference files
-- `shared/prd-template.md` — PRD structure (used by stage 06); `## Measurable Impact` section is
-  conditional on stage 05c's contract verdict
-- `shared/failure-modes.md` — common agent pitfall catalog (used by stage 04)
-- `shared/prototype-mission-brief.md` — self-contained brief for the variant mission (stage 05b)
+- `shared/prd-template.md` — spec structure (stage 06)
+- `shared/failure-modes.md` — agent pitfall catalog (stage 04)
 - `stages/03-assess-clarity/references/gap-checklist.md` — 8-section checklist
-- `stages/05b-prototype-gate/references/gate-checklist.md` — prototype gate + worked classifications
-- `stages/05c-outcomes-baseline/CONTEXT.md` — causal contract detection + scoped, fail-open
-  baseline formatting
+- `scripts/check_spec.py` — structural check of a written spec
+- `evals/` — contract test and the triage scenario

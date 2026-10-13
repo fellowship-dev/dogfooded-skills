@@ -42,7 +42,7 @@ jobs:
             ./skills/ops/entropy-check/tests/contents-writeback.test.sh
             ./skills/ops/flowchad-runner/scripts/test_validate_contract.py
             ./skills/ops/hookshot/scripts/test_gate.py
-            ./skills/ops/issue-to-prd/evals/test_triage_label_contract.py
+            ./skills/ops/issue-to-prd/evals/test_spec_contract.py
             ./skills/ops/pylot-cli/tests/file-finding.test.sh
             ./skills/ops/seo-ops/scripts/test_audit.py
             ./skills/ops/trash-truck/evals/test_retirement_contract.py

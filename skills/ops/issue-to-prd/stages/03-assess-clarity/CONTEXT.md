@@ -1,8 +1,8 @@
 # Stage 03: Assess Clarity
 
 ## Inputs
-- `stages/01-read-issue/output/handoff.md`
-- `stages/02-context-completeness/output/handoff.md`
+- `$WORK/01-read-issue.md`
+- `$WORK/02-context-completeness.md`
 - `stages/03-assess-clarity/references/gap-checklist.md`
 
 ## Task
@@ -17,7 +17,7 @@ Check the issue against the 8-section gap checklist. Produce a gap list and verd
    - `clear`: all 5 required sections covered (even implicitly)
    - `needs-questions`: any required section missing or ambiguous
 
-## Output: handoff.md
+## Output: `$WORK/03-assess-clarity.md`
 ```markdown
 # Stage 03: Clarity Assessment
 
@@ -36,8 +36,8 @@ Check the issue against the 8-section gap checklist. Produce a gap list and verd
 | Dependencies | No | ... | ... |
 | Timeline | No | ... | ... |
 
-## Questions to ask (if needs-questions)
-- Q: ...
+## Owner questions (if needs-questions)
+- Q: {decision} | Options: A. … / B. … | Recommended: … because …
 ```
 
 ## Success criteria

@@ -127,7 +127,7 @@ If nothing merged in 7 days: state it and note the last merge date.
 ### Section 4: Suggested Next Tasks
 
 2-3 concrete actions. Each must have:
-- Exact slash command where applicable: `/review-pr 47 CLAPES-UC/ipc-med-backend ipcmed-runner`
+- Exact slash command where applicable: `/code-review low 47` on CLAPES-UC/ipc-med-backend (level by the review rule)
 - Sequencing note when order matters: "do this BEFORE merging deps — lockfile conflict risk"
 - Reasoning tied to team Direction goals
 - Risk callout for dangerous deps: "do NOT merge Next.js 16 without testing locally"

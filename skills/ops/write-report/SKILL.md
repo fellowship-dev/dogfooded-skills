@@ -13,7 +13,7 @@ Write a correctly named, correctly placed mission report and post it to the Ques
 
 - At the end of every mission to write the mission report
 - When writing rollcall team reports
-- When writing speckit, deps, review, or crew-runner reports
+- When writing feature, deps, review, or crew-runner reports
 - When dispatching a fan-out batch and writing the supervisor manifest
 
 ## When NOT to Use
@@ -58,7 +58,7 @@ Filename patterns:
 
 | Report type | Filename |
 |---|---|
-| Standard (speckit, deps, review, crew-runner) | `{TIMESTAMP}_{group}_{id}.md` |
+| Standard (feature, deps, review, crew-runner) | `{TIMESTAMP}_{group}_{id}.md` |
 | Rollcall team | `{TIMESTAMP}_rollcall_{team}.md` |
 | Rollcall assembly | `{TIMESTAMP}_rollcall_assembly.md` |
 | Fan-out manifest | `{TIMESTAMP}_{group}_manifest.json` |

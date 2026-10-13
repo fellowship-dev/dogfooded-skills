@@ -51,7 +51,6 @@ Skills for CI, deployment, operations, and evidence workflows.
 | Skill | Description |
 |-------|-------------|
 | [`ops/jev-label-and-act`](skills/ops/jev-label-and-act/) | Experimental: extract reusable stored-evidence labeling, local action selection, budget controls and feedback from a working consumer |
-| [`ops/setup-harness`](skills/ops/setup-harness/) | Scaffold the knowledge layer — ARCHITECTURE.md, QUALITY_SCORE.md, docs/, FlowChad flows |
 | [`ops/entropy-check`](skills/ops/entropy-check/) | Sensor — checks doc freshness and computes domain quality grades. Updates QUALITY_SCORE.md |
 | [`ops/hookshot`](skills/ops/hookshot/) | Agent enforcement hooks for Claude Code and Codex — doc reminders before edits, skill-drift and markdown-lint warnings, session preflight and the delivery gate that checks a session against its outcome contract |
 | [`ops/visual-evidence`](skills/ops/visual-evidence/) | Playwright screenshots and GIF recordings for PR evidence |

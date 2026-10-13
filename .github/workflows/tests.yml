@@ -35,16 +35,6 @@ jobs:
             ./skills/ops/jev-evidence/tests/test_experiments.py
             ./skills/ops/jev-evidence/tests/test_identity.py
             ./skills/ops/jev-evidence/tests/test_packaging.py
-            ./skills/ops/cto-review/stages/01-setup/test_ci_gate.py
-            ./skills/ops/cto-review/stages/01-setup/test_collect_ci_evidence.py
-            ./skills/ops/cto-review/stages/01-setup/test_visual_gate.py
-            ./skills/ops/cto-review/tests/patch-id-merge-pin.test.sh
-            ./skills/ops/cto-review/tests/test_owner_gate_contract.py
-            ./skills/ops/double-check/tests/base-merge-no-push.test.sh
-            ./skills/ops/double-check/tests/exact-head-receipt.test.sh
-            ./skills/ops/double-check/tests/patch-id-carry.test.sh
-            ./skills/ops/double-check/tests/speed-contract.test.sh
-            ./skills/ops/double-check/tests/test_installed_resources.py
             ./skills/ops/dx-metrics/scripts/dxm-aggregate.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-dashboard.test.sh
             ./skills/ops/dx-metrics/scripts/dxm-identity.test.sh
@@ -54,10 +44,7 @@ jobs:
             ./skills/ops/hookshot/scripts/test_gate.py
             ./skills/ops/issue-to-prd/evals/test_triage_label_contract.py
             ./skills/ops/pylot-cli/tests/file-finding.test.sh
-            ./skills/ops/review-pr/tests/driving-issue-contract.test.sh
             ./skills/ops/seo-ops/scripts/test_audit.py
-            ./skills/ops/speckit-runner/tests/invariant-matrix.test.sh
-            ./skills/ops/speckit-runner/tests/pr-postcondition.test.sh
             ./skills/ops/trash-truck/evals/test_retirement_contract.py
           '
           failed=""

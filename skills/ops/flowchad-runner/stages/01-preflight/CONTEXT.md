@@ -260,7 +260,7 @@ fi
 [ -n "$FLOWS_TO_RUN" ] || { echo "BLOCKED: no flows selected"; exit 1; }
 ```
 
-> **`affected` is the production selector.** The `flowchad-on-double-checked` automation
+> **`affected` is the production selector.** The PR-triggered automation
 > dispatches `/flowchad-runner affected {repo} {number}` on every fire (1990+ to date) — it is
 > by far the most common invocation. Treating it as a literal flow name intersects
 > `{"affected"}` against the real flow names, yields the empty set, and returns `N/A` on a PR

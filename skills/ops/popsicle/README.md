@@ -127,6 +127,6 @@ npx skills add fellowship-dev/dogfooded-skills/skills/ops/entropy-check
 # Investigate material product, code, and operational surfaces for evidence-backed retirement
 npx skills add fellowship-dev/dogfooded-skills/skills/ops/trash-truck
 
-# Structured issue-to-PR pipeline for doc-gated features
-npx skills add fellowship-dev/dogfooded-skills/skills/ops/speckit
+# Turn an issue into a committed spec with owner questions before implementation
+npx skills add fellowship-dev/dogfooded-skills/skills/ops/issue-to-prd
 ```

@@ -33,7 +33,7 @@ npx skills add fellowship-dev/dogfooded-skills/ops/hookshot
 
 ## When to Use
 
-- After `/setup-harness` creates the knowledge layer — hookshot wires it to the agent runtime
+- After the knowledge layer (`ARCHITECTURE.md`, `docs/`) is created — hookshot wires it to the agent runtime
 - After updating `docs/code-structure.md` or `docs/code-guidelines.md` — regenerate hooks to stay current
 - When the `#1585-class bug` occurs: agent modified a critical path without reading docs — add a hook to prevent recurrence
 - After adding a new FlowChad flow — generate hooks for that critical path
@@ -41,7 +41,6 @@ npx skills add fellowship-dev/dogfooded-skills/ops/hookshot
 ## Integration with Pylot
 
 - **Installation:** `boot-skills.sh` installs the hookshot skill via `npx skills add`. But installing the skill ≠ generating hooks. You must run `/hookshot` at least once to generate the artifacts (`doc-coverage.json`, `check-docs.sh`, `settings.json` hooks, `docs/hooks.md`).
-- **setup-harness:** Runs hookshot as its final phase on first setup. You don't need to run hookshot separately after setup-harness.
 - **Staleness:** `entropy-check` monitors hookshot coverage freshness on PR merge and weekly cron. When it flags staleness, re-run `/hookshot`.
 - **Per-repo:** Each repo gets its own hooks. Cross-repo missions use the target repo's hooks.
 
@@ -430,8 +429,8 @@ Make it executable and wire into `.claude/settings.json` under `PreToolUse` with
 ### Verification
 
 ```bash
-# Should warn — cto-review is a tracked skill
-bash .claude/check-skill-drift.sh "$PWD/.claude/skills/cto-review/SKILL.md"
+# Should warn — entropy-check is a tracked skill
+bash .claude/check-skill-drift.sh "$PWD/.claude/skills/entropy-check/SKILL.md"
 
 # Should be silent — file is outside any skills dir
 bash .claude/check-skill-drift.sh "$PWD/README.md"

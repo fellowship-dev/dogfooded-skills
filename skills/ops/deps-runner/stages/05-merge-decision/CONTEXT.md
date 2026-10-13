@@ -9,7 +9,7 @@
 ## Task
 For each PR, apply the merge-decision matrix from its (build, tests, risk) result: auto-merge
 with [skip ci], label, write targeted tests, or flag for Max. This is the ONLY stage that
-merges/labels PRs and may write targeted tests. Enforce the review pipeline.
+merges/labels PRs and may write targeted tests. Enforce the review step.
 
 ## Steps
 
@@ -38,9 +38,13 @@ pylot workers output "$WID" --mission "$PYLOT_JOB_ID"
 - Targeted tests fail → **flag for Max** with failure details
 - Do NOT auto-merge PRs that needed new tests.
 
-### Merge or label (safe PRs only) — pipeline enforcement
-Before merging, verify the full review pipeline has run. Check for `reviewed` and
-`double-checked` labels. Do NOT merge directly without these — the CTO owns the final merge.
+### Merge or label (safe PRs only) — review enforcement
+Before merging, the PR must pass the review step: run `/code-review` at the level the rule gives
+(low by default; medium when the change spans multiple modules and needs integration testing;
+high only when it is security-critical), or the two-pass review (a diff-only pass, then a devbox
+verification pass that keeps only findings it confirms against the code). When it passes with no
+unresolved findings, apply the `reviewed` label; otherwise flag for Max. Do NOT merge without
+`reviewed`.
 These `gh` calls run inline (no worker needed — `gh` is available directly to this subagent,
 same as stage 01's `gh pr list`):
 ```bash
@@ -49,7 +53,6 @@ ORG_REPO="<org>/<repo>"
 
 LABELS=$(gh pr view $PR_NUMBER --repo $ORG_REPO --json labels --jq '.labels[].name' 2>/dev/null)
 HAS_REVIEWED=$(echo "$LABELS" | grep -c "^reviewed$" || true)
-HAS_DOUBLE_CHECKED=$(echo "$LABELS" | grep -c "^double-checked$" || true)
 
 MERGE_STRATEGY=$(python3 -c "
 import yaml
@@ -68,13 +71,13 @@ if [ "$MERGE_STRATEGY" = "label-only" ]; then
   gh label create "ready-to-merge" --repo $ORG_REPO --color "0e8a16" --description "Agent-verified, Max merges" 2>/dev/null || true
   gh pr edit $PR_NUMBER --repo $ORG_REPO --add-label "ready-to-merge"
 elif [ "$HAS_REVIEWED" = "0" ]; then
-  gh label create "reviewed" --repo $ORG_REPO --color "1d76db" --description "First-pass review complete" 2>/dev/null || true
-  gh pr edit $PR_NUMBER --repo $ORG_REPO --add-label "reviewed"
-  # Do NOT merge. Event router triggers double-check -> cto-review, then CTO merges.
-elif [ "$HAS_DOUBLE_CHECKED" = "0" ]; then
-  echo "PR has 'reviewed' but not 'double-checked'. Waiting for pipeline to complete."
+  # Do NOT merge yet. Run the review step above; on a pass, apply the label and re-run this
+  # block. On unresolved findings, flag for Max instead.
+  # gh label create "reviewed" --repo $ORG_REPO --color "1d76db" --description "Review step passed" 2>/dev/null || true
+  # gh pr edit $PR_NUMBER --repo $ORG_REPO --add-label "reviewed"
+  echo "PR has not passed the review step yet. Run it before merging."
 else
-  gh pr merge $PR_NUMBER --repo $ORG_REPO --squash -t "chore(deps): merge #$PR_NUMBER [skip ci]" -b "Auto-merged dependency update. Build and tests verified on the deps-runner devbox worker. Pipeline: reviewed + double-checked."
+  gh pr merge $PR_NUMBER --repo $ORG_REPO --squash -t "chore(deps): merge #$PR_NUMBER [skip ci]" -b "Auto-merged dependency update. Build and tests verified on the deps-runner devbox worker. Review step passed (reviewed)."
 fi
 ```
 

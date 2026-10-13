@@ -12,7 +12,7 @@ Build a complete ICM (Interpreted Context Methodology) procedure from a structur
 
 ## When to Use
 
-- Building a new multi-stage workflow (speckit, deps-check, review pipeline, etc.)
+- Building a new multi-stage workflow (deps-check, security triage, doc audits, etc.)
 - Converting an existing monolithic runner skill into a staged procedure
 - Creating domain-specific procedures for a team repo (marketing, onboarding, etc.)
 

@@ -11,7 +11,7 @@ A spec file is the input to the procedure-builder. It describes the procedure to
 
 ## Target
 
-- **Directory:** <where to write the procedure, e.g., `.claude/skills/speckit/`>
+- **Directory:** <where to write the procedure, e.g., `.claude/skills/deps-runner/`>
 - **Arguments:** <what the operator passes when invoking, e.g., "issue-number org/repo">
 
 ## Stage 01: <name>

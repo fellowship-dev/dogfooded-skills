@@ -43,7 +43,7 @@ Use the literal `none` when a cron/manual invocation has no PR number.
 
 | `flow-name` | Resolves to |
 | --- | --- |
-| `affected` | the flows whose `affects` globs match the PR's changed files — **the production form**, used by every `flowchad-on-double-checked` dispatch |
+| `affected` | the flows whose `affects` globs match the PR's changed files — **the production form**, used by every PR-triggered dispatch |
 | `all` | `smoke.flows`, falling back to `smoke.critical`, falling back to the files in `.flowchad/flows/` |
 | *(a name)* | that flow, intersected with the affected set |
 | *(any, `trigger=cron`)* | `smoke.critical` |

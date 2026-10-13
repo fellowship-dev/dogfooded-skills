@@ -1,6 +1,6 @@
-# Claude Code Review — Stage 1 of the automated PR review pipeline
+# Claude Code Review — automated first-pass PR review
 # Triggered on PR open/reopen. Reviews the diff, posts findings, applies "reviewed" label.
-# The "reviewed" label triggers double-check (Stage 2) via event-rules.yml.
+# Before merge, run the review step (/code-review at the rule's level, or the two-pass review).
 #
 # Requirements: Install Claude GitHub App (https://github.com/apps/claude)
 # Secret needed: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY

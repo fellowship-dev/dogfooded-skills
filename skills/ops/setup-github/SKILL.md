@@ -19,34 +19,18 @@ npx skills add fellowship-dev/dogfooded-skills/skills/ops/setup-github
 ## When to Use
 
 - Setting up a new repo's GitHub environment end-to-end
-- Adding the automated review pipeline (double-check → cto-review)
+- Adding the automated first-pass PR review
 - Creating standard labels for workflow tracking
 - Installing CI/CD workflows
 
-## The Review Pipeline
+## The Review Step
 
-This skill sets up the automated 3-stage PR review pipeline:
-
-```
-1. PR opened
-        ↓
-2. GitHub Actions: claude-code-review.yml
-   - Claude reviews the diff
-   - Applies "reviewed" label
-        ↓
-3. event-rules.yml: review-pr-on-reviewed
-   - /double-check PR_NUMBER org/repo dispatched
-   - Curates CI findings, fixes must-fix items
-   - Applies "double-checked" label
-        ↓
-4. event-rules.yml: cto-review-on-double-checked
-   - /cto-review PR_NUMBER org/repo dispatched
-   - Docs/deps/downstream checklist
-   - Applies "approved" or "needs-work" label
-   - Merges if approved
-```
-
-Skills powering stages 3-4: `double-check` and `cto-review` from `fellowship-dev/dogfooded-skills`.
+`claude-code-review.yml` gives every PR an automated first-pass review and applies the `reviewed`
+label. Before merge, run the review step: `/code-review` at the level the rule gives (low by
+default; medium when the change spans multiple modules and needs integration testing; high only
+when it is security-critical), or the two-pass review (a diff-only pass, then a verification pass
+in a devbox at the PR head that keeps only findings it confirms against the code). Post findings
+only after verification. The legacy three-stage label pipeline is retired.
 
 ---
 
@@ -102,7 +86,6 @@ Report a status table: what exists vs. what's missing.
 | Label | Color | Description |
 |-------|-------|-------------|
 | `reviewed` | `#3da46e` | CI/automated review complete |
-| `double-checked` | `#0075ca` | Full review + fixes complete |
 | `approved` | `#0e8a16` | CTO approved — ready to merge |
 | `needs-work` | `#d93f0b` | Needs work before merge |
 | `ready-to-work` | `#f6a80a` | Ready for implementation |
@@ -119,7 +102,6 @@ Report a status table: what exists vs. what's missing.
 ```bash
 # Create all labels (idempotent — 2>/dev/null suppresses "already exists" errors)
 gh label create "reviewed" --repo $REPO --color "3da46e" --description "CI/automated review complete" 2>/dev/null || true
-gh label create "double-checked" --repo $REPO --color "0075ca" --description "Full review + fixes complete" 2>/dev/null || true
 gh label create "approved" --repo $REPO --color "0e8a16" --description "CTO approved — ready to merge" 2>/dev/null || true
 gh label create "needs-work" --repo $REPO --color "d93f0b" --description "Needs work before merge" 2>/dev/null || true
 gh label create "ready-to-work" --repo $REPO --color "f6a80a" --description "Ready for implementation" 2>/dev/null || true
@@ -159,7 +141,7 @@ Note: Configure auto-move automations in the GitHub Projects UI:
 Present available workflows and wait for confirmation:
 
 #### AI-Powered Workflows (require Claude GitHub App)
-- **claude-code-review.yml** — Automated PR reviews. Adds `reviewed` label. **Recommended — this triggers the full review pipeline.**
+- **claude-code-review.yml** — Automated PR reviews. Adds `reviewed` label. **Recommended — the first pass before the review step.**
 - **claude-issue-triage.yml** — Auto-label new issues
 - **claude-prd-creation.yml** — Generate PRDs from feature requests
 
@@ -197,14 +179,13 @@ mkdir -p .github/workflows
 - ⏭️ Skipped: dependabot.yml (already existed)
 - ⚠️ Secrets needed: ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN
 
-### Review Pipeline (after claude-code-review.yml is installed)
-PR opened → reviewed label → double-check → double-checked label → cto-review → approved/needs-work
+### Review (after claude-code-review.yml is installed)
+PR opened → reviewed label → review step (/code-review at the rule's level, or the two-pass review) → approved/needs-work
 
 ### Manual Next Steps
 - [ ] Install Claude GitHub App: https://github.com/apps/claude
 - [ ] Add ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret
 - [ ] Configure project board automations (link above)
-- [ ] Wire event-rules.yml with review-pr-on-reviewed + cto-review-on-double-checked rules
 ```
 
 ---

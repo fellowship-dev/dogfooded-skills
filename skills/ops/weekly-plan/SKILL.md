@@ -167,7 +167,7 @@ Present in the session: the Step 0 scorecard, the ranking + the three signals, w
 Optionally — with the owner's go — dispatch the single top ready item so the week starts now. The task MUST use an explicit `/skill` prefix or it fails at operator boot:
 ```bash
 GW -X POST "$PYLOT_API/dispatch" -H "Content-Type: application/json" \
-  -d '{"agent":"'"$TEAM"'.lead","repo":"org/repo","task":"Run /speckit-runner on org/repo#123 — title"}'
+  -d '{"agent":"'"$TEAM"'.lead","repo":"org/repo","task":"Run /ce-plan on org/repo#123 — title"}'
 ```
 
 ---

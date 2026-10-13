@@ -56,7 +56,7 @@ live.
 - Stage 04: first stage with branch-level side effects (checkout, merge main, install, build,
   test) on the worker. Per PR, sequentially.
 - Stage 05: merge decision — applies the merge matrix. Only stage that merges/labels PRs and
-  may write targeted tests. Enforces the review pipeline (reviewed → double-checked).
+  may write targeted tests. Enforces the review step (`reviewed` after /code-review or the two-pass review).
 - Stage 06: inline. Stops the worker, writes the local report file(s), and MUST emit
   `[pylot] outcome=...` from the orchestrator. **No Quest POST.**
 - A stage-level exception (subagent errors, times out, or exits without writing handoff.md) is

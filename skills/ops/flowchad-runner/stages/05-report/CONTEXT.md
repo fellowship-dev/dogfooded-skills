@@ -38,8 +38,8 @@ every surface; the wrapping link guarantees the receipt is at least reachable, a
 permanent (see evidence-upload's retention section). Do not strip the link form back to a bare
 `![](URL)` until the gateway's disposition fix lands.
 
-The comment opens with a machine-readable verdict marker — cto-review reads the verdict from
-this comment (issue #149: the comment, not a label, is the verdict's canonical surface):
+The comment opens with a machine-readable verdict marker — the review step (`/code-review`, or the two-pass review)
+reads the verdict from this comment (issue #149: the comment, not a label, is the verdict's canonical surface):
 
 ```bash
 gh pr comment $PR_NUMBER --repo $REPO --body "<!-- flowchad:verdict pr=${PR_NUMBER} sha=${TARGET_SHA} status=${STATUS} -->
@@ -82,7 +82,7 @@ missing capability rather than implying the UI was inspected.
 **Verdict labels (still load-bearing — do NOT drop).** After the comment posts, apply the
 verdict label the dispatching automation instructs: `chad-approves` on PASSED or N/A,
 `chad-rejects` on FAILED (BLOCKED gets neither — it is a capability problem, not a QA verdict).
-The dedicated `cto-review-on-chad-*` trigger rules were retired (pylot#3305/#3309), but the
+The dedicated review trigger rules on `chad-*` labels were retired (pylot#3305/#3309), but the
 labels themselves are still required by the gateway's `stagingCtoReadiness` predicate — the
 consolidated staging-ready rule fires on whichever label completes the readiness set. Dropping
 the labels before the readiness predicate reads this verdict comment instead would strand every
@@ -165,7 +165,7 @@ bash "$FF" --repo "$REPO" --blocking --search "flowchad:${FINGERPRINT}" \
 
 This issue was auto-created by flowchad-runner. Fix the flow or the code, then re-run to verify."
 ```
-This is the **closed-loop trigger** — the `ready-to-work` label + issue body gives speckit
+This is the **closed-loop trigger** — the `ready-to-work` label + issue body gives an implementer
 enough context to investigate and fix.
 
 ### 4. Write the local report file

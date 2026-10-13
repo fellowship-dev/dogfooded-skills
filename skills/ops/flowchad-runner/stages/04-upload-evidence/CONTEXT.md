@@ -91,7 +91,7 @@ CONV=$(curl -sS "$PYLOT_GATEWAY_URL/missions/$PYLOT_JOB_ID" \
   | python3 -c 'import sys,json; print(json.load(sys.stdin).get("dispatched_by_conv") or "")')
 ```
 
-**Empty is the normal case — skip this step entirely.** `flowchad-on-double-checked`
+**Empty is the normal case — skip this step entirely.** The PR-triggered automation
 fires the vast majority of runs and is automation-dispatched: no requester, no thread,
 nothing to deliver. Only a run someone asked for ("walk the checkout flow on #123")
 has a `dispatched_by_conv`, and that owner is reading the thread, not the PR.

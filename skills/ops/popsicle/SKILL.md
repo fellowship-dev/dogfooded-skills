@@ -544,8 +544,8 @@ These skills complement popsicle for ongoing doc health:
   `npx skills add fellowship-dev/dogfooded-skills/skills/ops/entropy-check`
 - **trash-truck** — investigates material product, code, and operational surfaces for evidence-backed retirement; scheduled runs only maintain the review record
   `npx skills add fellowship-dev/dogfooded-skills/skills/ops/trash-truck`
-- **speckit** — structured issue-to-PR pipeline for doc-gated features
-  `npx skills add fellowship-dev/dogfooded-skills/skills/ops/speckit`
+- **issue-to-prd** — turns an issue into a committed spec with owner questions before implementation
+  `npx skills add fellowship-dev/dogfooded-skills/skills/ops/issue-to-prd`
 ```
 
 Commit the report:

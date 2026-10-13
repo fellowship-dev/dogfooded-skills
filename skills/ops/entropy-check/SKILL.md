@@ -58,7 +58,7 @@ TODAY=$(date +%Y-%m-%d)
 
 Read `QUALITY_SCORE.md` if it exists — this is the baseline to update.
 Read `ARCHITECTURE.md` if it exists — extract domain list.
-If neither exists, infer domains from directory structure (same logic as setup-harness).
+If neither exists, infer domains from directory structure (top-level source directories, one domain each).
 
 ### 1. Determine Signal Applicability
 
@@ -342,35 +342,8 @@ For any domain graded C, D, or F — or where grade regressed from previous — 
 
 **This check moved here from maintenance.** It is an architecture signal, not an infra check.
 
-Compare installed speckit commands against the source of truth (`fellowship-dev/spec-kit`):
-
-```bash
-# Source of truth: fellowship-dev/spec-kit templates/commands/
-GH_TOKEN=$GH_TOKEN gh api repos/fellowship-dev/spec-kit/contents/templates/commands \
-  --jq '.[].name' 2>/dev/null
-
-# For each active repo with speckit installed:
-for repo in Lexgo-cl/rails-backend fellowship-dev/booster-pack fellowship-dev/farmesa-v2 \
-            fellowship-dev/mtg-lotr fellowship-dev/inbox-angel fellowship-dev/inbox-angel-worker; do
-  echo "=== $repo ==="
-  for cmd in specify plan tasks implement analyze checklist clarify; do
-    SOURCE=$(GH_TOKEN=$GH_TOKEN gh api repos/fellowship-dev/spec-kit/contents/templates/commands/${cmd}.md \
-      --jq '.sha' 2>/dev/null)
-    INSTALLED=$(GH_TOKEN=$GH_TOKEN gh api repos/${repo}/contents/.claude/commands/speckit.${cmd}.md \
-      --jq '.sha' 2>/dev/null)
-    if [ "$SOURCE" != "$INSTALLED" ]; then
-      echo "  DRIFT: speckit.${cmd}.md (source: $SOURCE, installed: $INSTALLED)"
-    fi
-  done
-done
-```
-
-SHA mismatch = drift. Add drifted repos/commands to the staleness report.
-Note: repos may have intentional customizations — flag for review, don't auto-fix.
-**inbox-angel-worker exception**: speckit is installed locally and gitignored. Drift sync must be done locally on Spacestation.
-
-Include drift findings in QUALITY_SCORE.md under a `## Tooling` section if any drift is found.
-They ride in the same step 4a write-back commit; this check never commits or pushes anywhere else.
+Retired: the imported-command drift check covered a workflow that is no longer used.
+Skip this step; there is no `## Tooling` drift to report.
 
 ### 8. PR-Triggered Output
 

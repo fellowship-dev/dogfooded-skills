@@ -74,7 +74,7 @@ upgrading `.flowchad/config.yml` and flow definitions.
 | 01-preflight | subagent | Validate contract, resolve the flow selector, resolve target/selective preview, deploy-wait, capture-host/persona check |
 | 02-load-flows | subagent | Read `.flowchad/config.yml`, validate each flow file exists, load flow YAML, resolve the evidence backend |
 | 03-walk-flows | subagent | **Spawn a worker devbox** (the operator has no browser), then a **sequential loop**: for each flow one-at-a-time — connect browser, run steps, per-step screenshot, expect-judgement, CAPTCHA→Navvi, transcript |
-| 04-upload-evidence | subagent | Upload screenshots/GIFs with `evidence_class: visual` (permanent URLs), record per-file success/failure, attach an unclassed copy to the requesting conversation when there is one, stop the worker |
+| 04-upload-evidence | subagent | Upload screenshots/GIFs to the public evidence bucket via evidence-upload (permanent URLs), record per-file success/failure and the conversation URLs when there is a requester, stop the worker |
 | 05-report | inline | Aggregate results, **embed the screenshot URLs per step**, post the verdict PR comment (opens with the machine-readable `<!-- flowchad:verdict -->` marker) + apply the still-load-bearing `chad-approves`/`chad-rejects` label, post the verdict to the requesting Slack thread when there is one, create issues on failure, write local report, emit outcome marker |
 
 ### Where the browser actually runs
@@ -87,8 +87,8 @@ runs in the operator turn. Attempting `chromium.launch()` in the operator turn f
 carrying no screenshots. The dispatching automation's context already says *"Use qa worker."*
 
 `pylot.qa` and `booster-pack.qa` — the operators that carry `flowchad-runner` — carry
-`pylot-cli` (the injected baseline, so it is on every operator) and `evidence-upload`, which is
-everything the operator side needs. They do
+`pylot-cli` (the injected baseline, so it is on every operator) and `evidence-upload` (plus the
+`EVIDENCE_*` upload secret), which is everything the operator side needs. They do
 **not** need `playwright` or `visual-evidence` installed: the browser requirement belongs to the
 worker image, not the operator.
 
@@ -272,9 +272,10 @@ backstop if stage 04 did not.
 13. **Never launch a browser in the operator turn.** The operator image has no browser
     libraries. Playwright capture goes to a worker devbox; Navvi stays operator-side. A missing
     capture host is `BLOCKED`, never a static-probe pass.
-14. **Every uploaded asset carries `evidence_class: visual`.** Unclassed capability URLs 410
-    after 30 days, so an unclassed receipt is a receipt with an expiry date. Publishing a
-    classed asset additionally requires `override_policy: true`.
+14. **Evidence goes to the public evidence bucket.** Upload through `evidence-upload`
+    (`scripts/upload_evidence.sh`); its content-addressed URLs are permanent and render inline,
+    including in private repos. Anything uploaded is public by URL — capture staging or
+    synthetic data only.
 15. **The verdict carries the receipts.** Screenshot URLs are embedded per step in the PR
     comment. A flow-walk verdict with no images is testimony, not evidence.
 16. **An upload failure is best-effort to deliver and mandatory to disclose.** It never blocks

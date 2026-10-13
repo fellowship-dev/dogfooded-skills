@@ -2,11 +2,13 @@
 name: visual-evidence
 description: Use when capturing Playwright screenshots or GIF recordings for PR evidence — before/after comparisons and feature demos.
 allowed-tools: Read, Write, Bash, Glob, Grep
+metadata:
+  version: 2.0.0
 ---
 
 # visual-evidence
 
-Capture browser screenshots and GIF recordings using Playwright headless Chromium. Upload to cloud storage for embedding in PRs and reports.
+Capture browser screenshots and GIF recordings using Playwright headless Chromium. Upload them to the public evidence bucket (via **evidence-upload**) for embedding in PRs and reports.
 
 ## When to Use
 
@@ -123,11 +125,22 @@ node /tmp/record.mjs http://localhost:3000/form /tmp/evidence-before.gif \
   '[{"action":"click","selector":".submit-btn"},{"action":"wait","ms":2000}]'
 ```
 
-### 3. Upload to Cloud Storage
+### 3. Upload to the Evidence Bucket
 
-Use the **evidence-upload** skill to upload screenshots and GIFs to the pylot assets backend. `$PYLOT_GATEWAY_URL` and `$PYLOT_DISPATCH_TOKEN` are already in every operator/worker environment — no static AWS keys needed.
+Use the **evidence-upload** skill. It uploads straight to the public evidence S3 bucket and
+needs the `EVIDENCE_*` env secret; without it, it exits with *"not configured for this
+environment"* — log that and skip (best-effort).
 
-Run `/evidence-upload` for each captured file and capture the returned `public_url` for embedding in Step 4.
+```bash
+UPLOAD="<evidence-upload skill dir>/scripts/upload_evidence.sh"
+"$UPLOAD" --alt "Before" /tmp/evidence-before.png
+"$UPLOAD" --alt "After" /tmp/evidence-after.png
+```
+
+Each file prints its public URL and a ready-to-paste Markdown line; use those in Step 4.
+Private repos do not render repo-relative images — that is why evidence goes to the bucket.
+**Everything uploaded is public by URL:** capture staging or synthetic data, never secrets,
+customer PII or production data.
 
 ### 4. PR Embedding
 
@@ -139,10 +152,10 @@ Run `/evidence-upload` for each captured file and capture the returned `public_u
 <summary>Before / After</summary>
 
 **Before (bug present on default branch):**
-![before](<url>/before.png)
+![before](<before-url>)
 
 **After (fix applied):**
-![after](<url>/after.png)
+![after](<after-url>)
 
 </details>
 ```
@@ -154,7 +167,7 @@ Run `/evidence-upload` for each captured file and capture the returned `public_u
 <details>
 <summary>Interaction demo</summary>
 
-![demo](<url>/demo.gif)
+![demo](<demo-url>)
 *Caption: what this demonstrates*
 
 </details>
@@ -180,12 +193,13 @@ Visual evidence is **best-effort**. Never block the pipeline.
 - Playwright install fails → log, skip evidence, proceed
 - Dev server won't start → log, skip evidence, proceed
 - Screenshot fails (404, timeout) → log, skip evidence, proceed
-- Upload fails (no creds, permission denied) → log, skip evidence, proceed
+- Upload fails (EVIDENCE_* secret not configured, upload or verify error) → log, skip evidence, proceed
 - **Hard timeout: 120 seconds** for the entire evidence phase. If exceeded, kill and proceed.
 
 ## Critical Rules
 
 - **Never block the pipeline** — evidence is best-effort
 - **120 second hard timeout** — kill and move on
-- **Always verify upload** before embedding URLs in PRs
+- **Only embed URLs printed by evidence-upload** — it verifies each one returns HTTP 200
+- **Public by URL** — never capture secrets, customer PII or production data
 - Screenshots in `/tmp/` are ephemeral — they disappear when the environment stops

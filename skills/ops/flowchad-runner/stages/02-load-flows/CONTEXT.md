@@ -59,16 +59,14 @@ i18n flows that assert only URL/`<html lang>` or omit any representative visible
 ### 5. Resolve the evidence backend
 
 ```bash
-EVIDENCE_BACKEND=$(yq '.evidence.backend // "assets"' .flowchad/config.yml)
+EVIDENCE_BACKEND=$(yq '.evidence.backend // "s3"' .flowchad/config.yml)
 ```
 
-`assets` is the **only supported backend** and the default. Most checked-in
-contracts (including `fellowship-dev/pylot` and `fellowship-dev/booster-pack`)
-declare no `evidence:` key at all, so the default is the live path — it must not
-resolve to anything else. If a config explicitly says `git`, record
-`backend_override_ignored: git` in the handoff and still emit
-`evidence_backend: assets`: branch-hosted `raw.githubusercontent.com` links die
-with the branch, which is the durability failure this stage exists to avoid.
+`s3` — the public evidence bucket via the `evidence-upload` skill — is the **only supported
+backend** and the default. Most checked-in contracts declare no `evidence:` key at all, so the
+default is the live path. If a config explicitly says `git`, `assets` or `pylot` (retired
+backends), record `backend_override_ignored: <value>` in the handoff and still emit
+`evidence_backend: s3`: branch-hosted links die with the branch and Pylot assets are retired.
 `none` is honoured (stage 04 skips uploading but still writes its handoff).
 
 ### 6. Write handoff.
@@ -86,8 +84,8 @@ block_reason: {reason or "none"}
 
 ## Config
 config_path: .flowchad/config.yml
-evidence_backend: {assets|none — see step 5; never "git"}
-backend_override_ignored: {git, if the config asked for it, else "none"}
+evidence_backend: {s3|none — see step 5; never "git"/"assets"}
+backend_override_ignored: {git|assets|pylot, if the config asked for it, else "none"}
 
 ## Validated flows
 | Flow | File | Status | Interactive | Prefers | Browser evidence | Notes |

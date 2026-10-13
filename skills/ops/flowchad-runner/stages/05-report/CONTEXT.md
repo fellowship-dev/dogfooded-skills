@@ -32,11 +32,8 @@ Never compute `PASSED` unless every interactive flow records real browser eviden
 a screenshot gets its URL embedded in the comment — not a footnote, not "evidence available in
 the snapshot dir". Take the per-step URLs from the stage 04 handoff and put them in the table.
 
-Embed each screenshot as **image-wrapped-in-link** — `[![alt](URL)](URL)`. Evidence-class
-assets are served `Content-Disposition: attachment`, so the image may not inline-render in
-every surface; the wrapping link guarantees the receipt is at least reachable, and it is
-permanent (see evidence-upload's retention section). Do not strip the link form back to a bare
-`![](URL)` until the gateway's disposition fix lands.
+Embed each screenshot as **image-wrapped-in-link** — `[![alt](URL)](URL)` — so a click opens the
+full-size receipt. Evidence-bucket URLs are permanent and render inline (see evidence-upload).
 
 The comment opens with a machine-readable verdict marker — the review step (`/code-review`, or the two-pass review)
 reads the verdict from this comment (issue #149: the comment, not a label, is the verdict's canonical surface):
@@ -94,8 +91,7 @@ the CTO weighs.
 If stage 04's handoff says `conversation_id: none`, skip this entirely — an automation-dispatched
 run has no requester. When it carries a uuid, somebody asked for this walk in a chat thread and is
 waiting there, not on the PR. Post **one** message with the verdict and the screenshot that carries
-it, using the `conversation_urls` from stage 04 (the unclassed copies — the classed ones are served
-`Content-Disposition: attachment` and will not render):
+it, using the `conversation_urls` from stage 04:
 
 ```bash
 CONV=<conversation_id from stage 04>
@@ -111,7 +107,7 @@ curl -sS -X POST "$PYLOT_GATEWAY_URL/conversations/$CONV/slack-post" \
   --data-binary @/tmp/fc-slack.json
 ```
 
-Three rules, all measured (see evidence-upload, *"Reaching the requesting owner"*):
+Three rules, all measured:
 
 1. **The URL goes bare, on its own line.** The gateway rewrites outbound markdown to Slack mrkdwn;
    `![alt](URL)` becomes `<URL|alt>` and the step-2 form `[![alt](URL)](URL)` becomes the malformed
@@ -119,10 +115,9 @@ Three rules, all measured (see evidence-upload, *"Reaching the requesting owner"
 2. **One post, one image.** This is the same budget `slack-post` states: inflection points, not
    narration. Link the PR comment for the remaining steps.
 3. `{"ok":false,"reason":"no_slack_thread"}` means the conversation is web-only. **Benign — do not
-   retry.** The stage 04 conversation attach already put the image inline in the web thread; that
-   is the whole delivery for a web-only owner.
+   retry.** The verdict on the PR comment is the whole delivery for a web-only owner.
 
-Inline rendering in Slack depends on Slack unfurling the capability URL — it is best-effort and
+Inline rendering in Slack depends on Slack unfurling the bucket URL — it is best-effort and
 unverified end-to-end. Report what you did (`posted to thread`), not what Slack chose to render.
 
 ### 2b. Backstop: stop a leaked worker
@@ -193,7 +188,7 @@ Failures: {file → reason, or "none"}
 ```
 
 > The snapshot dir lives on a worker devbox that is stopped at the end of the run — it is not
-> a durable reference. The published asset URLs are the only surviving evidence, which is why
+> a durable reference. The published evidence URLs are the only surviving evidence, which is why
 > the upload accounting matters more than the local paths.
 
 > Stop here. Do NOT POST the report anywhere. The local file is the deliverable; the mission

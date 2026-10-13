@@ -133,7 +133,7 @@ Whether a PR must prove it ran somewhere before review — and in what form — 
 
 For any UI-impacting change, capture before/after screenshots (Playwright preferred, manual fallback) and embed them in the PR body.
 
-**Where images are hosted is repo policy.** Check the playbook for an asset-hosting section and follow it. When the policy uses Pylot assets, read `pylot-cli` and use its Assets workflow; that skill is the single source for supported lifecycle commands and upload transport.
+**Where images are hosted is repo policy.** Check the playbook for an asset-hosting section and follow it. When the environment has the `EVIDENCE_*` secret, use the `evidence-upload` skill: it uploads to the public evidence bucket and prints embeddable URLs that render even in private repos (anything uploaded is public by URL — no secrets or customer data).
 
 > **No asset-hosting section?** Attach the images to the PR directly (GitHub hosts images uploaded through the PR editor or the comment API) or link a CI artifact, and say which you used. Never link an image from a host the reviewer cannot reach.
 

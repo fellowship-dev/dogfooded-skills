@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "status": "executed-awaiting-independent-review",
+  "candidate_behavior_sha256": "4204c5e63b90a03f5db4947b2a25da2ea693482e88dae62634b96270e363c6e9",
+  "method": "Five actual site-scoped draft runs with retained public observations, stage outputs and complete private artifact hashes. No private site/account/URL/raw customer context is published here.",
+  "cases": [
+    {
+      "id": "growth-deliverable",
+      "private_receipt_sha256": "75e49160fbfd228f824a75489acb5039877ed897a2cf23905267332a22c267e4",
+      "verdict": "independent-review-pending",
+      "benchmark": {
+        "public_html_gets": 3,
+        "new_provider_calls": 0,
+        "complete_copy_artifacts": 2,
+        "publication_state": "unpublished draft",
+        "comparable_search_measurement": "unavailable"
+      }
+    },
+    {
+      "id": "ordinary-maintenance",
+      "private_receipt_sha256": "e7b5bd142cce8c9809401e764a3a80dc7fd78d932eab1b8ead6ef326071d68e6",
+      "verdict": "independent-review-pending",
+      "benchmark": {
+        "collector_seconds": 4.207,
+        "collector_exit": 1,
+        "requested_pages": 3,
+        "distinct_final_pages": 2,
+        "page_cap": 3,
+        "deadline_seconds": 180,
+        "edge_observations": 86,
+        "unchecked_edges": 67,
+        "static_only": true
+      }
+    },
+    {
+      "id": "missing-measurement",
+      "private_receipt_sha256": "44b519a5cc1ffa9540c4a0b6e4a87fdd523ce4bb2985c796f23eec72322608e7",
+      "verdict": "independent-review-pending",
+      "benchmark": {
+        "collector_seconds": 13.663,
+        "collector_exit": 0,
+        "requested_pages": 3,
+        "distinct_final_pages": 2,
+        "page_cap": 3,
+        "deadline_seconds": 180,
+        "edge_observations": 49,
+        "unchecked_edges": 37,
+        "static_only": true
+      }
+    },
+    {
+      "id": "never-index",
+      "private_receipt_sha256": "7891a1095268497fe257a0ef9d9297f72ad3a2a72ec521d602c27f6f191aef37",
+      "verdict": "independent-review-pending",
+      "benchmark": {
+        "collector_seconds": 5.673,
+        "collector_exit": 1,
+        "requested_pages": 8,
+        "distinct_final_pages": 7,
+        "page_cap": 8,
+        "deadline_seconds": 180,
+        "edge_observations": 31,
+        "unchecked_edges": 2,
+        "static_only": true
+      }
+    },
+    {
+      "id": "pending-retirement",
+      "private_receipt_sha256": "31100c87310f4428c6064e4782ff68586363ba11188a2c8e400135f27788d309",
+      "verdict": "independent-review-pending",
+      "benchmark": {
+        "collector_seconds": 0.99,
+        "collector_exit": 1,
+        "requested_pages": 1,
+        "distinct_final_pages": 1,
+        "page_cap": 1,
+        "deadline_seconds": 180,
+        "edge_observations": 1,
+        "unchecked_edges": 1,
+        "static_only": true
+      }
+    }
+  ],
+  "operations": {
+    "new_paid_calls": 0,
+    "production_writes": 0,
+    "new_accounts": 0,
+    "publication": false
+  },
+  "stages_exercised": [
+    "audit",
+    "links",
+    "keywords",
+    "briefs",
+    "reports"
+  ],
+  "remaining_gates": [
+    "Independent complete-output/trace review",
+    "Reviewed publication and clean same-revision consumer pin verification",
+    "Owner-controlled content publication and live never-index release acceptance remain separate"
+  ],
+  "benchmark_note": "Collector nonzero exit denotes reported findings, not a transport/run failure; every run retained parseable JSON. Stage judgment and owner outcomes require independent review."
+}

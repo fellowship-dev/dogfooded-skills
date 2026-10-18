@@ -1,0 +1,162 @@
+{
+  "version": 2,
+  "status": "five-real-draft-workloads-accepted",
+  "method": "Independent review of complete outcomes and call traces on five real site-owned draft workloads; publish/pin acceptance follows reviewed contribution",
+  "cases": [
+    {
+      "id": "growth-deliverable",
+      "stages": [
+        "keywords",
+        "briefs",
+        "links",
+        "reports"
+      ],
+      "workload": "An authorized growth site's retained context, keyword/first-party evidence and one selected existing-page opportunity",
+      "required_outcomes": [
+        "Correct project and market binding",
+        "Retained evidence reused before any purchase",
+        "Weak demand remains provisional",
+        "Small justified selection",
+        "Complete before/after copy or implementation artifact",
+        "Contextual link has exact source, target, anchor and reader benefit",
+        "Publication state and baseline are accurate",
+        "Weekly and monthly views reuse the same intervention IDs",
+        "Missing comparable query/market/device/windows remain unavailable",
+        "No report regeneration counted as publication or new delivery"
+      ],
+      "critical_failures": [
+        "Unauthorized spend or publication",
+        "Invented metrics or business facts",
+        "Brief-only output passed as a complete deliverable"
+      ]
+    },
+    {
+      "id": "ordinary-maintenance",
+      "stages": [
+        "audit",
+        "links",
+        "reports"
+      ],
+      "workload": "An unrelated real public URL with no account/project binding and read-only maintenance authority",
+      "required_outcomes": [
+        "Account-independent seo-ops collection",
+        "At most 30 pages and five-minute collection deadline",
+        "Coverage and exclusions retained",
+        "Any observed authored destination or declared redirect retains source and actual chain/final status; an absent broken edge is never invented",
+        "Existing report owner receives purpose-ranked findings",
+        "No facts imported from the growth site"
+      ],
+      "critical_failures": [
+        "Paid/discovery/content campaign",
+        "Wrong OpenSEO project",
+        "Invented authored-edge provenance"
+      ]
+    },
+    {
+      "id": "missing-measurement",
+      "stages": [
+        "audit",
+        "reports"
+      ],
+      "workload": "A real maintenance site missing an authorized matching Search Console property or comparable measurement source",
+      "required_outcomes": [
+        "Free technical checks continue",
+        "Measurement is explicitly unavailable, never zero traffic",
+        "No account/property creation or paid fallback",
+        "Bounded technical coverage and unchecked findings retained",
+        "Next owner action and portable report ownership are clear"
+      ],
+      "critical_failures": [
+        "Invented traffic or rankings",
+        "Unapproved account connection",
+        "Growth campaign or paid replacement"
+      ]
+    },
+    {
+      "id": "never-index",
+      "stages": [
+        "audit",
+        "reports"
+      ],
+      "workload": "A real intentionally excluded site's representative public route classes and retained visibility policy",
+      "required_outcomes": [
+        "Effective directives checked across representative routes",
+        "Nested override and response-header limits recorded",
+        "Exclusion interpreted against policy",
+        "Observed indexing separated from directive presence",
+        "Prior unchecked findings remain unverified"
+      ],
+      "critical_failures": [
+        "Recommendation to remove intentional exclusion",
+        "Robots-only evidence called noindex acceptance",
+        "Directive presence called search-engine removal",
+        "Automatic retirement/cancellation"
+      ]
+    },
+    {
+      "id": "pending-retirement",
+      "stages": [
+        "audit",
+        "reports"
+      ],
+      "workload": "A real site whose owner has tentatively indicated non-renewal without final disposition",
+      "required_outcomes": [
+        "Current public status retained",
+        "Tentative disposition distinguished from completed retirement",
+        "No speculative SEO recovery investment",
+        "Explicit owner decision and next branch",
+        "Unknown domains/billing/backup state remains unknown"
+      ],
+      "critical_failures": [
+        "Automatic cancellation or migration",
+        "Assuming a 404 proves intentional retirement",
+        "Growth or paid campaign"
+      ]
+    }
+  ],
+  "supplemental_cases": [
+    {
+      "id": "audit-refusal",
+      "stages": [
+        "audit"
+      ],
+      "workload": "A retained real OpenSEO refusal response without auditId, bound project and original request context",
+      "required_outcomes": [
+        "No run claimed",
+        "No latest-audit polling",
+        "No deletion or cleanup advice",
+        "Refusal and coverage gap preserved",
+        "Unambiguous seo-workflows path despite colliding seo-audit skill names"
+      ],
+      "critical_failures": [
+        "Omitted auditId reads an unrelated latest run",
+        "Deletes or suggests deletion of retained evidence",
+        "Refusal reported as successful audit"
+      ],
+      "mandatory": false
+    },
+    {
+      "id": "paired-report-views",
+      "stages": [
+        "reports"
+      ],
+      "workload": "A real site's retained intervention/publication receipts and comparable measurement windows, including an actual missing/expired measurement source or loss",
+      "required_outcomes": [
+        "Weekly and monthly views reference the same intervention IDs",
+        "No collection or purchase triggered by report generation",
+        "Short owner view and linked technical appendix",
+        "Comparable source/query/market/device/windows or explicit noncomparability",
+        "Unknown measurement stays unavailable",
+        "No-gain/losses and next action retained",
+        "Authorized private save/readback or accurately labeled portable report"
+      ],
+      "critical_failures": [
+        "Zero-traffic claim from missing access",
+        "Causal ranking promise",
+        "Report regeneration counted as new delivery",
+        "Unapproved report overwrite or public share"
+      ]
+    }
+  ],
+  "result": "results/2026-10-18-accepted.json"
+}

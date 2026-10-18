@@ -14,6 +14,7 @@ import os
 import sys
 import subprocess
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from collections import deque
 from dataclasses import dataclass, asdict
@@ -54,6 +55,8 @@ class PageParser(HTMLParser):
         self.metas: list[dict[str, str]] = []
         self.links: list[dict[str, str]] = []
         self.anchors: list[str] = []
+        self.authored_anchors: list[dict[str, str]] = []
+        self._anchor: dict[str, str] | None = None
         self.images: list[dict[str, str]] = []
         self.h1: list[str] = []
         self._in_h1 = False
@@ -75,6 +78,8 @@ class PageParser(HTMLParser):
             self.links.append(data)
         elif tag == "a" and data.get("href"):
             self.anchors.append(data["href"])
+            self._anchor = {"literal_href": data["href"], "anchor": "", "context": self.h1[-1] if self.h1 else ""}
+            self.authored_anchors.append(self._anchor)
         elif tag == "img":
             self.images.append(data)
         elif tag == "h1":
@@ -86,7 +91,9 @@ class PageParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
-        if tag == "title":
+        if tag == "a":
+            self._anchor = None
+        elif tag == "title":
             self._in_title = False
         elif tag == "h1" and self._in_h1:
             self.h1.append(" ".join("".join(self._h1_parts).split()))
@@ -96,6 +103,8 @@ class PageParser(HTMLParser):
             self._in_jsonld = False
 
     def handle_data(self, data: str) -> None:
+        if self._anchor is not None:
+            self._anchor["anchor"] += data
         if self._in_title:
             self.title += data
         if self._in_h1:
@@ -158,7 +167,7 @@ def fetch(url: str, timeout: float) -> Response:
                 block_headers[key] = f"{block_headers[key]}, {value}" if key in block_headers else value
             if 300 <= block_status < 400 and block_headers.get("location"):
                 target = urljoin(current_url, block_headers["location"])
-                redirects.append({"status": block_status, "from": current_url, "to": target})
+                redirects.append({"status": block_status, "from": current_url, "to": target, "location": block_headers["location"]})
                 current_url = target
             elif block_status >= 200:
                 final_headers = block_headers
@@ -299,14 +308,33 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
     origin = f"{origin_parsed.scheme}://{origin_parsed.netloc}"
     findings: list[Finding] = []
     pages: list[dict[str, object]] = []
-    queue = deque([root])
-    queued = {root}
+    declared_legacy = {normalized(url) for url in getattr(args, "legacy_url", [])}
+    queue = deque(dict.fromkeys([root, *sorted(declared_legacy)]))
+    queued = set(queue)
+    edges: list[dict[str, object]] = []
+    observations: dict[str, dict[str, object]] = {}
+    deadline = time.monotonic() + getattr(args, "deadline", 300.0)
 
-    while queue and len(pages) < args.max_pages:
+    def bounded_fetch(url: str) -> Response:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return Response(url, url, 0, {}, b"", [], "collection deadline reached")
+        return fetch(url, min(args.timeout, remaining))
+
+    while queue and len(pages) < args.max_pages and time.monotonic() < deadline:
         target = queue.popleft()
-        response = fetch(target, args.timeout)
+        response = bounded_fetch(target)
         parser = parse_html(response)
         internal = audit_page(response, parser, findings)
+        canonical_links = link_values(parser, "canonical") if parser else []
+        canonical = urljoin(response.final_url, canonical_links[0]["href"]) if len(canonical_links) == 1 and canonical_links[0].get("href") else None
+        first_status = response.redirects[0]["status"] if response.redirects else response.status
+        observations[target] = {
+            "state": "checked", "reason": None, "first_status": first_status or None,
+            "redirects": response.redirects, "final_url": response.final_url,
+            "final_status": response.status or None, "canonical": canonical,
+            "locale": (parser.lang or None) if parser else None, "error": response.error,
+        }
         pages.append({
             "requested_url": target,
             "final_url": response.final_url,
@@ -314,14 +342,27 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
             "redirects": response.redirects,
             "title": parser.title if parser else "",
             "lang": parser.lang if parser else "",
+            "canonical": canonical,
+            "first_status": first_status,
+            "robots": " ".join(filter(None, [meta(parser, "robots") if parser else "", response.headers.get("x-robots-tag", "")])),
+            "error": response.error,
         })
+        if parser:
+            for anchor in parser.authored_anchors:
+                destination = normalized(urljoin(response.final_url, anchor["literal_href"]))
+                if urlparse(destination).scheme not in {"http", "https"}:
+                    continue
+                in_scope = urlparse(destination).netloc.lower() == origin_parsed.netloc.lower() or destination in declared_legacy
+                edges.append({"source_url": response.final_url, **anchor, "anchor": " ".join(anchor["anchor"].split()), "destination_url": destination, "_in_scope": in_scope})
         for candidate in internal:
+            if urlparse(candidate).netloc.lower() != origin_parsed.netloc.lower() and candidate not in declared_legacy:
+                continue
             if candidate not in queued and len(queued) < args.max_pages * 5:
                 queued.add(candidate)
                 queue.append(candidate)
 
     robots_url = urljoin(origin, "/robots.txt")
-    robots = fetch(robots_url, args.timeout)
+    robots = bounded_fetch(robots_url)
     if robots.status != 200:
         add(findings, "Medium", "robots-unavailable", robots_url, f"robots.txt returned HTTP {robots.status or 'error'}", robots.error or "")
     else:
@@ -331,7 +372,7 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
 
     sitemap_results: list[dict[str, object]] = []
     for sitemap_url in discover_sitemaps(origin, robots):
-        response = fetch(sitemap_url, args.timeout)
+        response = bounded_fetch(sitemap_url)
         row: dict[str, object] = {"url": sitemap_url, "status": response.status, "valid_xml": False}
         if response.status == 200:
             try:
@@ -349,7 +390,7 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
         compare_url = urljoin(compare_origin.rstrip("/") + "/", origin_parsed.path.lstrip("/"))
         if origin_parsed.query:
             compare_url += "?" + origin_parsed.query
-        response = fetch(compare_url, args.timeout)
+        response = bounded_fetch(compare_url)
         compare_results.append({"requested_url": compare_url, "final_url": response.final_url, "status": response.status, "redirects": response.redirects})
         if response.status == 200 and urlparse(response.final_url).netloc.lower() != origin_parsed.netloc.lower():
             add(findings, "Critical", "duplicate-host", compare_url, "Alternate origin serves content instead of redirecting to the canonical origin", f"final={response.final_url}; redirects={json.dumps(response.redirects)}")
@@ -358,13 +399,33 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
         elif response.redirects and len(response.redirects) > 1:
             add(findings, "Medium", "alternate-host-chain", compare_url, "Alternate-origin redirect takes more than one hop", json.dumps(response.redirects))
 
+    for edge in edges:
+        in_scope = edge.pop("_in_scope")
+        destination = edge["destination_url"]
+        observed = observations.get(destination)
+        if observed is not None and in_scope:
+            edge["check"] = dict(observed)
+            if observed["final_status"] is None:
+                edge["check"]["state"] = "unverified"
+                edge["check"]["reason"] = "deadline" if time.monotonic() >= deadline else "transport-error"
+            if observed["final_status"] is not None and observed["final_status"] != 200:
+                add(findings, "High", "authored-link-http-status", edge["source_url"], "Authored link destination did not return HTTP 200", json.dumps(edge))
+        else:
+            edge["check"] = {
+                "state": "unverified", "reason": "outside-scope" if not in_scope else "deadline" if time.monotonic() >= deadline else "page-cap",
+                "first_status": None, "redirects": [], "final_url": None,
+                "final_status": None, "canonical": None, "locale": None, "error": None,
+            }
+
     severity_order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
     findings.sort(key=lambda item: (severity_order[item.severity], item.url, item.code))
     return {
         "tool": "seo-ops",
-        "version": "0.1",
+        "version": "0.2",
         "root": root,
         "pages_sampled": pages,
+        "link_edges": edges,
+        "coverage": {"page_cap": args.max_pages, "deadline_seconds": getattr(args, "deadline", 300.0), "deadline_reached": time.monotonic() >= deadline, "unchecked_edges": sum(edge["check"]["state"] == "unverified" for edge in edges), "unvisited_urls": list(queue)},
         "robots": {"url": robots_url, "status": robots.status},
         "sitemaps": sitemap_results,
         "compare_origins": compare_results,
@@ -414,6 +475,8 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Collect repeatable static SEO evidence")
     result.add_argument("url", help="canonical root or representative page URL")
     result.add_argument("--compare-origin", action="append", default=[], help="alternate origin to test for canonical-host redirects; repeatable")
+    result.add_argument("--legacy-url", action="append", default=[], help="explicit legacy destination URL to verify; repeatable, does not authorize crawling its origin")
+    result.add_argument("--deadline", type=float, default=300.0, help="total collection deadline seconds (default: 300)")
     result.add_argument("--max-pages", type=int, default=10, help="bounded same-origin page sample (default: 10)")
     result.add_argument("--timeout", type=float, default=15.0, help="per-request timeout seconds")
     result.add_argument("--format", choices=["markdown", "json"], default="markdown")
@@ -425,6 +488,9 @@ def main() -> int:
     args = parser().parse_args()
     if args.max_pages < 1 or args.max_pages > 500:
         print("--max-pages must be between 1 and 500", file=sys.stderr)
+        return 2
+    if args.deadline <= 0 or args.timeout <= 0:
+        print("--deadline and --timeout must be positive", file=sys.stderr)
         return 2
     report = audit_site(args)
     output = json.dumps(report, indent=2, sort_keys=True) + "\n" if args.format == "json" else markdown(report)

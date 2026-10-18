@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "status": "accepted-five-real-draft-workloads",
+  "candidate_behavior_sha256": "c0f3cd396567fa4e200445a9f8368de911528c4f2d984e1b86137a759b5bf1ca",
+  "behavior_files": {
+    "skills/ops/seo-workflows/SKILL.md": "867afd1569d1b693f550cecb17c8b82dd8c020cc3f8e9e3d06bc2e8a5ab90488",
+    "skills/ops/seo-workflows/references/audit.md": "40ec1f81218fd71780b77432fdcad2d4e56436fd4ed589070a9b69c8b00d981e",
+    "skills/ops/seo-workflows/references/briefs.md": "c685221e28e341563c602be84f913662d707e402b8922aa24f8f8fe942bde8af",
+    "skills/ops/seo-workflows/references/evidence.md": "ff345e8f75e75067879f724df985a54f85fce0642d35714f13c20df33b9a0974",
+    "skills/ops/seo-workflows/references/keywords.md": "46d2541107bcc02791f56a9919a03bd827c74f5cb0913397b01912d743730217",
+    "skills/ops/seo-workflows/references/links.md": "7399a54d066bc056711472ecd0b580af4aeb63c4e486f9a1f6e10a0baf7121be",
+    "skills/ops/seo-workflows/references/reports.md": "091ecf06e33cb0807a341839b08b86607e696515c57f5b0da006588a4be732bd",
+    "skills/ops/seo-ops/scripts/audit.py": "733c8a5487be36c08841b8aa1a80ca2c96510ced3ca249f4884dc323ddb8f1f4"
+  },
+  "review_method": "Independent complete output and authentic native call-trace review, plus correction lineage.",
+  "review_receipt_sha256": "493963f4f888c7c7fab3708d99df95a3f09e8e54fc29a5ca52f36a959c3ea15c",
+  "cases": [
+    {
+      "id": "growth-deliverable",
+      "verdict": "accepted",
+      "private_receipt_sha256": "97c3ec2839a1236f0d6a3613bf7744ecb08050c386047a76199c4eeedb050e26"
+    },
+    {
+      "id": "ordinary-maintenance",
+      "verdict": "accepted",
+      "private_receipt_sha256": "a3a6af17bde4339dfbd91ee4dce94b3015fe2246c2081804e492765f381faafb"
+    },
+    {
+      "id": "missing-measurement",
+      "verdict": "accepted",
+      "private_receipt_sha256": "f83ee3419e70d11fdf2c6c2c117b93e897401ecc19e9e30a53137c5c59def951"
+    },
+    {
+      "id": "never-index",
+      "verdict": "accepted",
+      "private_receipt_sha256": "e749e43d12ea2a749caf08e239d5d9471b576c499eb09545dc61761feb244bee"
+    },
+    {
+      "id": "pending-retirement",
+      "verdict": "accepted",
+      "private_receipt_sha256": "3fc9605662488fdabed494a00adb695743bc9b276de307f6a79f4c14439c27bb"
+    }
+  ],
+  "operations": {
+    "new_paid_provider_calls": 0,
+    "new_accounts": 0
+  },
+  "benchmark": {
+    "real_cases": 5,
+    "stages_exercised": [
+      "audit",
+      "links",
+      "keywords",
+      "briefs",
+      "reports"
+    ],
+    "matched_measurement_rows": 70,
+    "unmatched_rows_excluded": 541
+  },
+  "limits": [
+    "Draft contribution gate only. Published same-revision consumer installs are a separate acceptance step.",
+    "No prior whole-workflow benchmark exists; no superiority claim.",
+    "Actual service refusal unavailable; supplemental refusal case remains unexecuted.",
+    "Native persisted dispatch is encrypted; sending parent retained its plaintext transcript separately.",
+    "Content publication and search-engine removal are not established by draft-workflow acceptance."
+  ]
+}

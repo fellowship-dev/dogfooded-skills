@@ -302,6 +302,25 @@ def discover_sitemaps(origin: str, robots: Response) -> list[str]:
     return list(dict.fromkeys(result))
 
 
+def blocks_wildcard_crawling(text: str) -> bool:
+    groups = []
+    agents, rules = [], []
+    for line in text.splitlines() + ["User-agent: end-of-file"]:
+        line = line.split("#", 1)[0].strip()
+        if ":" not in line:
+            continue
+        key, value = (part.strip() for part in line.split(":", 1))
+        if key.lower() == "user-agent":
+            if rules:
+                groups.append((agents, rules))
+                agents, rules = [], []
+            agents.append(value.lower())
+        elif agents and key.lower() in {"allow", "disallow"}:
+            rules.append((key.lower(), value))
+    return any("*" in agents and ("disallow", "/") in rules
+               and ("allow", "/") not in rules for agents, rules in groups)
+
+
 def audit_site(args: argparse.Namespace) -> dict[str, object]:
     root = normalized(args.url)
     origin_parsed = urlparse(root)
@@ -345,6 +364,8 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
             "canonical": canonical,
             "first_status": first_status,
             "robots": " ".join(filter(None, [meta(parser, "robots") if parser else "", response.headers.get("x-robots-tag", "")])),
+            "robots_meta": meta(parser, "robots") if parser else "",
+            "robots_header": response.headers.get("x-robots-tag", ""),
             "error": response.error,
         })
         if parser:
@@ -367,7 +388,7 @@ def audit_site(args: argparse.Namespace) -> dict[str, object]:
         add(findings, "Medium", "robots-unavailable", robots_url, f"robots.txt returned HTTP {robots.status or 'error'}", robots.error or "")
     else:
         robots_text = robots.body.decode("utf-8", errors="replace")
-        if re.search(r"(?im)User-agent:\s*\*.*?Disallow:\s*/\s*(?:$|\n)", robots_text):
+        if blocks_wildcard_crawling(robots_text):
             add(findings, "Critical", "robots-block-all", robots_url, "robots.txt appears to block all crawling", robots_text[:500])
 
     sitemap_results: list[dict[str, object]] = []

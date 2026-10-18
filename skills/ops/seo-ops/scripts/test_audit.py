@@ -70,6 +70,11 @@ def page(canonical):
 
 
 class AuditTests(unittest.TestCase):
+    def test_wildcard_directives_keep_stanza_and_comment_boundaries(self):
+        self.assertTrue(AUDIT.blocks_wildcard_crawling("User-agent: *\nDisallow: / # intentional\n"))
+        self.assertFalse(AUDIT.blocks_wildcard_crawling("User-agent: *\nDisallow: /private\nUser-agent: BadBot\nDisallow: /\n"))
+        self.assertFalse(AUDIT.blocks_wildcard_crawling("User-agent: *\nDisallow: /\nAllow: /\n"))
+
     def test_clean_page_and_valid_sitemap(self):
         site = Site().start()
         try:
